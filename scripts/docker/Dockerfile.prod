@@ -1,0 +1,163 @@
+# Optimized Production Dockerfile for Caslink
+# Multi-stage build with optimized caching and minimal final image size
+
+# Stage 1: Base Go builder with dependencies
+FROM golang:1.22-alpine AS go-base
+
+# Install build dependencies
+RUN apk add --no-cache \
+    git \
+    gcc \
+    musl-dev \
+    sqlite-dev \
+    ca-certificates \
+    tzdata
+
+# Create non-root user for build
+RUN addgroup -g 1001 builder && \
+    adduser -D -s /bin/sh -u 1001 -G builder builder
+
+WORKDIR /app
+
+# Stage 2: Dependencies layer (cached when go.mod/go.sum don't change)
+FROM go-base AS deps
+
+# Copy dependency files
+COPY go.mod go.sum ./
+
+# Download dependencies (this layer will be cached)
+RUN go mod download && \
+    go mod verify
+
+# Stage 3: Build layer
+FROM deps AS builder
+
+# Copy source code
+COPY --chown=builder:builder . .
+
+# Set build info
+ARG VERSION=docker
+ARG COMMIT=unknown
+ARG BUILD_DATE=unknown
+
+# Build the main application
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
+    -ldflags "-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${BUILD_DATE} -s -w -extldflags '-static'" \
+    -a -installsuffix cgo \
+    -tags 'sqlite_omit_load_extension' \
+    -o caslink \
+    cmd/main.go
+
+# Build CLI tool
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build \
+    -ldflags "-X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${BUILD_DATE} -s -w -extldflags '-static'" \
+    -a -installsuffix cgo \
+    -tags 'sqlite_omit_load_extension' \
+    -o caslink-cli \
+    cmd/caslink-cli/main.go
+
+# Verify binaries are static
+RUN ldd caslink || echo "Static binary confirmed" && \
+    ldd caslink-cli || echo "Static binary confirmed"
+
+# Stage 4: Runtime preparation
+FROM alpine:3.19 AS runtime-base
+
+# Install minimal runtime dependencies
+RUN apk --no-cache add \
+    ca-certificates \
+    tzdata \
+    tini \
+    netcat-openbsd \
+    openssl && \
+    # Clean up
+    rm -rf /var/cache/apk/*
+
+# Create app user and group
+RUN addgroup -g 1001 caslink && \
+    adduser -D -s /bin/sh -u 1001 -G caslink caslink
+
+# Create necessary directories
+RUN mkdir -p /var/lib/caslink /app/data && \
+    chown -R caslink:caslink /var/lib/caslink /app
+
+# Stage 5: Final production image
+FROM runtime-base AS production
+
+# Set metadata
+LABEL maintainer="Caslink Team" \
+      version="${VERSION}" \
+      description="Caslink URL Shortener - Production Image" \
+      org.opencontainers.image.title="Caslink" \
+      org.opencontainers.image.description="Self-hosted URL shortener with advanced features" \
+      org.opencontainers.image.source="https://github.com/casjaysdevdocker/caslink" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.created="${BUILD_DATE}"
+
+# Set working directory
+WORKDIR /app
+
+# Copy binaries from builder stage
+COPY --from=builder --chown=root:root /app/caslink /app/caslink-cli ./
+
+# Copy entrypoint script
+COPY --chown=root:root scripts/docker/docker-entrypoint.sh ./
+RUN chmod +x docker-entrypoint.sh
+
+# No configuration file needed - zero-config startup with intelligent defaults
+
+# Set proper permissions
+RUN chmod +x caslink caslink-cli && \
+    chown caslink:caslink caslink caslink-cli
+
+# Switch to non-root user
+USER caslink
+
+# Set environment variables
+ENV CASLINK_SERVER_HOST=0.0.0.0 \
+    CASLINK_SERVER_PORT=64000 \
+    CASLINK_DATABASE_TYPE=sqlite \
+    CASLINK_DATABASE_PATH=/var/lib/caslink/caslink.db \
+    CASLINK_LOG_LEVEL=info \
+    CASLINK_LOG_FORMAT=json
+
+# Expose port
+EXPOSE 64000
+
+# Add volume for data persistence
+VOLUME ["/var/lib/caslink"]
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD ./caslink-cli health || exit 1
+
+# Use tini as init system for proper signal handling
+ENTRYPOINT ["/sbin/tini", "--", "./docker-entrypoint.sh"]
+
+# Default command
+CMD ["./caslink", "webui"]
+
+# Development variant
+FROM production AS development
+
+USER root
+
+# Install development tools
+RUN apk --no-cache add \
+    curl \
+    wget \
+    vim \
+    htop \
+    bash \
+    jq
+
+USER caslink
+
+# Override healthcheck for development
+HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=2 \
+    CMD ./caslink-cli health || exit 1
+
+# Development environment variables
+ENV CASLINK_LOG_LEVEL=debug \
+    CASLINK_SERVER_READ_TIMEOUT=60s \
+    CASLINK_SERVER_WRITE_TIMEOUT=60s

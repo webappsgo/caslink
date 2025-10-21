@@ -1,0 +1,171 @@
+{{template "base.html" .}}
+
+{{define "content"}}
+<div class="setup-container">
+    <div class="setup-card wide">
+        <div class="setup-header">
+            <h1 class="setup-title">Customize Your Instance</h1>
+            <p class="setup-subtitle">Make {{.BrandName}} your own (all optional)</p>
+        </div>
+
+        <div class="setup-progress">
+            <div class="progress-step completed">
+                <div class="step-number">✓</div>
+                <div class="step-label">Admin Account</div>
+            </div>
+            <div class="progress-step completed">
+                <div class="step-number">✓</div>
+                <div class="step-label">First URL</div>
+            </div>
+            <div class="progress-step active">
+                <div class="step-number">3</div>
+                <div class="step-label">Customize</div>
+            </div>
+        </div>
+
+        <form id="customize-form" class="setup-form">
+            <div class="form-grid">
+                <div class="form-group">
+                    <label for="brand_name" class="form-label">Brand Name</label>
+                    <input
+                        type="text"
+                        id="brand_name"
+                        name="brand_name"
+                        class="form-input"
+                        value="{{.BrandName}}"
+                        maxlength="100"
+                    >
+                    <div class="form-hint">Displayed throughout the application</div>
+                </div>
+
+                <div class="form-group">
+                    <label for="theme" class="form-label">Default Theme</label>
+                    <select id="theme" name="theme" class="form-select">
+                        <option value="dark" selected>Dark</option>
+                        <option value="light">Light</option>
+                        <option value="professional">Professional</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="enable_registration" checked>
+                        <span>Allow User Registration</span>
+                    </label>
+                    <div class="form-hint">Let others create accounts</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="enable_anonymous_urls" checked>
+                        <span>Allow Anonymous URL Creation</span>
+                    </label>
+                    <div class="form-hint">Let visitors create URLs without logging in</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="enable_analytics" checked>
+                        <span>Enable Analytics</span>
+                    </label>
+                    <div class="form-hint">Track clicks and visitor statistics</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" name="enable_qr_codes" checked>
+                        <span>Enable QR Code Generation</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="button-group">
+                <button type="button" class="btn btn-secondary" onclick="window.location.href='/dashboard'">
+                    Skip & Finish
+                </button>
+                <button type="submit" class="btn btn-primary">
+                    Save Settings & Finish
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                    </svg>
+                </button>
+            </div>
+        </form>
+
+        <div class="setup-footer">
+            <div class="completion-message">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                </svg>
+                <p>You're all set! You can change these settings anytime in the admin panel.</p>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.getElementById('customize-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const formData = new FormData(this);
+    const data = {};
+
+    for (let [key, value] of formData.entries()) {
+        if (value === 'on') {
+            data[key] = true;
+        } else {
+            data[key] = value;
+        }
+    }
+
+    // Include unchecked checkboxes as false
+    ['enable_registration', 'enable_anonymous_urls', 'enable_analytics', 'enable_qr_codes'].forEach(field => {
+        if (!(field in data)) {
+            data[field] = false;
+        }
+    });
+
+    try {
+        const response = await fetch('/api/v1/setup/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showNotification('Setup completed successfully!', 'success');
+            setTimeout(() => window.location.href = '/dashboard', 1500);
+        } else {
+            showNotification(result.error || 'Failed to save settings', 'error');
+        }
+    } catch (error) {
+        showNotification('Network error: ' + error.message, 'error');
+    }
+});
+
+function showNotification(message, type) {
+    const flash = document.createElement('div');
+    flash.className = `flash flash-${type}`;
+    flash.innerHTML = `
+        <div class="flash-content">
+            <span class="flash-message">${message}</span>
+        </div>
+        <button class="flash-close" onclick="this.parentElement.remove()">×</button>
+    `;
+
+    let container = document.querySelector('.flash-messages');
+    if (!container) {
+        container = document.createElement('div');
+        container.className = 'flash-messages';
+        document.querySelector('.main-content').prepend(container);
+    }
+
+    container.appendChild(flash);
+    setTimeout(() => flash.remove(), 5000);
+}
+</script>
+{{end}}

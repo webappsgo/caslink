@@ -1,0 +1,449 @@
+{{template "base.html" .}}
+
+{{define "content"}}
+<div class="hero-section">
+    <div class="hero-container">
+        <div class="hero-content">
+            <h1 class="hero-title">Shorten Your URLs</h1>
+            <p class="hero-subtitle">Create short, trackable links with powerful analytics and customization options</p>
+
+            <!-- URL Creation Form -->
+            <div class="url-form-container">
+                <form id="url-form" class="url-form" action="/api/v1/urls" method="POST">
+                    <div class="form-group">
+                        <label for="original_url" class="form-label">Enter your long URL</label>
+                        <div class="url-input-group">
+                            <input
+                                type="url"
+                                id="original_url"
+                                name="original_url"
+                                class="url-input"
+                                placeholder="https://example.com/very/long/url/path"
+                                required
+                                autocomplete="off"
+                            >
+                            <button type="submit" class="submit-btn" id="submit-btn">
+                                <span class="btn-text">Shorten</span>
+                                <div class="btn-spinner hidden">
+                                    <svg class="spinner" width="20" height="20" viewBox="0 0 24 24">
+                                        <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-dasharray="32" stroke-dashoffset="32">
+                                            <animate attributeName="stroke-dasharray" dur="2s" values="0 32;16 16;0 32;0 32" repeatCount="indefinite"/>
+                                            <animate attributeName="stroke-dashoffset" dur="2s" values="0;-16;-32;-32" repeatCount="indefinite"/>
+                                        </circle>
+                                    </svg>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Advanced Options (Collapsible) -->
+                    <div class="advanced-options">
+                        <button type="button" class="options-toggle" id="options-toggle">
+                            <svg class="toggle-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M7 10l5 5 5-5z"/>
+                            </svg>
+                            Advanced Options
+                        </button>
+
+                        <div class="options-content hidden" id="options-content">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="custom_code" class="form-label">Custom Short Code (optional)</label>
+                                    <div class="custom-code-group">
+                                        <span class="base-url">{{.BaseURL}}/</span>
+                                        <input
+                                            type="text"
+                                            id="custom_code"
+                                            name="custom_code"
+                                            class="custom-code-input"
+                                            placeholder="my-link"
+                                            pattern="[a-zA-Z0-9\-_]{3,50}"
+                                            title="3-50 characters, letters, numbers, hyphens, and underscores only"
+                                        >
+                                    </div>
+                                    <div class="availability-check hidden" id="availability-check">
+                                        <span class="availability-text"></span>
+                                    </div>
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="expires_at" class="form-label">Expiration (optional)</label>
+                                    <select id="expires_at" name="expires_at" class="form-select">
+                                        <option value="">Never expires</option>
+                                        <option value="1h">1 hour</option>
+                                        <option value="24h">24 hours</option>
+                                        <option value="7d">7 days</option>
+                                        <option value="30d">30 days</option>
+                                        <option value="90d">90 days</option>
+                                        <option value="1y">1 year</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="title" class="form-label">Title (optional)</label>
+                                    <input
+                                        type="text"
+                                        id="title"
+                                        name="title"
+                                        class="form-input"
+                                        placeholder="My awesome link"
+                                        maxlength="255"
+                                    >
+                                </div>
+
+                                <div class="form-group">
+                                    <label for="password" class="form-label">Password Protection (optional)</label>
+                                    <input
+                                        type="password"
+                                        id="password"
+                                        name="password"
+                                        class="form-input"
+                                        placeholder="Enter password"
+                                        autocomplete="new-password"
+                                    >
+                                </div>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="description" class="form-label">Description (optional)</label>
+                                <textarea
+                                    id="description"
+                                    name="description"
+                                    class="form-textarea"
+                                    placeholder="Brief description of this link"
+                                    rows="2"
+                                    maxlength="500"
+                                ></textarea>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Result Display -->
+            <div class="result-container hidden" id="result-container">
+                <div class="result-content">
+                    <h3 class="result-title">Your short URL is ready!</h3>
+                    <div class="result-url-container">
+                        <div class="result-url" id="result-url"></div>
+                        <div class="result-actions">
+                            <button class="action-btn copy-btn" id="copy-btn" data-tooltip="Copy to clipboard">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                                </svg>
+                            </button>
+                            <button class="action-btn qr-btn" id="qr-btn" data-tooltip="Generate QR code">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M3 11h8V3H3v8zm2-6h4v4H5V5zM3 21h8v-8H3v8zm2-6h4v4H5v-4zM13 3v8h8V3h-8zm6 6h-4V5h4v4zM19 13h2v2h-2zM13 13h2v2h-2zM15 15h2v2h-2zM13 17h2v2h-2zM15 19h2v2h-2zM17 17h2v2h-2zM17 13h2v2h-2zM19 15h2v2h-2z"/>
+                                </svg>
+                            </button>
+                            <a class="action-btn analytics-btn" id="analytics-btn" data-tooltip="View analytics">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z"/>
+                                </svg>
+                            </a>
+                        </div>
+                    </div>
+                    {{if .User}}
+                    <div class="result-meta">
+                        <p class="result-info">This URL has been saved to your <a href="/dashboard">dashboard</a>.</p>
+                    </div>
+                    {{end}}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Features Section -->
+<div class="features-section">
+    <div class="features-container">
+        <h2 class="features-title">Why Choose {{.BrandName}}?</h2>
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z"/>
+                    </svg>
+                </div>
+                <h3 class="feature-title">Detailed Analytics</h3>
+                <p class="feature-description">Track clicks, geographic data, referrers, and device information with real-time analytics.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M3 11h8V3H3v8zm2-6h4v4H5V5zM3 21h8v-8H3v8zm2-6h4v4H5v-4zM13 3v8h8V3h-8zm6 6h-4V5h4v4zM19 13h2v2h-2zM13 13h2v2h-2zM15 15h2v2h-2zM13 17h2v2h-2zM15 19h2v2h-2zM17 17h2v2h-2zM17 13h2v2h-2zM19 15h2v2h-2z"/>
+                    </svg>
+                </div>
+                <h3 class="feature-title">QR Codes</h3>
+                <p class="feature-description">Generate customizable QR codes for your short URLs with multiple formats and styling options.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/>
+                    </svg>
+                </div>
+                <h3 class="feature-title">Secure & Private</h3>
+                <p class="feature-description">Self-hosted solution with password protection, expiration dates, and complete data control.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                    </svg>
+                </div>
+                <h3 class="feature-title">Custom Domains</h3>
+                <p class="feature-description">Use your own domain names for branded short URLs that match your business identity.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 2 2h8c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/>
+                    </svg>
+                </div>
+                <h3 class="feature-title">Bulk Operations</h3>
+                <p class="feature-description">Import and export URLs in bulk using CSV or JSON formats for efficient management.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-8 2h2v4h4v2h-4v4h-2v-4H7v-2h4V5z"/>
+                    </svg>
+                </div>
+                <h3 class="feature-title">API Access</h3>
+                <p class="feature-description">Full REST API with authentication tokens for integrating with your applications and workflows.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Stats -->
+{{if .Stats}}
+<div class="stats-section">
+    <div class="stats-container">
+        <div class="stats-grid">
+            <div class="stat-item">
+                <div class="stat-number">{{.Stats.TotalURLs | formatNumber}}</div>
+                <div class="stat-label">URLs Shortened</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">{{.Stats.TotalClicks | formatNumber}}</div>
+                <div class="stat-label">Total Clicks</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-number">{{.Stats.ActiveUsers | formatNumber}}</div>
+                <div class="stat-label">Active Users</div>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
+{{end}}
+
+{{define "scripts"}}
+<script>
+// Initialize the home page functionality
+document.addEventListener('DOMContentLoaded', function() {
+    initializeURLForm();
+    initializeAdvancedOptions();
+    initializeCustomCodeCheck();
+});
+
+function initializeURLForm() {
+    const form = document.getElementById('url-form');
+    const submitBtn = document.getElementById('submit-btn');
+    const btnText = submitBtn.querySelector('.btn-text');
+    const btnSpinner = submitBtn.querySelector('.btn-spinner');
+    const resultContainer = document.getElementById('result-container');
+
+    form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        // Update button state
+        submitBtn.disabled = true;
+        btnText.classList.add('hidden');
+        btnSpinner.classList.remove('hidden');
+
+        try {
+            const formData = new FormData(form);
+            const data = {};
+            for (let [key, value] of formData.entries()) {
+                if (value.trim()) data[key] = value.trim();
+            }
+
+            const response = await fetch('/api/v1/urls', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                showResult(result.data);
+                form.reset();
+                document.getElementById('options-content').classList.add('hidden');
+            } else {
+                showError(result.error || 'Failed to create short URL');
+            }
+        } catch (error) {
+            showError('Network error: ' + error.message);
+        } finally {
+            // Reset button state
+            submitBtn.disabled = false;
+            btnText.classList.remove('hidden');
+            btnSpinner.classList.add('hidden');
+        }
+    });
+}
+
+function initializeAdvancedOptions() {
+    const toggle = document.getElementById('options-toggle');
+    const content = document.getElementById('options-content');
+    const icon = toggle.querySelector('.toggle-icon');
+
+    toggle.addEventListener('click', function() {
+        content.classList.toggle('hidden');
+        icon.style.transform = content.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(180deg)';
+    });
+}
+
+function initializeCustomCodeCheck() {
+    const customCodeInput = document.getElementById('custom_code');
+    const availabilityCheck = document.getElementById('availability-check');
+    let checkTimeout;
+
+    customCodeInput.addEventListener('input', function() {
+        const code = this.value.trim();
+
+        clearTimeout(checkTimeout);
+        availabilityCheck.classList.add('hidden');
+
+        if (code.length >= 3) {
+            checkTimeout = setTimeout(() => checkAvailability(code), 500);
+        }
+    });
+
+    async function checkAvailability(code) {
+        try {
+            const response = await fetch(`/api/v1/urls/${encodeURIComponent(code)}`);
+            const result = await response.json();
+
+            availabilityCheck.classList.remove('hidden');
+            const text = availabilityCheck.querySelector('.availability-text');
+
+            if (response.status === 404) {
+                text.textContent = '✓ Available';
+                text.className = 'availability-text available';
+            } else {
+                text.textContent = '✗ Already taken';
+                text.className = 'availability-text unavailable';
+            }
+        } catch (error) {
+            // Ignore network errors for availability checks
+        }
+    }
+}
+
+function showResult(data) {
+    const resultContainer = document.getElementById('result-container');
+    const resultUrl = document.getElementById('result-url');
+    const copyBtn = document.getElementById('copy-btn');
+    const qrBtn = document.getElementById('qr-btn');
+    const analyticsBtn = document.getElementById('analytics-btn');
+
+    const shortUrl = `${window.location.origin}/${data.id}`;
+    resultUrl.textContent = shortUrl;
+
+    // Update action buttons
+    copyBtn.onclick = () => copyToClipboard(shortUrl);
+    qrBtn.onclick = () => generateQR(data.id);
+    analyticsBtn.href = `/url/${data.id}/analytics`;
+
+    resultContainer.classList.remove('hidden');
+    resultContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function showError(message) {
+    // Create flash message
+    const flashContainer = document.querySelector('.flash-messages') || createFlashContainer();
+    const flash = document.createElement('div');
+    flash.className = 'flash flash-error';
+    flash.innerHTML = `
+        <div class="flash-content">
+            <svg class="flash-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+            </svg>
+            <span class="flash-message">${message}</span>
+        </div>
+        <button class="flash-close" onclick="this.parentElement.remove()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+            </svg>
+        </button>
+    `;
+
+    flashContainer.appendChild(flash);
+    setTimeout(() => flash.remove(), 5000);
+}
+
+function createFlashContainer() {
+    const container = document.createElement('div');
+    container.className = 'flash-messages';
+    document.querySelector('.main-content').prepend(container);
+    return container;
+}
+
+async function copyToClipboard(text) {
+    try {
+        await navigator.clipboard.writeText(text);
+        showSuccess('URL copied to clipboard!');
+    } catch (error) {
+        // Fallback for older browsers
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        showSuccess('URL copied to clipboard!');
+    }
+}
+
+function generateQR(urlId) {
+    window.open(`/url/${urlId}/qr`, '_blank');
+}
+
+function showSuccess(message) {
+    const flashContainer = document.querySelector('.flash-messages') || createFlashContainer();
+    const flash = document.createElement('div');
+    flash.className = 'flash flash-success';
+    flash.innerHTML = `
+        <div class="flash-content">
+            <svg class="flash-icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+            </svg>
+            <span class="flash-message">${message}</span>
+        </div>
+        <button class="flash-close" onclick="this.parentElement.remove()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+            </svg>
+        </button>
+    `;
+
+    flashContainer.appendChild(flash);
+    setTimeout(() => flash.remove(), 3000);
+}
+</script>
+{{end}}

@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  caslink-dev:
+    build:
+      context: ../..
+      dockerfile: scripts/docker/Dockerfile.dev
+    ports:
+      - "64000:64000"
+    volumes:
+      - ../..:/app
+      - caslink-data-dev:/var/lib/caslink
+      - go-mod-cache:/go/pkg/mod
+    environment:
+      - CASLINK_SERVER_HOST=0.0.0.0
+      - CASLINK_SERVER_PORT=64000
+      - CASLINK_DATABASE_URL=sqlite:///var/lib/caslink/caslink.db
+      - CASLINK_DATABASE_AUTO_MIGRATE=true
+      - CASLINK_LOG_LEVEL=debug
+      - CASLINK_LOG_FORMAT=text
+      - CGO_ENABLED=1
+    working_dir: /app
+    command: ["go", "run", "cmd/main.go", "webui"]
+    restart: unless-stopped
+    networks:
+      - caslink-dev
+
+  postgres-dev:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=caslink
+      - POSTGRES_USER=caslink
+      - POSTGRES_PASSWORD=caslink
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data-dev:/var/lib/postgresql/data
+    networks:
+      - caslink-dev
+
+  mysql-dev:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - MYSQL_DATABASE=caslink
+      - MYSQL_USER=caslink
+      - MYSQL_PASSWORD=caslink
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data-dev:/var/lib/mysql
+    networks:
+      - caslink-dev
+
+  redis-dev:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data-dev:/data
+    networks:
+      - caslink-dev
+
+  adminer:
+    image: adminer
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres-dev
+      - mysql-dev
+    networks:
+      - caslink-dev
+
+volumes:
+  caslink-data-dev:
+  postgres-data-dev:
+  mysql-data-dev:
+  redis-data-dev:
+  go-mod-cache:
+
+networks:
+  caslink-dev:
+    driver: bridge

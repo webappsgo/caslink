@@ -1,0 +1,546 @@
+{{template "base.html" .}}
+
+{{define "styles"}}
+<link rel="stylesheet" href="/static/css/dashboard.css">
+{{end}}
+
+{{define "content"}}
+<div class="dashboard-container">
+    <!-- Dashboard Header -->
+    <div class="dashboard-header">
+        <div class="dashboard-title-section">
+            <h1 class="dashboard-title">Dashboard</h1>
+            <p class="dashboard-subtitle">Manage your shortened URLs and view analytics</p>
+        </div>
+        <div class="dashboard-actions">
+            <a href="/" class="btn btn-primary">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                </svg>
+                New URL
+            </a>
+            <a href="/bulk" class="btn btn-secondary">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 2 2h8c1.1 0 2-.9 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/>
+                </svg>
+                Bulk Import
+            </a>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon stat-icon-primary">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H6.99c-2.76 0-5 2.24-5 5s2.24 5 5 5H11v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm5-6h4.01c2.76 0 5 2.24 5 5s-2.24 5-5 5H13v1.9h4.01c2.76 0 5-2.24 5-5s-2.24-5-5-5H13V7z"/>
+                </svg>
+            </div>
+            <div class="stat-content">
+                <div class="stat-number">{{.Stats.TotalURLs | formatNumber}}</div>
+                <div class="stat-label">Total URLs</div>
+                <div class="stat-trend {{if gt .Stats.URLsThisMonth 0}}positive{{else}}neutral{{end}}">
+                    {{if gt .Stats.URLsThisMonth 0}}+{{.Stats.URLsThisMonth}}{{else}}0{{end}} this month
+                </div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon stat-icon-success">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                </svg>
+            </div>
+            <div class="stat-content">
+                <div class="stat-number">{{.Stats.TotalClicks | formatNumber}}</div>
+                <div class="stat-label">Total Clicks</div>
+                <div class="stat-trend {{if gt .Stats.ClicksThisMonth 0}}positive{{else}}neutral{{end}}">
+                    {{if gt .Stats.ClicksThisMonth 0}}+{{.Stats.ClicksThisMonth}}{{else}}0{{end}} this month
+                </div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon stat-icon-warning">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                </svg>
+            </div>
+            <div class="stat-content">
+                <div class="stat-number">{{.Stats.TopURL.Clicks | formatNumber}}</div>
+                <div class="stat-label">Top URL Clicks</div>
+                <div class="stat-trend neutral">
+                    {{if .Stats.TopURL.ID}}{{.Stats.TopURL.ID}}{{else}}None yet{{end}}
+                </div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon stat-icon-info">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM9 17H7v-7h2v7zm4 0h-2V7h2v10zm4 0h-2v-4h2v4z"/>
+                </svg>
+            </div>
+            <div class="stat-content">
+                <div class="stat-number">{{.Stats.ClicksToday | formatNumber}}</div>
+                <div class="stat-label">Clicks Today</div>
+                <div class="stat-trend {{if gt .Stats.ClicksYesterday .Stats.ClicksToday}}negative{{else if lt .Stats.ClicksYesterday .Stats.ClicksToday}}positive{{else}}neutral{{end}}">
+                    {{if ne .Stats.ClicksYesterday .Stats.ClicksToday}}
+                        {{if gt .Stats.ClicksToday .Stats.ClicksYesterday}}+{{else}}-{{end}}{{abs (sub .Stats.ClicksToday .Stats.ClicksYesterday)}}
+                    {{else}}
+                        {{.Stats.ClicksYesterday}}
+                    {{end}} yesterday
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- URL Management Section -->
+    <div class="url-management">
+        <div class="section-header">
+            <h2 class="section-title">Your URLs</h2>
+            <div class="section-controls">
+                <div class="search-box">
+                    <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                    </svg>
+                    <input type="text" id="url-search" placeholder="Search URLs..." class="search-input">
+                </div>
+                <select id="url-filter" class="filter-select">
+                    <option value="all">All URLs</option>
+                    <option value="active">Active</option>
+                    <option value="expired">Expired</option>
+                    <option value="password">Password Protected</option>
+                    <option value="custom">Custom Code</option>
+                </select>
+                <select id="url-sort" class="filter-select">
+                    <option value="created_desc">Newest First</option>
+                    <option value="created_asc">Oldest First</option>
+                    <option value="clicks_desc">Most Clicks</option>
+                    <option value="clicks_asc">Least Clicks</option>
+                    <option value="title_asc">Title A-Z</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- URL List -->
+        <div class="url-list" id="url-list">
+            {{range .URLs}}
+            <div class="url-item" data-id="{{.ID}}" data-clicks="{{.Clicks}}" data-created="{{.CreatedAt}}" data-title="{{.Title}}">
+                <div class="url-item-main">
+                    <div class="url-info">
+                        <div class="url-header">
+                            <div class="url-title">
+                                {{if .Title}}{{.Title}}{{else}}Untitled{{end}}
+                                {{if .Password}}<span class="url-badge url-badge-password">🔒</span>{{end}}
+                                {{if .ExpiresAt}}<span class="url-badge url-badge-expires">⏰</span>{{end}}
+                                {{if .IsCustom}}<span class="url-badge url-badge-custom">✨</span>{{end}}
+                            </div>
+                            <div class="url-actions">
+                                <button class="action-btn copy-btn" data-url="{{$.BaseURL}}/{{.ID}}" data-tooltip="Copy URL">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                                    </svg>
+                                </button>
+                                <a href="/url/{{.ID}}/qr" class="action-btn" data-tooltip="QR Code" target="_blank">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M3 11h8V3H3v8zm2-6h4v4H5V5zM3 21h8v-8H3v8zm2-6h4v4H5v-4zM13 3v8h8V3h-8zm6 6h-4V5h4v4zM19 13h2v2h-2zM13 13h2v2h-2zM15 15h2v2h-2zM13 17h2v2h-2zM15 19h2v2h-2zM17 17h2v2h-2zM17 13h2v2h-2zM19 15h2v2h-2z"/>
+                                    </svg>
+                                </a>
+                                <a href="/url/{{.ID}}/analytics" class="action-btn" data-tooltip="Analytics">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z"/>
+                                    </svg>
+                                </a>
+                                <a href="/url/{{.ID}}/edit" class="action-btn" data-tooltip="Edit">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                                    </svg>
+                                </a>
+                                <button class="action-btn delete-btn" data-id="{{.ID}}" data-tooltip="Delete">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="url-meta">
+                            <div class="url-short">
+                                <a href="/{{.ID}}" target="_blank" class="short-link">{{$.BaseURL}}/{{.ID}}</a>
+                            </div>
+                            <div class="url-original">
+                                <a href="{{.OriginalURL}}" target="_blank" class="original-link" rel="noopener">{{.OriginalURL | truncate 80}}</a>
+                            </div>
+                        </div>
+                        {{if .Description}}
+                        <div class="url-description">{{.Description}}</div>
+                        {{end}}
+                    </div>
+                    <div class="url-stats">
+                        <div class="stat-item-small">
+                            <div class="stat-number-small">{{.Clicks | formatNumber}}</div>
+                            <div class="stat-label-small">Clicks</div>
+                        </div>
+                        <div class="stat-item-small">
+                            <div class="stat-number-small">{{.UniqueClicks | formatNumber}}</div>
+                            <div class="stat-label-small">Unique</div>
+                        </div>
+                        <div class="stat-item-small">
+                            <div class="stat-number-small">{{.CreatedAt | timeAgo}}</div>
+                            <div class="stat-label-small">Created</div>
+                        </div>
+                        {{if .ExpiresAt}}
+                        <div class="stat-item-small">
+                            <div class="stat-number-small {{if .IsExpired}}text-error{{else if .ExpiringIn24Hours}}text-warning{{end}}">
+                                {{if .IsExpired}}Expired{{else}}{{.ExpiresAt | timeUntil}}{{end}}
+                            </div>
+                            <div class="stat-label-small">{{if .IsExpired}}Status{{else}}Expires{{end}}</div>
+                        </div>
+                        {{end}}
+                    </div>
+                </div>
+            </div>
+            {{else}}
+            <div class="empty-state">
+                <div class="empty-icon">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H6.99c-2.76 0-5 2.24-5 5s2.24 5 5 5H11v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm5-6h4.01c2.76 0 5 2.24 5 5s-2.24 5-5 5H13v1.9h4.01c2.76 0 5-2.24 5-5s-2.24-5-5-5H13V7z"/>
+                    </svg>
+                </div>
+                <h3 class="empty-title">No URLs found</h3>
+                <p class="empty-description">Get started by creating your first short URL.</p>
+                <a href="/" class="btn btn-primary">Create Your First URL</a>
+            </div>
+            {{end}}
+        </div>
+
+        <!-- Pagination -->
+        {{if gt .TotalPages 1}}
+        <div class="pagination">
+            {{if gt .CurrentPage 1}}
+            <a href="?page={{sub .CurrentPage 1}}" class="pagination-btn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
+                </svg>
+                Previous
+            </a>
+            {{end}}
+
+            <div class="pagination-info">
+                Page {{.CurrentPage}} of {{.TotalPages}} ({{.TotalURLs}} total)
+            </div>
+
+            {{if lt .CurrentPage .TotalPages}}
+            <a href="?page={{add .CurrentPage 1}}" class="pagination-btn">
+                Next
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z"/>
+                </svg>
+            </a>
+            {{end}}
+        </div>
+        {{end}}
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal" id="delete-modal">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Delete URL</h3>
+            <button class="modal-close" onclick="closeDeleteModal()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                </svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            <p>Are you sure you want to delete this URL? This action cannot be undone.</p>
+            <div class="url-preview" id="delete-url-preview"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeDeleteModal()">Cancel</button>
+            <button class="btn btn-danger" id="confirm-delete-btn">Delete URL</button>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script src="/static/js/dashboard.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    initializeDashboard();
+});
+
+function initializeDashboard() {
+    initializeSearch();
+    initializeFilters();
+    initializeCopyButtons();
+    initializeDeleteButtons();
+    updateStatsColors();
+}
+
+function initializeSearch() {
+    const searchInput = document.getElementById('url-search');
+    const urlItems = document.querySelectorAll('.url-item');
+
+    if (searchInput) {
+        searchInput.addEventListener('input', window.Caslink.utils.debounce(function() {
+            const query = this.value.toLowerCase();
+
+            urlItems.forEach(item => {
+                const title = item.dataset.title ? item.dataset.title.toLowerCase() : '';
+                const shortUrl = item.querySelector('.short-link').textContent.toLowerCase();
+                const originalUrl = item.querySelector('.original-link').textContent.toLowerCase();
+
+                const matches = title.includes(query) ||
+                               shortUrl.includes(query) ||
+                               originalUrl.includes(query);
+
+                item.style.display = matches ? 'block' : 'none';
+            });
+
+            updateEmptyState();
+        }, 300));
+    }
+}
+
+function initializeFilters() {
+    const filterSelect = document.getElementById('url-filter');
+    const sortSelect = document.getElementById('url-sort');
+    const urlItems = document.querySelectorAll('.url-item');
+
+    if (filterSelect) {
+        filterSelect.addEventListener('change', function() {
+            const filter = this.value;
+
+            urlItems.forEach(item => {
+                let show = true;
+
+                switch (filter) {
+                    case 'active':
+                        show = !item.querySelector('.text-error');
+                        break;
+                    case 'expired':
+                        show = !!item.querySelector('.text-error');
+                        break;
+                    case 'password':
+                        show = !!item.querySelector('.url-badge-password');
+                        break;
+                    case 'custom':
+                        show = !!item.querySelector('.url-badge-custom');
+                        break;
+                    default:
+                        show = true;
+                }
+
+                item.style.display = show ? 'block' : 'none';
+            });
+
+            updateEmptyState();
+        });
+    }
+
+    if (sortSelect) {
+        sortSelect.addEventListener('change', function() {
+            const sort = this.value;
+            const urlList = document.getElementById('url-list');
+            const itemsArray = Array.from(urlItems);
+
+            itemsArray.sort((a, b) => {
+                switch (sort) {
+                    case 'created_desc':
+                        return new Date(b.dataset.created) - new Date(a.dataset.created);
+                    case 'created_asc':
+                        return new Date(a.dataset.created) - new Date(b.dataset.created);
+                    case 'clicks_desc':
+                        return parseInt(b.dataset.clicks) - parseInt(a.dataset.clicks);
+                    case 'clicks_asc':
+                        return parseInt(a.dataset.clicks) - parseInt(b.dataset.clicks);
+                    case 'title_asc':
+                        const titleA = a.dataset.title || 'Untitled';
+                        const titleB = b.dataset.title || 'Untitled';
+                        return titleA.localeCompare(titleB);
+                    default:
+                        return 0;
+                }
+            });
+
+            // Re-append items in sorted order
+            itemsArray.forEach(item => urlList.appendChild(item));
+        });
+    }
+}
+
+function initializeCopyButtons() {
+    document.addEventListener('click', async function(e) {
+        if (e.target.matches('.copy-btn, .copy-btn *')) {
+            const button = e.target.closest('.copy-btn');
+            const url = button.dataset.url;
+
+            try {
+                await window.Caslink.utils.copyToClipboard(url);
+
+                // Visual feedback
+                const originalIcon = button.innerHTML;
+                button.innerHTML = `
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                    </svg>
+                `;
+                button.style.color = 'var(--success-color)';
+
+                setTimeout(() => {
+                    button.innerHTML = originalIcon;
+                    button.style.color = '';
+                }, 2000);
+
+                window.Caslink.utils.showFlashMessage('success', 'URL copied to clipboard!');
+            } catch (error) {
+                window.Caslink.utils.showFlashMessage('error', 'Failed to copy URL');
+            }
+        }
+    });
+}
+
+function initializeDeleteButtons() {
+    document.addEventListener('click', function(e) {
+        if (e.target.matches('.delete-btn, .delete-btn *')) {
+            const button = e.target.closest('.delete-btn');
+            const urlId = button.dataset.id;
+            const urlItem = button.closest('.url-item');
+            const shortUrl = urlItem.querySelector('.short-link').textContent;
+            const originalUrl = urlItem.querySelector('.original-link').textContent;
+
+            showDeleteModal(urlId, shortUrl, originalUrl);
+        }
+    });
+}
+
+function showDeleteModal(urlId, shortUrl, originalUrl) {
+    const modal = document.getElementById('delete-modal');
+    const preview = document.getElementById('delete-url-preview');
+    const confirmBtn = document.getElementById('confirm-delete-btn');
+
+    preview.innerHTML = `
+        <div class="url-preview-short">${shortUrl}</div>
+        <div class="url-preview-original">${originalUrl}</div>
+    `;
+
+    confirmBtn.onclick = () => deleteURL(urlId);
+
+    modal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+}
+
+function closeDeleteModal() {
+    const modal = document.getElementById('delete-modal');
+    modal.style.display = 'none';
+    document.body.style.overflow = '';
+}
+
+async function deleteURL(urlId) {
+    const confirmBtn = document.getElementById('confirm-delete-btn');
+    const originalText = confirmBtn.textContent;
+
+    try {
+        confirmBtn.textContent = 'Deleting...';
+        confirmBtn.disabled = true;
+
+        await window.Caslink.API.delete(`/urls/${urlId}`);
+
+        // Remove URL item from DOM
+        const urlItem = document.querySelector(`[data-id="${urlId}"]`);
+        if (urlItem) {
+            urlItem.style.opacity = '0';
+            urlItem.style.transform = 'translateX(-100%)';
+            setTimeout(() => {
+                urlItem.remove();
+                updateEmptyState();
+            }, 300);
+        }
+
+        closeDeleteModal();
+        window.Caslink.utils.showFlashMessage('success', 'URL deleted successfully');
+
+        // Update stats
+        updateDashboardStats();
+
+    } catch (error) {
+        window.Caslink.utils.showFlashMessage('error', 'Failed to delete URL: ' + error.message);
+        confirmBtn.textContent = originalText;
+        confirmBtn.disabled = false;
+    }
+}
+
+function updateEmptyState() {
+    const urlList = document.getElementById('url-list');
+    const visibleItems = urlList.querySelectorAll('.url-item[style*="block"], .url-item:not([style])');
+    const emptyState = urlList.querySelector('.empty-state');
+
+    if (visibleItems.length === 0 && !emptyState) {
+        const emptyHTML = `
+            <div class="empty-state">
+                <div class="empty-icon">
+                    <svg width="64" height="64" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
+                    </svg>
+                </div>
+                <h3 class="empty-title">No URLs match your search</h3>
+                <p class="empty-description">Try adjusting your search terms or filters.</p>
+            </div>
+        `;
+        urlList.insertAdjacentHTML('beforeend', emptyHTML);
+    } else if (visibleItems.length > 0 && emptyState) {
+        emptyState.remove();
+    }
+}
+
+function updateStatsColors() {
+    // Add visual enhancement to stat trends
+    const trends = document.querySelectorAll('.stat-trend');
+    trends.forEach(trend => {
+        if (trend.classList.contains('positive')) {
+            trend.style.color = 'var(--success-color)';
+        } else if (trend.classList.contains('negative')) {
+            trend.style.color = 'var(--error-color)';
+        }
+    });
+}
+
+async function updateDashboardStats() {
+    try {
+        const response = await window.Caslink.API.get('/user/stats');
+        if (response.success) {
+            const stats = response.data;
+
+            // Update stat numbers
+            document.querySelector('.stats-grid .stat-card:nth-child(1) .stat-number').textContent =
+                window.Caslink.utils.formatNumber(stats.totalURLs);
+            document.querySelector('.stats-grid .stat-card:nth-child(2) .stat-number').textContent =
+                window.Caslink.utils.formatNumber(stats.totalClicks);
+            document.querySelector('.stats-grid .stat-card:nth-child(4) .stat-number').textContent =
+                window.Caslink.utils.formatNumber(stats.clicksToday);
+        }
+    } catch (error) {
+        console.error('Failed to update dashboard stats:', error);
+    }
+}
+
+// Close modal when clicking backdrop
+document.addEventListener('click', function(e) {
+    if (e.target.matches('.modal-backdrop')) {
+        closeDeleteModal();
+    }
+});
+
+// Close modal with Escape key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeDeleteModal();
+    }
+});
+</script>
+{{end}}

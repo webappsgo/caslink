@@ -1,0 +1,247 @@
+# Caslink Configuration Example
+# Copy this file to config.toml and modify as needed
+
+[server]
+host = "0.0.0.0"
+port = 64000
+data_dir = "/var/lib/caslink"
+base_url = "auto"
+behind_proxy = "auto"
+trusted_proxies = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+real_ip_header = "auto"
+read_timeout = "30s"
+write_timeout = "30s"
+idle_timeout = "120s"
+max_header_bytes = 1048576
+
+[database]
+# Option 1: Use connection URL (recommended)
+url = "sqlite:///var/lib/caslink/caslink.db"
+
+# Option 2: Individual connection parameters
+# type = "sqlite"
+# host = "localhost"
+# port = 0
+# name = "caslink"
+# username = "caslink"
+# password = ""
+# ssl_mode = "auto"
+
+max_open_conns = 25
+max_idle_conns = 5
+conn_max_lifetime = "300s"
+auto_migrate = true
+migration_timeout = "300s"
+slow_query_threshold = "1s"
+log_queries = false
+
+# SQLite specific options
+sqlite_wal = true
+sqlite_cache_size = "64MB"
+sqlite_busy_timeout = "30s"
+
+[application]
+brand_name = "Caslink URL Shortener"
+enable_registration = true
+enable_anonymous_urls = true
+require_login_for_urls = false
+default_theme = "dark"
+custom_css_url = ""
+favicon_url = ""
+
+[url]
+min_random_length = 6
+max_random_length = 8
+custom_code_min_length = 3
+custom_code_max_length = 50
+allowed_characters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+exclude_similar_chars = true
+reserved_words = ["api", "admin", "www", "app", "help", "about", "setup", "login", "register", "dashboard"]
+max_url_length = 2048
+default_expiration = "never"
+
+[analytics]
+enabled = true
+enable_geolocation = true
+geoip_database_path = "/var/lib/caslink/GeoLite2-City.mmdb"
+retention_days = 365
+anonymize_ips = true
+track_bots = false
+real_time_analytics = true
+export_formats = ["csv", "json", "pdf"]
+
+[qr]
+enabled = true
+default_size = 200
+max_size = 1000
+supported_formats = ["png", "svg", "pdf"]
+default_style = "square"
+allow_custom_colors = true
+allow_logos = true
+max_logo_size = 50
+
+[bulk]
+enabled = true
+max_import_size = 10000
+supported_formats = ["csv", "json"]
+timeout = "600s"
+
+[auth]
+session_secret = "auto"
+session_timeout = "24h"
+session_secure = "auto"
+password_min_length = 8
+password_require_special = false
+api_token_length = 32
+api_token_expiration = "never"
+
+# Two-factor authentication
+enable_totp = true
+totp_issuer_name = "Caslink"
+enable_webauthn = true
+webauthn_display_name = "Caslink URL Shortener"
+webauthn_id = "auto"
+
+[oauth]
+enabled = false
+provider = "generic"
+client_id = ""
+client_secret = ""
+redirect_url = "auto"
+authorize_url = ""
+token_url = ""
+userinfo_url = ""
+scopes = ["openid", "profile", "email"]
+
+[domains]
+enabled = true
+verification_method = "dns"
+ssl_auto_provision = false
+max_domains_per_user = "unlimited"
+
+[federation]
+enabled = true
+domain = "auto"
+private_key_path = "/var/lib/caslink/federation.key"
+public_key_path = "/var/lib/caslink/federation.pub"
+sync_interval = "1h"
+share_public_urls = true
+max_urls_per_sync = 1000
+sync_timeout = "30s"
+discovery_timeout = "10s"
+retry_attempts = 3
+retry_backoff = "30s"
+
+[webhooks]
+enabled = true
+timeout = "10s"
+retry_attempts = 3
+retry_backoff = "exponential"
+max_payload_size = 1048576
+
+[billing]
+enabled = false
+provider = "none"
+currency = "USD"
+grace_period_days = 7
+trial_period_days = 14
+require_payment = false
+enforce_limits = false
+usage_warning_threshold = 80
+auto_suspend = false
+
+# Stripe configuration (if using Stripe)
+# stripe_secret_key = ""
+# stripe_webhook_secret = ""
+
+# PayPal configuration (if using PayPal)
+# paypal_client_id = ""
+# paypal_client_secret = ""
+
+[rate_limit]
+enabled = true
+requests_per_minute = 60
+burst = 10
+cleanup_interval = "60s"
+
+[security]
+enable_https_redirect = "auto"
+hsts_max_age = 31536000
+csp_policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+allowed_origins = ["*"]
+malware_detection_enabled = false
+malware_api_key = ""
+
+[logging]
+level = "info"
+format = "json"
+file = ""
+max_size = "100MB"
+max_backups = 5
+max_age = 30
+compress = true
+
+[monitoring]
+enable_metrics = true
+metrics_path = "/metrics"
+enable_health_check = true
+health_check_path = "/health"
+
+[email]
+enabled = false
+provider = "smtp"
+from_address = "noreply@localhost"
+from_name = "Caslink"
+
+# SMTP configuration
+smtp_host = ""
+smtp_port = 587
+smtp_username = ""
+smtp_password = ""
+smtp_tls = true
+
+# SendGrid configuration
+# sendgrid_api_key = ""
+
+# AWS SES configuration
+# ses_access_key = ""
+# ses_secret_key = ""
+# ses_region = "us-east-1"
+
+[notifications]
+enabled = true
+default_channel = "email"
+batch_size = 100
+processing_interval = "5m"
+retry_attempts = 3
+retry_delay = "30s"
+max_retry_delay = "1h"
+retention_days = 30
+
+# SMS configuration (Twilio)
+enable_sms = false
+sms_provider = "twilio"
+twilio_account_sid = ""
+twilio_auth_token = ""
+twilio_from_number = ""
+
+# Push notification configuration
+enable_push = false
+push_provider = "fcm"
+fcm_server_key = ""
+
+# APNS configuration
+apns_cert_path = ""
+apns_key_path = ""
+apns_bundle_id = ""
+apns_production = false
+
+# Webhook notifications
+enable_webhook = false
+
+[cache]
+enabled = true
+ttl = "3600s"
+cleanup_interval = "600s"
+redis_enabled = false
+redis_url = ""

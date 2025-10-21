@@ -1,0 +1,187 @@
+{{template "base.html" .}}
+
+{{define "content"}}
+<div class="setup-container">
+    <div class="setup-card">
+        <div class="setup-header">
+            <div class="setup-logo">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/>
+                </svg>
+            </div>
+            <h1 class="setup-title">Welcome to {{.BrandName}}</h1>
+            <p class="setup-subtitle">Let's set up your administrator account</p>
+        </div>
+
+        <div class="setup-progress">
+            <div class="progress-step active">
+                <div class="step-number">1</div>
+                <div class="step-label">Admin Account</div>
+            </div>
+            <div class="progress-step">
+                <div class="step-number">2</div>
+                <div class="step-label">First URL</div>
+            </div>
+            <div class="progress-step">
+                <div class="step-number">3</div>
+                <div class="step-label">Customize</div>
+            </div>
+        </div>
+
+        <form id="admin-form" class="setup-form" action="/api/v1/setup/admin" method="POST">
+            <div class="form-group">
+                <label for="username" class="form-label">Administrator Username</label>
+                <input
+                    type="text"
+                    id="username"
+                    name="username"
+                    class="form-input"
+                    required
+                    minlength="3"
+                    maxlength="50"
+                    pattern="[a-zA-Z0-9_-]+"
+                    title="3-50 characters, letters, numbers, hyphens, and underscores only"
+                    autocomplete="username"
+                    autofocus
+                >
+                <div class="form-hint">This will be your login username</div>
+            </div>
+
+            <div class="form-group">
+                <label for="email" class="form-label">Email Address (Optional)</label>
+                <input
+                    type="email"
+                    id="email"
+                    name="email"
+                    class="form-input"
+                    autocomplete="email"
+                >
+                <div class="form-hint">Used for password recovery and notifications</div>
+            </div>
+
+            <div class="form-group">
+                <label for="password" class="form-label">Password</label>
+                <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    class="form-input"
+                    required
+                    minlength="8"
+                    autocomplete="new-password"
+                >
+                <div class="password-strength" id="password-strength"></div>
+                <div class="form-hint">Minimum 8 characters</div>
+            </div>
+
+            <div class="form-group">
+                <label for="password_confirm" class="form-label">Confirm Password</label>
+                <input
+                    type="password"
+                    id="password_confirm"
+                    name="password_confirm"
+                    class="form-input"
+                    required
+                    autocomplete="new-password"
+                >
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-block">
+                Create Admin Account & Continue
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/>
+                </svg>
+            </button>
+        </form>
+
+        <div class="setup-footer">
+            <p class="setup-info">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+                </svg>
+                This is a one-time setup process. You can change these settings later.
+            </p>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.getElementById('password').addEventListener('input', function() {
+    const strength = calculatePasswordStrength(this.value);
+    const strengthDiv = document.getElementById('password-strength');
+    strengthDiv.className = 'password-strength ' + strength.class;
+    strengthDiv.textContent = strength.text;
+});
+
+function calculatePasswordStrength(password) {
+    if (password.length < 8) return { class: 'weak', text: 'Too short' };
+
+    let score = 0;
+    if (password.length >= 12) score++;
+    if (/[a-z]/.test(password)) score++;
+    if (/[A-Z]/.test(password)) score++;
+    if (/[0-9]/.test(password)) score++;
+    if (/[^a-zA-Z0-9]/.test(password)) score++;
+
+    if (score < 3) return { class: 'weak', text: 'Weak - Consider adding uppercase, numbers, or symbols' };
+    if (score < 4) return { class: 'medium', text: 'Medium - Good password' };
+    return { class: 'strong', text: 'Strong - Excellent password' };
+}
+
+document.getElementById('admin-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const password = document.getElementById('password').value;
+    const confirm = document.getElementById('password_confirm').value;
+
+    if (password !== confirm) {
+        showNotification('Passwords do not match', 'error');
+        return;
+    }
+
+    const formData = new FormData(this);
+    const data = Object.fromEntries(formData);
+
+    try {
+        const response = await fetch('/api/v1/setup/admin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            window.location.href = '/setup/first-url';
+        } else {
+            showNotification(result.error || 'Failed to create admin account', 'error');
+        }
+    } catch (error) {
+        showNotification('Network error: ' + error.message, 'error');
+    }
+});
+
+function showNotification(message, type) {
+    const flash = document.createElement('div');
+    flash.className = `flash flash-${type}`;
+    flash.innerHTML = `
+        <div class="flash-content">
+            <span class="flash-message">${message}</span>
+        </div>
+        <button class="flash-close" onclick="this.parentElement.remove()">×</button>
+    `;
+
+    let container = document.querySelector('.flash-messages');
+    if (!container) {
+        container = document.createElement('div');
+        container.className = 'flash-messages';
+        document.querySelector('.main-content').prepend(container);
+    }
+
+    container.appendChild(flash);
+    setTimeout(() => flash.remove(), 5000);
+}
+</script>
+{{end}}

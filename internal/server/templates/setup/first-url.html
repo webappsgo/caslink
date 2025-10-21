@@ -1,0 +1,211 @@
+{{template "base.html" .}}
+
+{{define "content"}}
+<div class="setup-container">
+    <div class="setup-card">
+        <div class="setup-header">
+            <h1 class="setup-title">Create Your First Short URL</h1>
+            <p class="setup-subtitle">Let's test your new URL shortener!</p>
+        </div>
+
+        <div class="setup-progress">
+            <div class="progress-step completed">
+                <div class="step-number">✓</div>
+                <div class="step-label">Admin Account</div>
+            </div>
+            <div class="progress-step active">
+                <div class="step-number">2</div>
+                <div class="step-label">First URL</div>
+            </div>
+            <div class="progress-step">
+                <div class="step-number">3</div>
+                <div class="step-label">Customize</div>
+            </div>
+        </div>
+
+        <form id="first-url-form" class="setup-form">
+            <div class="form-group">
+                <label for="original_url" class="form-label">Long URL</label>
+                <input
+                    type="url"
+                    id="original_url"
+                    name="original_url"
+                    class="form-input"
+                    placeholder="https://example.com/very/long/url"
+                    required
+                    autofocus
+                >
+                <div class="form-hint">Enter any URL you'd like to shorten</div>
+            </div>
+
+            <div class="form-group">
+                <label for="custom_code" class="form-label">Custom Short Code (Optional)</label>
+                <div class="custom-code-group">
+                    <span class="base-url">{{.BaseURL}}/</span>
+                    <input
+                        type="text"
+                        id="custom_code"
+                        name="custom_code"
+                        class="custom-code-input"
+                        placeholder="my-first-link"
+                        pattern="[a-zA-Z0-9\-_]{3,50}"
+                    >
+                </div>
+                <div class="availability-check hidden" id="availability-check">
+                    <span class="availability-text"></span>
+                </div>
+                <div class="form-hint">Leave blank to auto-generate</div>
+            </div>
+
+            <div class="form-group">
+                <label for="title" class="form-label">Title (Optional)</label>
+                <input
+                    type="text"
+                    id="title"
+                    name="title"
+                    class="form-input"
+                    placeholder="My first short URL"
+                    maxlength="255"
+                >
+            </div>
+
+            <div class="button-group">
+                <button type="submit" class="btn btn-primary">
+                    Create Short URL
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/>
+                    </svg>
+                </button>
+            </div>
+        </form>
+
+        <!-- Result Display -->
+        <div class="result-container hidden" id="result-container">
+            <div class="success-icon">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                </svg>
+            </div>
+            <h3 class="result-title">Success! Your short URL is ready</h3>
+            <div class="result-url-container">
+                <div class="result-url" id="result-url"></div>
+                <button class="btn btn-secondary" id="copy-btn">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                    </svg>
+                    Copy URL
+                </button>
+            </div>
+            <button class="btn btn-primary" onclick="window.location.href='/setup/customize'">
+                Continue to Customization
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/>
+                </svg>
+            </button>
+        </div>
+
+        <div class="setup-footer">
+            <button class="btn btn-link" onclick="window.location.href='/setup/customize'">Skip this step</button>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script src="/static/js/setup.js"></script>
+<script>
+const customCodeInput = document.getElementById('custom_code');
+const availabilityCheck = document.getElementById('availability-check');
+let checkTimeout;
+
+customCodeInput.addEventListener('input', function() {
+    const code = this.value.trim();
+    clearTimeout(checkTimeout);
+    availabilityCheck.classList.add('hidden');
+
+    if (code.length >= 3) {
+        checkTimeout = setTimeout(() => checkAvailability(code), 500);
+    }
+});
+
+async function checkAvailability(code) {
+    try {
+        const response = await fetch(`/api/v1/urls/${encodeURIComponent(code)}`);
+        availabilityCheck.classList.remove('hidden');
+        const text = availabilityCheck.querySelector('.availability-text');
+
+        if (response.status === 404) {
+            text.textContent = '✓ Available';
+            text.className = 'availability-text available';
+        } else {
+            text.textContent = '✗ Already taken';
+            text.className = 'availability-text unavailable';
+        }
+    } catch (error) {
+        // Ignore
+    }
+}
+
+document.getElementById('first-url-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const formData = new FormData(this);
+    const data = {};
+    for (let [key, value] of formData.entries()) {
+        if (value.trim()) data[key] = value.trim();
+    }
+
+    try {
+        const response = await fetch('/api/v1/urls', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showResult(result.data);
+        } else {
+            showNotification(result.error || 'Failed to create URL', 'error');
+        }
+    } catch (error) {
+        showNotification('Network error: ' + error.message, 'error');
+    }
+});
+
+function showResult(data) {
+    const shortUrl = `${window.location.origin}/${data.id}`;
+    document.getElementById('result-url').textContent = shortUrl;
+    document.getElementById('result-container').classList.remove('hidden');
+    document.getElementById('first-url-form').style.display = 'none';
+
+    document.getElementById('copy-btn').onclick = () => {
+        navigator.clipboard.writeText(shortUrl).then(() => {
+            showNotification('URL copied to clipboard!', 'success');
+        });
+    };
+}
+
+function showNotification(message, type) {
+    const flash = document.createElement('div');
+    flash.className = `flash flash-${type}`;
+    flash.innerHTML = `
+        <div class="flash-content">
+            <span class="flash-message">${message}</span>
+        </div>
+        <button class="flash-close" onclick="this.parentElement.remove()">×</button>
+    `;
+
+    let container = document.querySelector('.flash-messages');
+    if (!container) {
+        container = document.createElement('div');
+        container.className = 'flash-messages';
+        document.querySelector('.main-content').prepend(container);
+    }
+
+    container.appendChild(flash);
+    setTimeout(() => flash.remove(), 3000);
+}
+</script>
+{{end}}

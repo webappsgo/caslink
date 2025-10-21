@@ -1,0 +1,345 @@
+{{template "base.html" .}}
+
+{{define "styles"}}
+<link rel="stylesheet" href="/static/css/analytics.css">
+{{end}}
+
+{{define "content"}}
+<div class="page-container">
+    <!-- Breadcrumb -->
+    <nav class="breadcrumb">
+        <a href="/dashboard" class="breadcrumb-link">Dashboard</a>
+        <span class="breadcrumb-separator">/</span>
+        <span class="breadcrumb-current">{{.URL.ID}}</span>
+    </nav>
+
+    <!-- URL Header -->
+    <div class="url-header">
+        <div class="url-header-content">
+            <div class="url-info">
+                <h1 class="url-title">{{if .URL.Title}}{{.URL.Title}}{{else}}Short URL Details{{end}}</h1>
+                <div class="url-meta">
+                    <span class="url-created">Created {{.URL.CreatedAt | formatDate}}</span>
+                    {{if .URL.ExpiresAt}}
+                    <span class="url-separator">•</span>
+                    <span class="url-expires">Expires {{.URL.ExpiresAt | formatDate}}</span>
+                    {{end}}
+                </div>
+            </div>
+            <div class="url-actions">
+                <button class="action-btn" onclick="copyShortURL()" data-tooltip="Copy short URL">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                    </svg>
+                    Copy
+                </button>
+                <a href="/url/{{.URL.ID}}/qr" class="action-btn" data-tooltip="Generate QR code">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M3 11h8V3H3v8zm2-6h4v4H5V5zM3 21h8v-8H3v8zm2-6h4v4H5v-4zM13 3v8h8V3h-8zm6 6h-4V5h4v4zM19 13h2v2h-2zM13 13h2v2h-2zM15 15h2v2h-2zM13 17h2v2h-2zM15 19h2v2h-2zM17 17h2v2h-2zM17 13h2v2h-2zM19 15h2v2h-2z"/>
+                    </svg>
+                    QR Code
+                </a>
+                <button class="action-btn" onclick="openEditModal()" data-tooltip="Edit URL">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                    </svg>
+                    Edit
+                </button>
+                <button class="action-btn danger" onclick="deleteURL()" data-tooltip="Delete URL">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                    </svg>
+                    Delete
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- URL Details Cards -->
+    <div class="url-details-grid">
+        <!-- Short URL Card -->
+        <div class="detail-card">
+            <div class="card-header">
+                <h3 class="card-title">Short URL</h3>
+            </div>
+            <div class="card-body">
+                <div class="url-display">
+                    <input type="text" class="url-input" id="short-url" value="{{.BaseURL}}/{{.URL.ID}}" readonly>
+                </div>
+                <div class="url-badges">
+                    {{if .URL.IsCustom}}
+                    <span class="badge badge-custom">Custom</span>
+                    {{end}}
+                    {{if .URL.Password}}
+                    <span class="badge badge-protected">Password Protected</span>
+                    {{end}}
+                    {{if not .URL.Active}}
+                    <span class="badge badge-inactive">Inactive</span>
+                    {{end}}
+                </div>
+            </div>
+        </div>
+
+        <!-- Original URL Card -->
+        <div class="detail-card">
+            <div class="card-header">
+                <h3 class="card-title">Original URL</h3>
+            </div>
+            <div class="card-body">
+                <div class="url-display">
+                    <input type="text" class="url-input" value="{{.URL.OriginalURL}}" readonly>
+                </div>
+                <a href="{{.URL.OriginalURL}}" target="_blank" rel="noopener" class="external-link">
+                    Visit Original URL
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>
+                    </svg>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Click Statistics -->
+    <div class="stats-overview">
+        <div class="stat-card">
+            <div class="stat-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                </svg>
+            </div>
+            <div class="stat-content">
+                <div class="stat-value">{{.URL.Clicks | formatNumber}}</div>
+                <div class="stat-label">Total Clicks</div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
+                </svg>
+            </div>
+            <div class="stat-content">
+                <div class="stat-value">{{.URL.UniqueClicks | formatNumber}}</div>
+                <div class="stat-label">Unique Visitors</div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"/>
+                </svg>
+            </div>
+            <div class="stat-content">
+                <div class="stat-value">{{.ClickRate | formatPercent}}</div>
+                <div class="stat-label">Click Rate</div>
+            </div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                </svg>
+            </div>
+            <div class="stat-content">
+                <div class="stat-value">{{.TopCountry}}</div>
+                <div class="stat-label">Top Country</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Clicks -->
+    <div class="recent-clicks-section">
+        <div class="section-header">
+            <h2 class="section-title">Recent Clicks</h2>
+            <a href="/url/{{.URL.ID}}/analytics" class="view-all-link">View Full Analytics →</a>
+        </div>
+
+        <div class="table-container">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Location</th>
+                        <th>Device</th>
+                        <th>Browser</th>
+                        <th>Referrer</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{if .RecentClicks}}
+                    {{range .RecentClicks}}
+                    <tr>
+                        <td>{{.ClickedAt | formatTimeAgo}}</td>
+                        <td>
+                            {{if .City}}{{.City}}, {{end}}{{.CountryName}}
+                        </td>
+                        <td>{{.ParsedDevice}}</td>
+                        <td>{{.ParsedBrowser}}</td>
+                        <td>
+                            {{if .ReferrerDomain}}
+                            <a href="{{.Referrer}}" target="_blank" rel="noopener" class="referrer-link">
+                                {{.ReferrerDomain}}
+                            </a>
+                            {{else}}
+                            <span class="text-muted">Direct</span>
+                            {{end}}
+                        </td>
+                    </tr>
+                    {{end}}
+                    {{else}}
+                    <tr>
+                        <td colspan="5" class="empty-state">No clicks yet</td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal" id="edit-modal" style="display: none;">
+    <div class="modal-overlay" onclick="closeEditModal()"></div>
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 class="modal-title">Edit URL</h3>
+            <button class="modal-close" onclick="closeEditModal()">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                </svg>
+            </button>
+        </div>
+        <form id="edit-form" class="modal-body">
+            <div class="form-group">
+                <label for="edit-title" class="form-label">Title</label>
+                <input type="text" id="edit-title" name="title" class="form-input" value="{{.URL.Title}}" maxlength="255">
+            </div>
+
+            <div class="form-group">
+                <label for="edit-description" class="form-label">Description</label>
+                <textarea id="edit-description" name="description" class="form-textarea" rows="3" maxlength="500">{{.URL.Description}}</textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="edit-expires" class="form-label">Expiration</label>
+                <input type="datetime-local" id="edit-expires" name="expires_at" class="form-input" value="{{.URL.ExpiresAt | formatDatetimeLocal}}">
+            </div>
+
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="edit-active" name="active" {{if .URL.Active}}checked{{end}}>
+                    <span>Active</span>
+                </label>
+            </div>
+        </form>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeEditModal()">Cancel</button>
+            <button type="submit" form="edit-form" class="btn btn-primary">Save Changes</button>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+const urlId = '{{.URL.ID}}';
+const baseURL = '{{.BaseURL}}';
+
+function copyShortURL() {
+    const shortURL = `${baseURL}/${urlId}`;
+    navigator.clipboard.writeText(shortURL).then(() => {
+        showNotification('URL copied to clipboard!', 'success');
+    }).catch(() => {
+        showNotification('Failed to copy URL', 'error');
+    });
+}
+
+function openEditModal() {
+    document.getElementById('edit-modal').style.display = 'flex';
+}
+
+function closeEditModal() {
+    document.getElementById('edit-modal').style.display = 'none';
+}
+
+document.getElementById('edit-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const formData = new FormData(this);
+    const data = {
+        title: formData.get('title'),
+        description: formData.get('description'),
+        expires_at: formData.get('expires_at'),
+        active: formData.get('active') === 'on'
+    };
+
+    try {
+        const response = await fetch(`/api/v1/urls/${urlId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showNotification('URL updated successfully', 'success');
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            showNotification(result.error || 'Failed to update URL', 'error');
+        }
+    } catch (error) {
+        showNotification('Network error: ' + error.message, 'error');
+    }
+});
+
+async function deleteURL() {
+    if (!confirm('Are you sure you want to delete this URL? This action cannot be undone.')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/v1/urls/${urlId}`, {
+            method: 'DELETE'
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showNotification('URL deleted successfully', 'success');
+            setTimeout(() => window.location.href = '/dashboard', 1000);
+        } else {
+            showNotification(result.error || 'Failed to delete URL', 'error');
+        }
+    } catch (error) {
+        showNotification('Network error: ' + error.message, 'error');
+    }
+}
+
+function showNotification(message, type) {
+    const flash = document.createElement('div');
+    flash.className = `flash flash-${type}`;
+    flash.innerHTML = `
+        <div class="flash-content">
+            <span class="flash-message">${message}</span>
+        </div>
+        <button class="flash-close" onclick="this.parentElement.remove()">×</button>
+    `;
+
+    let container = document.querySelector('.flash-messages');
+    if (!container) {
+        container = document.createElement('div');
+        container.className = 'flash-messages';
+        document.querySelector('.main-content').prepend(container);
+    }
+
+    container.appendChild(flash);
+    setTimeout(() => flash.remove(), 5000);
+}
+</script>
+{{end}}

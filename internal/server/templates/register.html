@@ -1,0 +1,132 @@
+{{template "base.html" .}}
+
+{{define "content"}}
+<div class="auth-container">
+    <div class="auth-card">
+        <div class="auth-header">
+            <h1 class="auth-title">Create Account</h1>
+            <p class="auth-subtitle">Join {{.BrandName}} to start shortening URLs</p>
+        </div>
+
+        <form id="register-form" class="auth-form" action="/api/v1/auth/register" method="POST">
+            <div class="form-group">
+                <label for="username" class="form-label">Username</label>
+                <input
+                    type="text"
+                    id="username"
+                    name="username"
+                    class="form-input"
+                    required
+                    minlength="3"
+                    maxlength="50"
+                    pattern="[a-zA-Z0-9_-]+"
+                    title="3-50 characters, letters, numbers, hyphens, and underscores only"
+                    autocomplete="username"
+                >
+            </div>
+
+            <div class="form-group">
+                <label for="email" class="form-label">Email (optional)</label>
+                <input
+                    type="email"
+                    id="email"
+                    name="email"
+                    class="form-input"
+                    autocomplete="email"
+                >
+            </div>
+
+            <div class="form-group">
+                <label for="password" class="form-label">Password</label>
+                <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    class="form-input"
+                    required
+                    minlength="8"
+                    autocomplete="new-password"
+                >
+                <div class="password-strength" id="password-strength"></div>
+            </div>
+
+            <div class="form-group">
+                <label for="password_confirm" class="form-label">Confirm Password</label>
+                <input
+                    type="password"
+                    id="password_confirm"
+                    name="password_confirm"
+                    class="form-input"
+                    required
+                    autocomplete="new-password"
+                >
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-block">
+                Create Account
+            </button>
+        </form>
+
+        <div class="auth-footer">
+            <p>Already have an account? <a href="/login" class="auth-link">Login</a></p>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script>
+document.getElementById('password').addEventListener('input', function() {
+    const strength = calculatePasswordStrength(this.value);
+    const strengthDiv = document.getElementById('password-strength');
+    strengthDiv.className = 'password-strength ' + strength.class;
+    strengthDiv.textContent = strength.text;
+});
+
+function calculatePasswordStrength(password) {
+    if (password.length < 8) return { class: 'weak', text: 'Too short' };
+
+    let score = 0;
+    if (password.length >= 12) score++;
+    if (/[a-z]/.test(password)) score++;
+    if (/[A-Z]/.test(password)) score++;
+    if (/[0-9]/.test(password)) score++;
+    if (/[^a-zA-Z0-9]/.test(password)) score++;
+
+    if (score < 3) return { class: 'weak', text: 'Weak password' };
+    if (score < 4) return { class: 'medium', text: 'Medium password' };
+    return { class: 'strong', text: 'Strong password' };
+}
+
+document.getElementById('register-form').addEventListener('submit', function(e) {
+    const password = document.getElementById('password').value;
+    const confirm = document.getElementById('password_confirm').value;
+
+    if (password !== confirm) {
+        e.preventDefault();
+        showNotification('Passwords do not match', 'error');
+    }
+});
+
+function showNotification(message, type) {
+    const flash = document.createElement('div');
+    flash.className = `flash flash-${type}`;
+    flash.innerHTML = `
+        <div class="flash-content">
+            <span class="flash-message">${message}</span>
+        </div>
+        <button class="flash-close" onclick="this.parentElement.remove()">×</button>
+    `;
+
+    let container = document.querySelector('.flash-messages');
+    if (!container) {
+        container = document.createElement('div');
+        container.className = 'flash-messages';
+        document.querySelector('.main-content').prepend(container);
+    }
+
+    container.appendChild(flash);
+    setTimeout(() => flash.remove(), 5000);
+}
+</script>
+{{end}}

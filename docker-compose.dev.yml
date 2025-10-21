@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  caslink:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - "64000:64000"
+    volumes:
+      - caslink_data:/var/lib/caslink
+      - ./config:/etc/caslink
+    environment:
+      - CASLINK_DATABASE_TYPE=sqlite
+      - CASLINK_DATABASE_PATH=/var/lib/caslink/caslink.db
+      - CASLINK_SERVER_HOST=0.0.0.0
+      - CASLINK_SERVER_PORT=64000
+      - CASLINK_LOG_LEVEL=debug
+      - CASLINK_LOG_FORMAT=json
+      - CASLINK_ENABLE_REGISTRATION=true
+      - CASLINK_ENABLE_ANONYMOUS_URLS=true
+    healthcheck:
+      test: ["CMD", "./caslink", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  caslink_data:
+    driver: local

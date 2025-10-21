@@ -1,0 +1,43 @@
+# Development Dockerfile for Caslink
+FROM golang:1.22-alpine AS development
+
+# Install development dependencies
+RUN apk add --no-cache \
+    git \
+    gcc \
+    musl-dev \
+    sqlite-dev \
+    postgresql-client \
+    mysql-client \
+    curl \
+    bash \
+    make \
+    nodejs \
+    npm
+
+# Set working directory
+WORKDIR /app
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Create data directory
+RUN mkdir -p /var/lib/caslink
+
+# Expose port
+EXPOSE 64000
+
+# Set environment variables for development
+ENV CGO_ENABLED=1
+ENV GOOS=linux
+ENV CASLINK_SERVER_HOST=0.0.0.0
+ENV CASLINK_DATABASE_URL=sqlite:///var/lib/caslink/caslink.db
+
+# Default command for development
+CMD ["go", "run", "cmd/main.go", "webui"]

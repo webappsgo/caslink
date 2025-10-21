@@ -1,0 +1,21 @@
+{{template "base.html" .}}
+
+{{define "content"}}
+<div class="page-container">
+    <div class="page-header">
+        <h1 class="page-title">Your Subscription</h1>
+    </div>
+
+    {{if .Subscription}}
+    <div class="subscription-card">
+        <h2>{{.Subscription.PlanName}}</h2>
+        <p>Status: {{.Subscription.Status}}</p>
+        <p>Next Payment: {{.Subscription.NextPayment}}</p>
+        <button class="btn btn-danger" onclick="cancelSubscription()">Cancel</button>
+    </div>
+    {{else}}
+    <p>No active subscription</p>
+    <a href="/billing/plans" class="btn btn-primary">View Plans</a>
+    {{end}}
+</div>
+{{end}}

@@ -1,0 +1,21 @@
+{{template "base.html" .}}
+
+{{define "content"}}
+<div class="page-container">
+    <div class="page-header">
+        <h1 class="page-title">Usage & Limits</h1>
+    </div>
+
+    <div class="usage-grid">
+        {{range .Usage}}
+        <div class="usage-card">
+            <h3>{{.Name}}</h3>
+            <div class="usage-bar">
+                <div class="usage-fill" style="width: {{.Percentage}}%;"></div>
+            </div>
+            <p>{{.Current}} / {{.Limit}}</p>
+        </div>
+        {{end}}
+    </div>
+</div>
+{{end}}

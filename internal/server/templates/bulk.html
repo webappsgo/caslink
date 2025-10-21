@@ -1,0 +1,268 @@
+{{template "base.html" .}}
+
+{{define "content"}}
+<div class="page-container">
+    <nav class="breadcrumb">
+        <a href="/dashboard" class="breadcrumb-link">Dashboard</a>
+        <span class="breadcrumb-separator">/</span>
+        <span class="breadcrumb-current">Bulk Operations</span>
+    </nav>
+
+    <div class="page-header">
+        <div class="header-content">
+            <h1 class="page-title">Bulk Import/Export</h1>
+            <p class="page-subtitle">Manage multiple URLs at once using CSV or JSON files</p>
+        </div>
+    </div>
+
+    <div class="bulk-operations-grid">
+        <!-- Import Section -->
+        <div class="operation-card">
+            <div class="card-header">
+                <svg class="card-icon" width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/>
+                </svg>
+                <h2 class="card-title">Import URLs</h2>
+            </div>
+            <div class="card-body">
+                <p class="card-description">Upload a CSV or JSON file to create multiple short URLs at once.</p>
+
+                <div class="file-upload-area" id="import-upload-area">
+                    <input type="file" id="import-file" accept=".csv,.json" hidden>
+                    <label for="import-file" class="file-upload-label">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                        </svg>
+                        <span class="upload-text">Click to upload or drag and drop</span>
+                        <span class="upload-hint">CSV or JSON (max 10MB, 10,000 URLs)</span>
+                    </label>
+                </div>
+
+                <div class="upload-options">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="import-skip-duplicates" checked>
+                        <span>Skip duplicate URLs</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="import-auto-generate">
+                        <span>Auto-generate codes for missing entries</span>
+                    </label>
+                </div>
+
+                <button class="btn btn-primary btn-block" id="import-btn" disabled>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/>
+                    </svg>
+                    Start Import
+                </button>
+
+                <div class="format-example">
+                    <details>
+                        <summary>View CSV Format Example</summary>
+                        <pre class="code-block">original_url,custom_code,title,description,expires_at
+https://example.com/page1,page1,Example Page,Page description,2024-12-31
+https://example.com/page2,,Another Page,Description,</pre>
+                    </details>
+                </div>
+            </div>
+        </div>
+
+        <!-- Export Section -->
+        <div class="operation-card">
+            <div class="card-header">
+                <svg class="card-icon" width="32" height="32" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67l2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2z"/>
+                </svg>
+                <h2 class="card-title">Export URLs</h2>
+            </div>
+            <div class="card-body">
+                <p class="card-description">Download all your URLs with analytics data in CSV or JSON format.</p>
+
+                <div class="export-options">
+                    <div class="form-group">
+                        <label class="form-label">Export Format</label>
+                        <div class="radio-group">
+                            <label class="radio-label">
+                                <input type="radio" name="export-format" value="csv" checked>
+                                <span>CSV</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="export-format" value="json">
+                                <span>JSON</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Include Data</label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="export-analytics" checked>
+                            <span>Analytics data</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="export-metadata" checked>
+                            <span>Metadata (title, description)</span>
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Filter URLs</label>
+                        <select class="form-select" id="export-filter">
+                            <option value="all">All URLs</option>
+                            <option value="active">Active only</option>
+                            <option value="expired">Expired only</option>
+                            <option value="custom">Custom codes only</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary btn-block" onclick="exportURLs()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67l2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2z"/>
+                    </svg>
+                    Export Data
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Progress Section -->
+    <div class="progress-section" id="progress-section" style="display: none;">
+        <div class="progress-card">
+            <h3 class="progress-title">Processing...</h3>
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <p class="progress-text" id="progress-text">0 of 0 processed</p>
+        </div>
+    </div>
+
+    <!-- Results Section -->
+    <div class="results-section" id="results-section" style="display: none;">
+        <div class="results-card">
+            <h3 class="results-title">Import Results</h3>
+            <div class="results-summary">
+                <div class="result-stat">
+                    <span class="result-label">Successful:</span>
+                    <span class="result-value success" id="result-success">0</span>
+                </div>
+                <div class="result-stat">
+                    <span class="result-label">Failed:</span>
+                    <span class="result-value error" id="result-failed">0</span>
+                </div>
+                <div class="result-stat">
+                    <span class="result-label">Skipped:</span>
+                    <span class="result-value warning" id="result-skipped">0</span>
+                </div>
+            </div>
+            <div class="results-details" id="results-details"></div>
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script src="/static/js/bulk.js"></script>
+<script>
+let selectedFile = null;
+
+document.getElementById('import-file').addEventListener('change', function(e) {
+    selectedFile = e.target.files[0];
+    if (selectedFile) {
+        document.getElementById('import-btn').disabled = false;
+        const uploadText = document.querySelector('.upload-text');
+        uploadText.textContent = `Selected: ${selectedFile.name}`;
+    }
+});
+
+document.getElementById('import-btn').addEventListener('click', async function() {
+    if (!selectedFile) return;
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('skip_duplicates', document.getElementById('import-skip-duplicates').checked);
+    formData.append('auto_generate', document.getElementById('import-auto-generate').checked);
+
+    document.getElementById('progress-section').style.display = 'block';
+    document.getElementById('results-section').style.display = 'none';
+
+    try {
+        const response = await fetch('/api/v1/bulk/import', {
+            method: 'POST',
+            body: formData
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showResults(result.data);
+        } else {
+            showNotification(result.error || 'Import failed', 'error');
+        }
+    } catch (error) {
+        showNotification('Network error: ' + error.message, 'error');
+    } finally {
+        document.getElementById('progress-section').style.display = 'none';
+    }
+});
+
+async function exportURLs() {
+    const format = document.querySelector('input[name="export-format"]:checked').value;
+    const filter = document.getElementById('export-filter').value;
+    const includeAnalytics = document.getElementById('export-analytics').checked;
+    const includeMetadata = document.getElementById('export-metadata').checked;
+
+    try {
+        const response = await fetch(`/api/v1/bulk/export?format=${format}&filter=${filter}&analytics=${includeAnalytics}&metadata=${includeMetadata}`);
+        const blob = await response.blob();
+
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `urls-export-${new Date().toISOString().split('T')[0]}.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+
+        showNotification('Export completed successfully', 'success');
+    } catch (error) {
+        showNotification('Export failed: ' + error.message, 'error');
+    }
+}
+
+function showResults(data) {
+    document.getElementById('results-section').style.display = 'block';
+    document.getElementById('result-success').textContent = data.successful;
+    document.getElementById('result-failed').textContent = data.failed;
+    document.getElementById('result-skipped').textContent = data.skipped;
+
+    const detailsDiv = document.getElementById('results-details');
+    if (data.errors && data.errors.length > 0) {
+        detailsDiv.innerHTML = '<h4>Errors:</h4><ul class="error-list">' +
+            data.errors.map(e => `<li>${e}</li>`).join('') + '</ul>';
+    }
+}
+
+function showNotification(message, type) {
+    const flash = document.createElement('div');
+    flash.className = `flash flash-${type}`;
+    flash.innerHTML = `
+        <div class="flash-content">
+            <span class="flash-message">${message}</span>
+        </div>
+        <button class="flash-close" onclick="this.parentElement.remove()">×</button>
+    `;
+
+    let container = document.querySelector('.flash-messages');
+    if (!container) {
+        container = document.createElement('div');
+        container.className = 'flash-messages';
+        document.querySelector('.main-content').prepend(container);
+    }
+
+    container.appendChild(flash);
+    setTimeout(() => flash.remove(), 5000);
+}
+</script>
+{{end}}
