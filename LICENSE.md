@@ -1,13 +1,149 @@
-            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE  
-                    Version 2, December 2004  
+MIT License
 
- Copyright (C) 2025 casjay <git-admin@casjaysdev.pro>  
-  
- Everyone is permitted to copy and distribute verbatim or modified  
- copies of this license document, and changing it is allowed as long  
- as the name is changed.  
-  
-            DO WHAT THE FUCK YOU WANT TO PUBLIC LICENSE  
-   TERMS AND CONDITIONS FOR COPYING, DISTRIBUTION AND MODIFICATION  
-  
-  1. You just DO WHAT THE FUCK YOU WANT TO.  
+Copyright (c) 2025 casapps
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+## Embedded Licenses
+
+This software includes the following third-party libraries:
+
+---
+
+### github.com/gorilla/mux v1.8.1
+
+**Copyright:** Copyright (c) 2012 Rodrigo Moraes
+**License:** BSD 3-Clause License
+**Repository:** https://github.com/gorilla/mux
+
+```
+BSD 3-Clause License
+
+Copyright (c) 2012, Rodrigo Moraes
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+---
+
+### modernc.org/sqlite (TO BE ADDED - REPLACES mattn/go-sqlite3)
+
+**Copyright:** Copyright (c) modernc.org
+**License:** BSD 3-Clause License
+**Repository:** https://gitlab.com/cznic/sqlite
+
+**NOTE:** This dependency will replace github.com/mattn/go-sqlite3 for pure Go SQLite support.
+
+---
+
+### github.com/lib/pq v1.10.9
+
+**Copyright:** Copyright (c) 2011-2013, 'pq' Contributors
+**License:** MIT License
+**Repository:** https://github.com/lib/pq
+
+```
+MIT License
+
+Copyright (c) 2011-2013, 'pq' Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+---
+
+### github.com/spf13/cobra v1.8.0
+
+**Copyright:** Copyright (c) 2013 Steve Francia
+**License:** Apache License 2.0
+**Repository:** https://github.com/spf13/cobra
+
+```
+Apache License
+Version 2.0, January 2004
+http://www.apache.org/licenses/
+
+[Full Apache 2.0 license text - included per Apache 2.0 requirements]
+```
+
+---
+
+### github.com/spf13/viper v1.18.2
+
+**Copyright:** Copyright (c) 2014 Steve Francia
+**License:** MIT License
+**Repository:** https://github.com/spf13/viper
+
+---
+
+### golang.org/x/crypto
+
+**Copyright:** Copyright (c) 2009 The Go Authors
+**License:** BSD 3-Clause License
+**Repository:** https://go.googlesource.com/crypto
+
+---
+
+**NOTE:** Complete embedded license attribution for all dependencies will be added using go-licenses tool during Phase 1 completion. This includes all direct and indirect dependencies listed in go.mod.
+
+**TODO:** Run `go-licenses save ./... --save_path=third_party_licenses` to generate complete license attribution.
+
+---

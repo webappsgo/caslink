@@ -1,0 +1,25 @@
+name: caslink-test
+
+services:
+  caslink:
+    image: ghcr.io/casapps/caslink:latest
+    container_name: caslink-test
+    restart: "no"
+    environment:
+      - MODE=development
+      - DEBUG=true
+      - TZ=America/New_York
+    ports:
+      - "64581:80"
+    volumes:
+      # TEMP DIR WORKFLOW: ./rootfs/ resolves to $TEMP_DIR/rootfs/
+      # NEVER run from project directory - always use temp dir workflow
+      - ./rootfs/config:/config
+      - ./rootfs/data:/data
+    networks:
+      - caslink-test
+
+networks:
+  caslink-test:
+    name: caslink-test
+    external: false

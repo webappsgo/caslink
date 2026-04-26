@@ -1,0 +1,29 @@
+name: caslink-dev
+
+services:
+  caslink:
+    image: ghcr.io/casapps/caslink:latest
+    container_name: caslink-dev
+    restart: unless-stopped
+    environment:
+      # Development: relaxed security, verbose logging, no caching
+      # Does NOT enable debug endpoints - uncomment DEBUG=true for that
+      - MODE=development
+      - TZ=America/New_York
+      # DEBUG: Uncomment to enable pprof, expvar, detailed request logging
+      # - DEBUG=true
+    ports:
+      # Development: accessible from all interfaces
+      - "64580:80"
+    volumes:
+      # TEMP DIR WORKFLOW: ./rootfs/ resolves to $TEMP_DIR/rootfs/
+      # NEVER run from project directory - always use temp dir workflow
+      - ./rootfs/config:/config
+      - ./rootfs/data:/data
+    networks:
+      - caslink-dev
+
+networks:
+  caslink-dev:
+    name: caslink-dev
+    external: false

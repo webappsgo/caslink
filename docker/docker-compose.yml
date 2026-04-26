@@ -1,0 +1,34 @@
+name: caslink
+
+services:
+  caslink:
+    image: ghcr.io/casapps/caslink:latest
+    container_name: caslink
+    restart: unless-stopped
+    environment:
+      # Production: strict security, minimal logging, caching enabled
+      # NO debug options - debug must be explicitly set via CLI if needed
+      - MODE=production
+      - TZ=America/New_York
+      # DOMAIN (optional - auto-detects from reverse proxy headers)
+      # - DOMAIN=myapp.com,www.myapp.com
+      # SMTP (optional - autodetects if not set)
+      # - SMTP_HOST=smtp.example.com
+      # - SMTP_PORT=587
+      # - SMTP_USERNAME=user
+      # - SMTP_PASSWORD=pass
+    ports:
+      # Production: bound to Docker bridge only (reverse proxy handles external)
+      - "172.17.0.1:64580:80"
+    volumes:
+      # TEMP DIR WORKFLOW: ./rootfs/ resolves to $TEMP_DIR/rootfs/
+      # NEVER run from project directory - always use temp dir workflow
+      - ./rootfs/config:/config:z
+      - ./rootfs/data:/data:z
+    networks:
+      - caslink
+
+networks:
+  caslink:
+    name: caslink
+    external: false

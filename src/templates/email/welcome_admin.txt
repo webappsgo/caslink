@@ -1,0 +1,28 @@
+Subject: Welcome to {app_name} - Admin Setup Complete
+---
+ADMIN SETUP COMPLETE
+
+This email was sent to: {recipient_email}
+From: {app_name} ({fqdn})
+
+Congratulations! Your {app_name} instance is now configured.
+
+Admin Panel: {admin_url}
+Username: {admin_username}
+
+────────────────────────────────────────────────────────────────────────
+IMPORTANT NEXT STEPS
+
+1. Log in to the admin panel and review your settings
+2. Configure SMTP for email notifications
+3. Enable SSL/TLS for secure connections
+4. Set up regular backups
+5. Enable two-factor authentication
+
+Keep your admin credentials secure. If you lose access, use:
+  caslink --maintenance setup
+────────────────────────────────────────────────────────────────────────
+
+--
+{app_name}
+{app_url}

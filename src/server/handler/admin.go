@@ -1,0 +1,357 @@
+package handler
+
+import (
+	"html/template"
+	"net/http"
+	"time"
+
+	"github.com/casjaysdevdocker/caslink/src/server/service"
+)
+
+// AdminHandler handles admin panel endpoints
+type AdminHandler struct {
+	authService *service.AuthService
+	version     string
+	mode        string
+}
+
+// NewAdminHandler creates a new admin handler
+func NewAdminHandler(authService *service.AuthService, version, mode string) *AdminHandler {
+	return &AdminHandler{
+		authService: authService,
+		version:     version,
+		mode:        mode,
+	}
+}
+
+// LoginPage handles GET /admin - shows login form if not authenticated
+func (h *AdminHandler) LoginPage(w http.ResponseWriter, r *http.Request) {
+	// Check if setup is needed
+	needsSetup, err := h.authService.NeedsSetup(r.Context())
+	if err == nil && needsSetup {
+		// Redirect to setup wizard
+		http.Redirect(w, r, "/setup", http.StatusFound)
+		return
+	}
+
+	// Check if already authenticated
+	if admin := h.getAdminFromSession(r); admin != nil {
+		http.Redirect(w, r, "/admin/dashboard", http.StatusFound)
+		return
+	}
+
+	h.renderLogin(w, "", "")
+}
+
+// Login handles POST /admin/login - processes login form
+func (h *AdminHandler) Login(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		h.renderLogin(w, "", "Invalid form data")
+		return
+	}
+
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+	rememberMe := r.FormValue("remember_me") == "on"
+
+	// Authenticate
+	admin, err := h.authService.AuthenticateAdmin(r.Context(), username, password)
+	if err != nil {
+		h.renderLogin(w, username, "Invalid username or password")
+		return
+	}
+
+	// Create session
+	sessionID, err := h.authService.CreateSession(r.Context(), admin.ID, rememberMe)
+	if err != nil {
+		h.renderLogin(w, username, "Failed to create session")
+		return
+	}
+
+	// Set session cookie
+	expiration := 30 * 24 * time.Hour
+	if rememberMe {
+		expiration = 90 * 24 * time.Hour
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "admin_session",
+		Value:    sessionID,
+		Path:     "/admin",
+		Expires:  time.Now().Add(expiration),
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteStrictMode,
+	})
+
+	// Redirect to dashboard
+	http.Redirect(w, r, "/admin/dashboard", http.StatusFound)
+}
+
+// Logout handles GET /admin/logout
+func (h *AdminHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	// Get session ID from cookie
+	cookie, err := r.Cookie("admin_session")
+	if err == nil {
+		// Delete session from database
+		h.authService.DeleteSession(r.Context(), cookie.Value)
+	}
+
+	// Delete cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "admin_session",
+		Value:    "",
+		Path:     "/admin",
+		Expires:  time.Unix(0, 0),
+		MaxAge:   -1,
+		HttpOnly: true,
+	})
+
+	// Redirect to login
+	http.Redirect(w, r, "/admin", http.StatusFound)
+}
+
+// Dashboard handles GET /admin/dashboard
+func (h *AdminHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
+	admin := h.getAdminFromSession(r)
+	if admin == nil {
+		http.Redirect(w, r, "/admin", http.StatusFound)
+		return
+	}
+
+	h.renderDashboard(w, admin)
+}
+
+// getAdminFromSession retrieves the authenticated admin from session
+func (h *AdminHandler) getAdminFromSession(r *http.Request) *service.Admin {
+	cookie, err := r.Cookie("admin_session")
+	if err != nil {
+		return nil
+	}
+
+	admin, err := h.authService.ValidateSession(r.Context(), cookie.Value)
+	if err != nil {
+		return nil
+	}
+
+	return admin
+}
+
+// renderLogin renders the login page
+func (h *AdminHandler) renderLogin(w http.ResponseWriter, username, errorMsg string) {
+	tmpl := `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Login - Caslink</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #0d1117;
+            color: #c9d1d9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        .login-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 40px;
+            width: 100%%;
+            max-width: 400px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        }
+        h1 { color: #58a6ff; margin-bottom: 8px; text-align: center; }
+        .subtitle { color: #8b949e; text-align: center; margin-bottom: 30px; font-size: 14px; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 6px; color: #c9d1d9; font-size: 14px; }
+        input[type="text"], input[type="password"] {
+            width: 100%%;
+            padding: 10px;
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            color: #c9d1d9;
+            font-size: 14px;
+        }
+        input:focus { outline: none; border-color: #58a6ff; }
+        .checkbox-group { display: flex; align-items: center; margin-bottom: 20px; }
+        .checkbox-group input { margin-right: 8px; }
+        .checkbox-group label { margin-bottom: 0; }
+        button {
+            width: 100%%;
+            padding: 10px;
+            background: #238636;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        button:hover { background: #2ea043; }
+        .error {
+            background: #da3633;
+            color: white;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .version { text-align: center; margin-top: 30px; color: #6e7681; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <h1>Caslink</h1>
+        <div class="subtitle">Admin Panel</div>
+        {{if .Error}}
+        <div class="error">{{.Error}}</div>
+        {{end}}
+        <form method="POST" action="/admin/login">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" value="{{.Username}}" required autofocus>
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="remember_me" name="remember_me">
+                <label for="remember_me">Remember me (90 days)</label>
+            </div>
+            <button type="submit">Login</button>
+        </form>
+        <div class="version">Version {{.Version}}</div>
+    </div>
+</body>
+</html>`
+
+	t := template.Must(template.New("login").Parse(tmpl))
+	data := map[string]interface{}{
+		"Username": username,
+		"Error":    errorMsg,
+		"Version":  h.version,
+	}
+	t.Execute(w, data)
+}
+
+// renderDashboard renders the admin dashboard
+func (h *AdminHandler) renderDashboard(w http.ResponseWriter, admin *service.Admin) {
+	tmpl := `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Caslink Admin</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #0d1117;
+            color: #c9d1d9;
+        }
+        .header {
+            background: #161b22;
+            border-bottom: 1px solid #30363d;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .logo { color: #58a6ff; font-size: 20px; font-weight: 600; }
+        .user-info { display: flex; align-items: center; gap: 16px; }
+        .username { color: #8b949e; }
+        .logout { color: #f85149; text-decoration: none; }
+        .logout:hover { text-decoration: underline; }
+        .container { padding: 24px; max-width: 1400px; margin: 0 auto; }
+        h1 { margin-bottom: 24px; }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 20px;
+        }
+        .stat-label { color: #8b949e; font-size: 14px; margin-bottom: 8px; }
+        .stat-value { font-size: 32px; font-weight: 600; color: #58a6ff; }
+        .info-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+        .info-card h2 { margin-bottom: 16px; color: #58a6ff; font-size: 18px; }
+        .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #21262d; }
+        .info-row:last-child { border-bottom: none; }
+        .info-label { color: #8b949e; }
+        .info-value { color: #c9d1d9; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">Caslink Admin</div>
+        <div class="user-info">
+            <span class="username">{{.Admin.Username}}</span>
+            <a href="/admin/logout" class="logout">Logout</a>
+        </div>
+    </div>
+    <div class="container">
+        <h1>Dashboard</h1>
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-label">Status</div>
+                <div class="stat-value" style="color: #3fb950;">● Online</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Mode</div>
+                <div class="stat-value">{{.Mode}}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Version</div>
+                <div class="stat-value" style="font-size: 24px;">{{.Version}}</div>
+            </div>
+        </div>
+        <div class="info-card">
+            <h2>Server Information</h2>
+            <div class="info-row">
+                <span class="info-label">Server Status</span>
+                <span class="info-value">Running</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Admin Logged In</span>
+                <span class="info-value">{{.Admin.Username}}</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Mode</span>
+                <span class="info-value">{{.Mode}}</span>
+            </div>
+        </div>
+        <div class="info-card">
+            <h2>Quick Actions</h2>
+            <p style="color: #8b949e; padding: 16px;">Admin panel pages coming in next phases...</p>
+            <p style="color: #8b949e; padding: 0 16px;">This is a skeleton admin panel created during Phase 7.</p>
+        </div>
+    </div>
+</body>
+</html>`
+
+	t := template.Must(template.New("dashboard").Parse(tmpl))
+	data := map[string]interface{}{
+		"Admin":   admin,
+		"Version": h.version,
+		"Mode":    h.mode,
+	}
+	t.Execute(w, data)
+}

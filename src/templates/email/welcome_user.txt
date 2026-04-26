@@ -1,0 +1,32 @@
+Subject: Welcome to {app_name}
+---
+WELCOME TO {APP_NAME}
+
+This email was sent to: {recipient_email}
+From: {app_name} ({fqdn})
+
+Hello {recipient_username},
+
+Welcome to {app_name}! Your account has been created successfully.
+
+To get started, log in at:
+
+{login_url}
+
+You can manage your profile and settings at:
+
+{profile_url}
+
+────────────────────────────────────────────────────────────────────────
+GETTING STARTED
+
+- Complete your profile
+- Enable two-factor authentication for added security
+- Explore the features available to you
+
+If you have any questions, contact us at {admin_email}.
+────────────────────────────────────────────────────────────────────────
+
+--
+{app_name}
+{app_url}

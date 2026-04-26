@@ -101,3 +101,10 @@ $RECYCLE.BIN/
 **/*.refactor.sh
 
 
+
+# Build output
+binaries/
+releases/
+
+# Runtime volume data (NEVER commit)
+rootfs/

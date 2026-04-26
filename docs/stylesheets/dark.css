@@ -1,0 +1,5 @@
+/* Dark theme customization for ReadTheDocs */
+:root {
+  --md-primary-fg-color: #58a6ff;
+  --md-accent-fg-color: #50fa7b;
+}
