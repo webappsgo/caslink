@@ -25,6 +25,59 @@ const (
 	orgRoleContextKey = handler.ContextKey("org_role")
 )
 
+// writeJSONError writes a canonical error envelope to w:
+//
+//	{"ok":false,"error":"CODE","message":"..."}
+//
+// It mirrors handler.respondError but is accessible within package server
+// (handler.respondError is unexported).
+func writeJSONError(w http.ResponseWriter, status int, message string) {
+	code := jsonErrCode(status)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	body := `{"ok":false,"error":"` + code + `","message":"` + jsonEscape(message) + `"}`
+	_, _ = w.Write([]byte(body))
+}
+
+// jsonErrCode maps an HTTP status to the canonical error-code string used in
+// the API envelope (mirrors handler.errCodeFromStatus).
+func jsonErrCode(status int) string {
+	switch status {
+	case 400:
+		return "BAD_REQUEST"
+	case 401:
+		return "UNAUTHORIZED"
+	case 403:
+		return "FORBIDDEN"
+	case 404:
+		return "NOT_FOUND"
+	case 409:
+		return "CONFLICT"
+	case 422:
+		return "VALIDATION_FAILED"
+	case 429:
+		return "RATE_LIMITED"
+	case 503:
+		return "MAINTENANCE"
+	default:
+		if status >= 500 {
+			return "SERVER_ERROR"
+		}
+		return "ERROR"
+	}
+}
+
+// jsonEscape replaces the handful of characters that would break a bare JSON
+// string literal. For middleware error messages (controlled strings) this is
+// sufficient; use encoding/json for arbitrary data.
+func jsonEscape(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	s = strings.ReplaceAll(s, "\n", `\n`)
+	s = strings.ReplaceAll(s, "\r", `\r`)
+	return s
+}
+
 // ---- Security headers middleware ----------------------------------------
 
 // SecurityHeadersMiddleware adds standard security headers to every response.
@@ -171,9 +224,7 @@ func RateLimitMiddleware(rl *RateLimiter) func(http.Handler) http.Handler {
 			}
 
 			if !rl.Allow(ip+path, limit, window) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusTooManyRequests)
-				w.Write([]byte(`{"error":"Too many attempts. Please try again later."}`))
+				writeJSONError(w, http.StatusTooManyRequests, "Too many attempts. Please try again later.")
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -238,7 +289,7 @@ func CSRFMiddleware() func(http.Handler) http.Handler {
 			// Validate CSRF token
 			cookie, err := r.Cookie(csrfCookieName)
 			if err != nil || cookie.Value == "" {
-				http.Error(w, "CSRF validation failed", http.StatusForbidden)
+				writeJSONError(w, http.StatusForbidden, "CSRF validation failed")
 				return
 			}
 
@@ -250,7 +301,7 @@ func CSRFMiddleware() func(http.Handler) http.Handler {
 			}
 
 			if submitted == "" || submitted != cookie.Value {
-				http.Error(w, "CSRF validation failed", http.StatusForbidden)
+				writeJSONError(w, http.StatusForbidden, "CSRF validation failed")
 				return
 			}
 
@@ -302,19 +353,25 @@ func UserAuthMiddleware(authService *service.AuthService) func(http.Handler) htt
 	}
 }
 
-// AdminAuthMiddleware requires valid admin session
-func AdminAuthMiddleware(authService *service.AuthService) func(http.Handler) http.Handler {
+// AdminAuthMiddleware requires valid admin session. adminPath is the
+// configured admin panel path segment (e.g. "admin"), used to build the
+// correct login redirect URL per spec PART 17.
+func AdminAuthMiddleware(authService *service.AuthService, adminPath string) func(http.Handler) http.Handler {
+	if adminPath == "" {
+		adminPath = "admin"
+	}
+	loginURL := "/server/" + adminPath
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			cookie, err := r.Cookie("admin_session")
 			if err != nil || cookie.Value == "" {
-				http.Redirect(w, r, "/server/admin", http.StatusSeeOther)
+				http.Redirect(w, r, loginURL, http.StatusSeeOther)
 				return
 			}
 
 			admin, err := authService.ValidateSession(r.Context(), cookie.Value)
 			if err != nil {
-				http.Redirect(w, r, "/server/admin", http.StatusSeeOther)
+				http.Redirect(w, r, loginURL, http.StatusSeeOther)
 				return
 			}
 
@@ -330,30 +387,30 @@ func OrgMemberMiddleware(orgService *service.OrgService) func(http.Handler) http
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user, ok := r.Context().Value(userContextKey).(*service.User)
 			if !ok || user == nil {
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				writeJSONError(w, http.StatusUnauthorized, "Authentication required")
 				return
 			}
 
 			slug := chi.URLParam(r, "slug")
 			if slug == "" {
-				http.Error(w, "Organization slug required", http.StatusBadRequest)
+				writeJSONError(w, http.StatusBadRequest, "Organization slug required")
 				return
 			}
 
 			org, err := orgService.GetOrganizationBySlug(r.Context(), slug)
 			if err != nil {
-				http.Error(w, "Organization not found", http.StatusNotFound)
+				writeJSONError(w, http.StatusNotFound, "Organization not found")
 				return
 			}
 
 			isMember, role, err := orgService.IsMember(r.Context(), org.ID, user.ID)
 			if err != nil {
-				http.Error(w, "Error checking membership", http.StatusInternalServerError)
+				writeJSONError(w, http.StatusInternalServerError, "Error checking membership")
 				return
 			}
 
 			if !isMember {
-				http.Error(w, "Not an organization member", http.StatusForbidden)
+				writeJSONError(w, http.StatusForbidden, "Not an organization member")
 				return
 			}
 
@@ -378,18 +435,14 @@ func BearerAuthMiddleware(tokenService *service.TokenService) func(http.Handler)
 			auth := r.Header.Get("Authorization")
 			if !strings.HasPrefix(auth, "Bearer ") {
 				w.Header().Set("WWW-Authenticate", `Bearer realm="caslink"`)
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusUnauthorized)
-				w.Write([]byte(`{"error":"Bearer token required"}`))
+				writeJSONError(w, http.StatusUnauthorized, "Bearer token required")
 				return
 			}
 			plaintext := strings.TrimPrefix(auth, "Bearer ")
 			rec, err := tokenService.ValidateToken(r.Context(), plaintext)
 			if err != nil {
 				w.Header().Set("WWW-Authenticate", `Bearer realm="caslink", error="invalid_token"`)
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusUnauthorized)
-				w.Write([]byte(`{"error":"Invalid or expired token"}`))
+				writeJSONError(w, http.StatusUnauthorized, "Invalid or expired token")
 				return
 			}
 			ctx := context.WithValue(r.Context(), bearerContextKey, rec)

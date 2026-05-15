@@ -51,17 +51,17 @@ Error, Message}`).
 - Gap: `RateLimitMiddleware` only checks non-GET. 2FA verify uses POST, which is correctly limited, but the limiter switched on substring match `/2fa` which also catches `/2fa/recovery` and `/2fa/recovery/options`. That is OK. However the GET shortcut means the rate-limited window never starts for someone hammering `GET /server/auth/login` to probe response timing.
 - Status: Behaviour matches the documented contract ("Returns 429 ... auth-endpoint rate limits"). No fix required; flagged for review only.
 
-### `OrgMemberMiddleware` errors return `http.Error()` plain text instead of canonical JSON
+### [FIXED] `OrgMemberMiddleware` errors return `http.Error()` plain text instead of canonical JSON
 - File: `src/server/middleware.go:332-356`
 - Spec: `AI.md` PART 9 line 13745 (canonical shape)
-- Gap: API requests get `Unauthorized\n` instead of `{"ok":false,"error":"UNAUTHORIZED",...}`. Same applies to CSRF middleware (`middleware.go:240`) and Bearer middleware writes `{"error":"..."}` only.
-- Fix: Pending — needs a shared `writeJSONError` accessible to both middleware and handler packages; tracked.
+- Gap: API requests got `Unauthorized\n` instead of `{"ok":false,"error":"UNAUTHORIZED",...}`. Same applied to CSRF middleware and Bearer middleware.
+- Fix: Added unexported `writeJSONError`/`jsonErrCode`/`jsonEscape` helpers in `middleware.go`. All `http.Error()` and raw `w.Write([]byte(...))` calls replaced with `writeJSONError(w, status, message)`.
 
-### Sessions table missing columns the spec requires
+### [FIXED] Sessions table missing columns the spec requires
 - File: `src/server/store/store.go:177-184`
-- Spec: `AI.md` PART 10 area (sessions schema): spec talks about `ip_address`, `user_agent`, `last_activity` for "Active sessions" UI in PART 23 (security/sessions page exists at `src/server/template/page/users/security/sessions.html`).
-- Gap: The current `sessions` table is `(id, user_id, user_type, data, expires_at, created_at)`. The Sessions page cannot render IP/UA/last-active without these columns.
-- Fix: Pending — tracked in TODO.AI.md (rolled into "Numbered migration runner").
+- Spec: `AI.md` PART 10 area (sessions schema): `ip_address`, `user_agent`, `last_activity` required for "Active sessions" UI in PART 23.
+- Gap: `sessions` table was `(id, user_id, user_type, data, expires_at, created_at)`. The Sessions page could not render IP/UA/last-active.
+- Fix: Added `ip_address TEXT`, `user_agent TEXT`, `last_activity DATETIME DEFAULT CURRENT_TIMESTAMP` to the `CREATE TABLE IF NOT EXISTS sessions` DDL.
 
 ### CSRF middleware not applied to `/setup` POST
 - File: `src/server/server.go:188`
@@ -73,11 +73,11 @@ Error, Message}`).
 
 ## MEDIUM
 
-### `RateLimitMiddleware` returns non-canonical error body
+### [FIXED] `RateLimitMiddleware` returns non-canonical error body
 - File: `src/server/middleware.go:175`
 - Spec: PART 9 envelope
-- Gap: Emits `{"error":"Too many attempts..."}`, should be `{"ok":false,"error":"RATE_LIMITED","message":"..."}`.
-- Fix: Pending (same shared-error-helper refactor).
+- Gap: Emitted `{"error":"Too many attempts..."}`, spec requires `{"ok":false,"error":"RATE_LIMITED","message":"..."}`.
+- Fix: Replaced with `writeJSONError(w, http.StatusTooManyRequests, "...")` (same refactor as OrgMemberMiddleware above).
 
 ### Scheduler `tor_health` and `cluster_heartbeat` tasks absent
 - File: `src/scheduler/scheduler.go`
@@ -112,10 +112,10 @@ Error, Message}`).
 - Files: `src/server/template/page/dashboard.html` + `src/server/template/page/orgs/dashboard.html`
 - Spec: PART 16/17 — distinct dashboards for users vs orgs is correct. Confirmed in place.
 
-### `/setup` route returns `http.Redirect(..., "/server/admin", ...)` typo path in admin middleware
+### [FIXED] Admin redirect hardcoded `/server/admin` in `AdminAuthMiddleware`
 - File: `src/server/middleware.go:309`
-- Spec: spec uses `/server/{admin_path}` — when `adminPath` is non-default (e.g., `panel`), the redirect goes to the wrong URL.
-- Fix: Pending — middleware would need the configured admin path; minor since default is `admin`.
+- Spec: spec uses `/server/{admin_path}` — when `adminPath` is non-default (e.g., `panel`), the redirect went to the wrong URL.
+- Fix: `AdminAuthMiddleware` now accepts `adminPath string` and builds the redirect URL dynamically. Call site in `server.go` updated to pass `adminPath`.
 
 ### `selectRandomPort` scan range 64580..65000 hardcoded
 - File: `src/server/server.go:449`
@@ -128,4 +128,7 @@ Error, Message}`).
 
 - helpers.go: respondJSON/respondError now emit canonical `{"ok":true,"data":...}` / `{"ok":false,"error":...}` envelope per PART 9.
 - middleware.go: `X-Frame-Options` corrected to `SAMEORIGIN` per PART 11.
+- middleware.go: All `http.Error()` / raw JSON writes replaced with `writeJSONError` emitting canonical envelope.
+- middleware.go: `AdminAuthMiddleware` now accepts `adminPath string`; redirect URL is no longer hardcoded.
 - scheduler.go: Added `token_cleanup`, `healthcheck_self`; session cleanup cadence raised to 15 minutes per PART 19.
+- store.go: Sessions table now includes `ip_address`, `user_agent`, `last_activity` columns required by PART 23 sessions UI.

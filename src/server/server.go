@@ -274,7 +274,7 @@ func (s *Server) setupRoutes() {
 
 		// Authenticated admin routes (require admin_session cookie per spec PART 23)
 		r.Group(func(ar chi.Router) {
-			ar.Use(AdminAuthMiddleware(authService))
+			ar.Use(AdminAuthMiddleware(authService, adminPath))
 			ar.Use(CSRFMiddleware())
 			ar.Get("/dashboard", adminHandler.Dashboard)
 

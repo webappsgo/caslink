@@ -173,12 +173,16 @@ func (s *Store) initUsersSchema() error {
 			last_login DATETIME
 		)`,
 
-		// Sessions
+		// Sessions — ip_address, user_agent, last_activity required by the
+		// active-sessions UI (spec PART 23 security/sessions page).
 		`CREATE TABLE IF NOT EXISTS sessions (
 			id TEXT PRIMARY KEY,
 			user_id INTEGER NOT NULL,
 			user_type TEXT NOT NULL,
 			data TEXT,
+			ip_address TEXT,
+			user_agent TEXT,
+			last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
 			expires_at DATETIME NOT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
