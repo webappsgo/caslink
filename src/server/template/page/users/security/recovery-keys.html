@@ -1,0 +1,81 @@
+{{template "base" .}}
+{{define "content"}}
+<div class="container container-md">
+  <h1 class="mb-2">Save Your Recovery Keys</h1>
+  <div class="alert alert-warn mb-4">
+    <strong>These keys will not be shown again.</strong>
+    Save them in a password manager or secure offline location before continuing.
+  </div>
+
+  <div class="card mb-4">
+    <h2 class="card-title">Your Recovery Keys</h2>
+    <p class="text-muted text-sm mb-3">
+      Each key is single-use. Use one to sign in if you ever lose access to your 2FA device.
+    </p>
+    <div class="recovery-keys-grid mb-3" id="recovery-keys-list">
+      {{range $i, $key := .Keys}}
+      <div class="recovery-key-item">
+        <span class="text-muted text-sm">{{inc $i}}.</span>
+        <code id="key-{{$i}}">{{$key}}</code>
+      </div>
+      {{end}}
+    </div>
+    <div class="flex gap-2">
+      <button type="button" class="btn btn-outline btn-sm" id="download-keys-btn">
+        Download as TXT
+      </button>
+      <button type="button" class="btn btn-outline btn-sm" id="copy-keys-btn">
+        Copy All Keys
+      </button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">Confirm You Have Saved Your Keys</h2>
+    <p class="text-muted text-sm mb-3">
+      Once you click Continue, these keys will not be displayed again.
+    </p>
+    <form method="POST" action="/users/security/recovery/confirm">
+      <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+      <div class="form-group">
+        <label class="flex gap-2 align-center">
+          <input type="checkbox" name="confirmed" id="confirmed" required>
+          <span>I have saved my recovery keys in a safe place</span>
+        </label>
+      </div>
+      <button type="submit" class="btn btn-primary" id="continue-btn" disabled>
+        Continue to Security Settings
+      </button>
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+  var keys = {{.KeysJSON}};
+  var keysText = keys.map(function(k, i) { return (i + 1) + ". " + k; }).join("\n");
+
+  document.getElementById("download-keys-btn").addEventListener("click", function () {
+    var blob = new Blob([keysText], { type: "text/plain" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "caslink-recovery-keys.txt";
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  document.getElementById("copy-keys-btn").addEventListener("click", function () {
+    navigator.clipboard.writeText(keysText).then(function () {
+      var btn = document.getElementById("copy-keys-btn");
+      btn.textContent = "Copied!";
+      setTimeout(function () { btn.textContent = "Copy All Keys"; }, 2000);
+    });
+  });
+
+  document.getElementById("confirmed").addEventListener("change", function () {
+    document.getElementById("continue-btn").disabled = !this.checked;
+  });
+}());
+</script>
+{{end}}

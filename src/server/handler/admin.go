@@ -1,31 +1,38 @@
 package handler
 
 import (
+	"encoding/json"
+	"fmt"
 	"html/template"
 	"net/http"
+	"strconv"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/casjaysdevdocker/caslink/src/server/service"
 )
 
 // AdminHandler handles admin panel endpoints
 type AdminHandler struct {
-	authService *service.AuthService
-	version     string
-	mode        string
-	adminPath   string // configurable admin path segment, default "admin"
+	authService     *service.AuthService
+	userAdminService *service.UserAdminService
+	version         string
+	mode            string
+	adminPath       string // configurable admin path segment, default "admin"
 }
 
 // NewAdminHandler creates a new admin handler
-func NewAdminHandler(authService *service.AuthService, version, mode, adminPath string) *AdminHandler {
+func NewAdminHandler(authService *service.AuthService, userAdminService *service.UserAdminService, version, mode, adminPath string) *AdminHandler {
 	if adminPath == "" {
 		adminPath = "admin"
 	}
 	return &AdminHandler{
-		authService: authService,
-		version:     version,
-		mode:        mode,
-		adminPath:   adminPath,
+		authService:     authService,
+		userAdminService: userAdminService,
+		version:         version,
+		mode:            mode,
+		adminPath:       adminPath,
 	}
 }
 
@@ -366,4 +373,312 @@ func (h *AdminHandler) renderDashboard(w http.ResponseWriter, admin *service.Adm
 		"BasePath": h.basePath(),
 	}
 	t.Execute(w, data)
+}
+
+// UserList handles GET /server/{adminPath}/config/users
+func (h *AdminHandler) UserList(w http.ResponseWriter, r *http.Request) {
+	admin := h.getAdminFromSession(r)
+	if admin == nil {
+		http.Redirect(w, r, h.basePath(), http.StatusFound)
+		return
+	}
+
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	search := r.URL.Query().Get("q")
+
+	users, total, err := h.userAdminService.ListUsers(r.Context(), page, 50, search)
+	if err != nil {
+		http.Error(w, "Failed to load users", http.StatusInternalServerError)
+		return
+	}
+
+	userListTmpl := `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Users - Caslink Admin</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0d1117; color: #c9d1d9; }
+        .header { background: #161b22; border-bottom: 1px solid #30363d; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+        .logo { color: #58a6ff; font-size: 20px; font-weight: 600; }
+        .container { padding: 24px; max-width: 1400px; margin: 0 auto; }
+        h1 { margin-bottom: 24px; }
+        .search-bar { margin-bottom: 16px; }
+        .search-bar input { padding: 8px 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; width: 300px; }
+        .search-bar button { padding: 8px 16px; background: #238636; color: white; border: none; border-radius: 6px; cursor: pointer; margin-left: 8px; }
+        table { width: 100%%; border-collapse: collapse; background: #161b22; border-radius: 6px; overflow: hidden; }
+        th { background: #21262d; padding: 12px 16px; text-align: left; color: #8b949e; font-size: 13px; }
+        td { padding: 12px 16px; border-bottom: 1px solid #21262d; font-size: 14px; }
+        tr:last-child td { border-bottom: none; }
+        .badge-suspended { background: #da3633; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
+        .badge-active { background: #238636; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
+        .action-link { color: #58a6ff; text-decoration: none; margin-right: 8px; }
+        .total { color: #8b949e; margin-bottom: 12px; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">Caslink Admin</div>
+        <a href="{{.BasePath}}/logout" style="color:#f85149;">Logout</a>
+    </div>
+    <div class="container">
+        <h1>Users ({{.Total}})</h1>
+        <div class="search-bar">
+            <form method="GET">
+                <input type="text" name="q" value="{{.Search}}" placeholder="Search username or email">
+                <button type="submit">Search</button>
+            </form>
+        </div>
+        <table>
+            <thead><tr>
+                <th>ID</th><th>Username</th><th>Email</th><th>Status</th><th>Created</th><th>Actions</th>
+            </tr></thead>
+            <tbody>
+            {{range .Users}}
+            <tr>
+                <td>{{.ID}}</td>
+                <td>{{.Username}}</td>
+                <td>{{.Email}}</td>
+                <td>{{if .Suspended}}<span class="badge-suspended">Suspended</span>{{else}}<span class="badge-active">Active</span>{{end}}</td>
+                <td>{{.CreatedAt.Format "2006-01-02"}}</td>
+                <td>
+                    <a class="action-link" href="{{$.BasePath}}/config/users/{{.ID}}">View</a>
+                    {{if .Suspended}}
+                    <form style="display:inline" method="POST" action="{{$.BasePath}}/config/users/{{.ID}}/activate">
+                        <button style="background:none;border:none;color:#58a6ff;cursor:pointer;">Activate</button>
+                    </form>
+                    {{else}}
+                    <form style="display:inline" method="POST" action="{{$.BasePath}}/config/users/{{.ID}}/suspend">
+                        <button style="background:none;border:none;color:#f85149;cursor:pointer;">Suspend</button>
+                    </form>
+                    {{end}}
+                </td>
+            </tr>
+            {{end}}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>`
+
+	t := template.Must(template.New("userlist").Parse(userListTmpl))
+	t.Execute(w, map[string]interface{}{
+		"Admin":    admin,
+		"Users":    users,
+		"Total":    total,
+		"Search":   search,
+		"BasePath": h.basePath(),
+	})
+}
+
+// UserDetail handles GET /server/{adminPath}/config/users/{id}
+func (h *AdminHandler) UserDetail(w http.ResponseWriter, r *http.Request) {
+	admin := h.getAdminFromSession(r)
+	if admin == nil {
+		http.Redirect(w, r, h.basePath(), http.StatusFound)
+		return
+	}
+
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid user ID", http.StatusBadRequest)
+		return
+	}
+
+	user, err := h.userAdminService.GetUser(r.Context(), id)
+	if err != nil {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	userDetailTmpl := `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>User {{.User.Username}} - Caslink Admin</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0d1117; color: #c9d1d9; }
+        .header { background: #161b22; border-bottom: 1px solid #30363d; padding: 16px 24px; display: flex; justify-content: space-between; }
+        .logo { color: #58a6ff; font-size: 20px; font-weight: 600; }
+        .container { padding: 24px; max-width: 800px; margin: 0 auto; }
+        .card { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 24px; margin-bottom: 16px; }
+        .row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #21262d; }
+        .row:last-child { border-bottom: none; }
+        .label { color: #8b949e; }
+        .actions { margin-top: 16px; display: flex; gap: 8px; }
+        .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
+        .btn-danger { background: #da3633; color: white; }
+        .btn-success { background: #238636; color: white; }
+        .back { color: #58a6ff; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">Caslink Admin</div>
+        <a href="{{.BasePath}}/logout" style="color:#f85149;">Logout</a>
+    </div>
+    <div class="container">
+        <p style="margin-bottom:16px;"><a class="back" href="{{.BasePath}}/config/users">← Users</a></p>
+        <div class="card">
+            <div class="row"><span class="label">ID</span><span>{{.User.ID}}</span></div>
+            <div class="row"><span class="label">Username</span><span>{{.User.Username}}</span></div>
+            <div class="row"><span class="label">Email</span><span>{{.User.Email}}</span></div>
+            <div class="row"><span class="label">Email Verified</span><span>{{.User.EmailVerified}}</span></div>
+            <div class="row"><span class="label">TOTP Enabled</span><span>{{.User.TOTPEnabled}}</span></div>
+            <div class="row"><span class="label">Suspended</span><span>{{.User.Suspended}}</span></div>
+            {{if .User.SuspendReason}}<div class="row"><span class="label">Suspend Reason</span><span>{{.User.SuspendReason}}</span></div>{{end}}
+            <div class="row"><span class="label">Created</span><span>{{.User.CreatedAt.Format "2006-01-02 15:04"}}</span></div>
+        </div>
+        <div class="actions">
+            {{if .User.Suspended}}
+            <form method="POST" action="{{.BasePath}}/config/users/{{.User.ID}}/activate">
+                <button class="btn btn-success" type="submit">Activate Account</button>
+            </form>
+            {{else}}
+            <form method="POST" action="{{.BasePath}}/config/users/{{.User.ID}}/suspend">
+                <button class="btn btn-danger" type="submit">Suspend Account</button>
+            </form>
+            {{end}}
+        </div>
+    </div>
+</body>
+</html>`
+
+	t := template.Must(template.New("userdetail").Parse(userDetailTmpl))
+	t.Execute(w, map[string]interface{}{
+		"User":     user,
+		"BasePath": h.basePath(),
+	})
+}
+
+// SuspendUser handles POST /server/{adminPath}/config/users/{id}/suspend
+func (h *AdminHandler) SuspendUser(w http.ResponseWriter, r *http.Request) {
+	admin := h.getAdminFromSession(r)
+	if admin == nil {
+		http.Redirect(w, r, h.basePath(), http.StatusFound)
+		return
+	}
+
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid user ID")
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid form")
+		return
+	}
+	reason := r.FormValue("reason")
+
+	if err := h.userAdminService.SuspendUser(r.Context(), id, reason); err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to suspend user: %v", err))
+		return
+	}
+
+	http.Redirect(w, r, h.basePath()+"/config/users/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
+}
+
+// ActivateUser handles POST /server/{adminPath}/config/users/{id}/activate
+func (h *AdminHandler) ActivateUser(w http.ResponseWriter, r *http.Request) {
+	admin := h.getAdminFromSession(r)
+	if admin == nil {
+		http.Redirect(w, r, h.basePath(), http.StatusFound)
+		return
+	}
+
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid user ID")
+		return
+	}
+
+	if err := h.userAdminService.ActivateUser(r.Context(), id); err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to activate user: %v", err))
+		return
+	}
+
+	http.Redirect(w, r, h.basePath()+"/config/users/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
+}
+
+// apiUserList handles GET /api/v1/server/{adminPath}/config/users
+func (h *AdminHandler) APIUserList(w http.ResponseWriter, r *http.Request) {
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	search := r.URL.Query().Get("q")
+
+	users, total, err := h.userAdminService.ListUsers(r.Context(), page, 50, search)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load users")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"users": users,
+		"total": total,
+		"page":  page,
+	})
+}
+
+// APIUserDetail handles GET /api/v1/server/{adminPath}/config/users/{id}
+func (h *AdminHandler) APIUserDetail(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid user ID")
+		return
+	}
+
+	user, err := h.userAdminService.GetUser(r.Context(), id)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "User not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, user)
+}
+
+// APISuspendUser handles POST /api/v1/server/{adminPath}/config/users/{id}/suspend
+func (h *AdminHandler) APISuspendUser(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid user ID")
+		return
+	}
+
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		req.Reason = ""
+	}
+
+	if err := h.userAdminService.SuspendUser(r.Context(), id, req.Reason); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to suspend user")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "suspended"})
+}
+
+// APIActivateUser handles POST /api/v1/server/{adminPath}/config/users/{id}/activate
+func (h *AdminHandler) APIActivateUser(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid user ID")
+		return
+	}
+
+	if err := h.userAdminService.ActivateUser(r.Context(), id); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to activate user")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "active"})
 }

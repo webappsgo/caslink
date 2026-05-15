@@ -1,0 +1,15 @@
+{{template "base" .}}
+{{define "content"}}
+<div class="container container-md">
+  <div class="mb-4">
+    <a href="/users/security" class="text-muted text-sm">&larr; Back to Security</a>
+  </div>
+  <div class="card">
+    <h1 class="mb-2">Passkeys</h1>
+    <p class="text-muted text-sm mb-4">Use Face ID, Touch ID, or a hardware security key to sign in without a password.</p>
+    <div class="alert alert-warn">
+      Passkey support is coming soon. WebAuthn registration requires browser-side JavaScript that is not yet implemented.
+    </div>
+  </div>
+</div>
+{{end}}

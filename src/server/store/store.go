@@ -18,6 +18,16 @@ func Open(dataDir string) (*Store, error) {
 	return OpenStoreWithConfig("sqlite", "", 0, "", "", "", "", dataDir)
 }
 
+// NewTestStore creates a Store from a pre-opened *sql.DB, using it for both
+// ServerDB and UsersDB. Intended for unit tests only; do not use in production.
+func NewTestStore(db *sql.DB) *Store {
+	return &Store{
+		ServerDB: db,
+		UsersDB:  db,
+		driver:   "sqlite",
+	}
+}
+
 // Close closes both databases
 func (s *Store) Close() error {
 	var err1, err2 error
@@ -157,6 +167,8 @@ func (s *Store) initUsersSchema() error {
 			email_verified BOOLEAN DEFAULT 0,
 			totp_secret TEXT,
 			totp_enabled BOOLEAN DEFAULT 0,
+			suspended BOOLEAN DEFAULT 0,
+			suspend_reason TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			last_login DATETIME
 		)`,

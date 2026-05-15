@@ -34,7 +34,10 @@ func New() (*Renderer, error) {
 		return nil, fmt.Errorf("failed to read app.js: %w", err)
 	}
 
-	t := template.New("")
+	t := template.New("").Funcs(template.FuncMap{
+		// inc returns n+1; used in range loops for 1-based display indices.
+		"inc": func(n int) int { return n + 1 },
+	})
 
 	// Walk and parse all *.html files.
 	if err := fs.WalkDir(templateFS, "template", func(path string, d fs.DirEntry, err error) error {

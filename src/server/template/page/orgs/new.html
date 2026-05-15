@@ -1,0 +1,57 @@
+{{template "base" .}}
+{{define "content"}}
+<div class="container container-md">
+  <div class="mb-4">
+    <a href="/orgs/" class="text-muted text-sm">&larr; Back to Organizations</a>
+  </div>
+  <div class="card">
+    <h1 class="mb-4">Create Organization</h1>
+    {{if .Flash}}
+    <div class="alert alert-{{.Flash.Type}}" data-autohide="5000">{{.Flash.Message}}</div>
+    {{end}}
+    <form method="POST" action="/orgs/new" id="org-form">
+      <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+      <div class="form-group">
+        <label for="name">Organization Name <span class="text-danger">*</span></label>
+        <input class="form-control" type="text" id="name" name="name"
+               required minlength="3" maxlength="40"
+               placeholder="e.g. Acme Corporation"
+               value="{{.OrgName}}"
+               oninput="autoSlug(this.value)">
+        <span class="form-hint text-muted text-sm">3–40 characters.</span>
+      </div>
+      <div class="form-group">
+        <label for="slug">Slug <span class="text-danger">*</span></label>
+        <input class="form-control" type="text" id="slug" name="slug"
+               required minlength="3" maxlength="40"
+               pattern="^[a-z0-9][a-z0-9\-]{1,38}[a-z0-9]$"
+               placeholder="e.g. acme-corporation"
+               value="{{.OrgSlug}}">
+        <span class="form-hint text-muted text-sm">3–40 lowercase letters, digits, and hyphens. Cannot start or end with a hyphen.</span>
+      </div>
+      <div class="form-group">
+        <label for="description">Description</label>
+        <textarea class="form-control" id="description" name="description"
+                  maxlength="500" rows="3"
+                  placeholder="Optional description of your organization">{{.OrgDescription}}</textarea>
+        <span class="form-hint text-muted text-sm">Up to 500 characters.</span>
+      </div>
+      <div class="flex-between mt-3">
+        <a href="/orgs/" class="btn btn-outline">Cancel</a>
+        <button type="submit" class="btn btn-primary">Create Organization</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+function autoSlug(name) {
+  var slug = document.getElementById('slug');
+  if (!slug.dataset.edited) {
+    slug.value = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+  }
+}
+document.getElementById('slug').addEventListener('input', function() {
+  this.dataset.edited = 'true';
+});
+</script>
+{{end}}

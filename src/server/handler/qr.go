@@ -59,15 +59,23 @@ func (h *QRHandler) GenerateQR(w http.ResponseWriter, r *http.Request) {
 		style = "square"
 	}
 
+	// PDF is not yet implemented — tracked in TODO.AI.md
+	if format == "pdf" {
+		respondError(w, http.StatusNotImplemented, "PDF format not yet implemented")
+		return
+	}
+
+	// Normalise unknown formats to png
+	if format != "svg" {
+		format = "png"
+	}
+
 	opts := &service.QRCodeOptions{
 		Format: format,
 		Size:   size,
 		Style:  style,
 	}
 
-	// Build full URL for QR code
-	// In production, this should use the actual domain
-	// For now, use the short code
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
@@ -75,17 +83,15 @@ func (h *QRHandler) GenerateQR(w http.ResponseWriter, r *http.Request) {
 	host := r.Host
 	fullURL := fmt.Sprintf("%s://%s/%s", scheme, host, code)
 
-	// Generate QR code
 	data, contentType, err := h.qrService.GenerateQRCode(r.Context(), url.ID, fullURL, opts)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to generate QR code")
 		return
 	}
 
-	// Set headers and send response
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
-	w.Header().Set("Cache-Control", "public, max-age=86400") // Cache for 24 hours
+	w.Header().Set("Cache-Control", "public, max-age=86400")
 	w.WriteHeader(http.StatusOK)
 	w.Write(data)
 }

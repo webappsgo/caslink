@@ -1,0 +1,73 @@
+{{template "base" .}}
+{{define "content"}}
+<div class="container container-md">
+  <div class="mb-4">
+    <a href="/users/security" class="text-muted text-sm">&larr; Back to Security</a>
+  </div>
+  <h1 class="mb-4">Recovery Keys</h1>
+  {{if .Flash}}
+  <div class="alert alert-{{.Flash.Type}}" data-autohide="5000">{{.Flash.Message}}</div>
+  {{end}}
+
+  {{if .HasMFA}}
+  <div class="card mb-4">
+    <h2 class="card-title">Recovery Key Status</h2>
+    <p class="text-muted text-sm mt-1">
+      Recovery keys allow you to access your account if you lose your 2FA device.
+      Each key can only be used once and is never shown again after initial setup.
+    </p>
+    <ul class="text-sm text-muted mt-2 mb-3">
+      <li>10 keys were generated when you enabled 2FA</li>
+      <li>Format: <code>a1b2c3d4-e5f6</code></li>
+      <li>Keys are single-use and can only be viewed during setup</li>
+    </ul>
+    {{if .RecoveryKeysRemaining}}
+    <p class="text-sm">
+      <span class="badge badge-green">{{.RecoveryKeysRemaining}} remaining</span>
+      Recovery keys available for emergency access.
+    </p>
+    {{else}}
+    <p class="text-sm">
+      <span class="badge badge-danger">0 remaining</span>
+      All recovery keys have been used. Regenerate them below.
+    </p>
+    {{end}}
+  </div>
+  <div class="card card-danger">
+    <h2 class="card-title">Regenerate Recovery Keys</h2>
+    <p class="text-muted text-sm">
+      This will invalidate all existing recovery keys and generate 10 new ones.
+      You will be shown the new keys once — save them securely before continuing.
+    </p>
+    <form method="POST" action="/users/security/recovery">
+      <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+      <input type="hidden" name="action" value="regenerate">
+      <div class="form-group">
+        <label for="password">Confirm your password</label>
+        <input class="form-control" type="password" id="password" name="password"
+               required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-danger">Regenerate Recovery Keys</button>
+    </form>
+  </div>
+
+  {{else}}
+  <div class="card">
+    <h2 class="card-title">Recovery Keys Not Available</h2>
+    <p class="text-muted text-sm mt-1">
+      Recovery keys are generated when you enable two-factor authentication or register a passkey.
+    </p>
+    <ul class="text-sm text-muted mt-2 mb-3">
+      <li>10 keys are generated when you enable 2FA or passkeys</li>
+      <li>Format: <code>a1b2c3d4-e5f6</code></li>
+      <li>Each key is single-use and shown only once</li>
+      <li>Store them in a password manager or secure location</li>
+    </ul>
+    <p class="text-sm text-muted">
+      <strong>Status:</strong> MFA not enabled — recovery keys not yet generated.
+    </p>
+    <a href="/users/security/2fa" class="btn btn-primary mt-3">Enable Two-Factor Authentication</a>
+  </div>
+  {{end}}
+</div>
+{{end}}

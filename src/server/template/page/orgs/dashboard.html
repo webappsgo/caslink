@@ -1,0 +1,66 @@
+{{template "base" .}}
+{{define "content"}}
+<div class="container">
+  <div class="flex-between mb-4">
+    <div>
+      <h1>{{.Org.Name}}</h1>
+      <p class="text-muted text-sm">
+        <code>{{.Org.Slug}}</code>
+        {{if .Org.Description}}&mdash; {{.Org.Description}}{{end}}
+      </p>
+    </div>
+    <a href="/orgs/{{.Org.Slug}}/settings" class="btn btn-outline btn-sm">Settings</a>
+  </div>
+  {{if .Flash}}
+  <div class="alert alert-{{.Flash.Type}}" data-autohide="5000">{{.Flash.Message}}</div>
+  {{end}}
+
+  <div class="stats-row mb-4">
+    <div class="card stat-card">
+      <div class="stat-value">{{.Stats.TotalLinks}}</div>
+      <div class="text-muted text-sm">Total Links</div>
+    </div>
+    <div class="card stat-card">
+      <div class="stat-value">{{.Stats.TotalClicks}}</div>
+      <div class="text-muted text-sm">Total Clicks</div>
+    </div>
+    <div class="card stat-card">
+      <div class="stat-value">{{.Stats.MemberCount}}</div>
+      <div class="text-muted text-sm">Members</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="flex-between mb-3">
+      <h2>Recent Links</h2>
+      <a href="/orgs/{{.Org.Slug}}/members" class="btn btn-outline btn-sm">Manage Members</a>
+    </div>
+    {{if .RecentLinks}}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Short Code</th>
+            <th>Destination</th>
+            <th>Clicks</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .RecentLinks}}
+          <tr>
+            <td><a href="/{{.Code}}">{{.Code}}</a></td>
+            <td class="text-muted text-sm break-all">{{.Destination}}</td>
+            <td class="text-muted text-sm">{{.Clicks}}</td>
+            <td class="text-muted text-sm">{{.CreatedAt}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <p class="text-muted">No links yet. Create your first short link via the API.</p>
+    {{end}}
+  </div>
+</div>
+{{end}}

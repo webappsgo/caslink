@@ -1,0 +1,95 @@
+{{template "base" .}}
+{{define "content"}}
+<div class="container container-md">
+  <div class="mb-4">
+    <a href="/orgs/{{.Org.Slug}}/" class="text-muted text-sm">&larr; Back to Dashboard</a>
+  </div>
+  <h1 class="mb-4">Members &mdash; {{.Org.Name}}</h1>
+  {{if .Flash}}
+  <div class="alert alert-{{.Flash.Type}}" data-autohide="5000">{{.Flash.Message}}</div>
+  {{end}}
+
+  <div class="card mb-4">
+    <h2 class="card-title">Members</h2>
+    {{if .Members}}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Username</th>
+            <th>Role</th>
+            <th>Joined</th>
+            {{if .IsAdminOrOwner}}<th></th>{{end}}
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Members}}
+          <tr>
+            <td>{{.Username}}</td>
+            <td>
+              {{if eq .Role "owner"}}
+              <span class="badge badge-green">Owner</span>
+              {{else if eq .Role "admin"}}
+              <span class="badge badge-blue">Admin</span>
+              {{else}}
+              <span class="badge badge-gray">Member</span>
+              {{end}}
+            </td>
+            <td class="text-muted text-sm">{{.JoinedAt}}</td>
+            {{if $.IsAdminOrOwner}}
+            <td>
+              {{if ne .Role "owner"}}
+              <form method="POST" action="/orgs/{{$.Org.Slug}}/members" style="display:inline">
+                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+                <input type="hidden" name="action" value="remove">
+                <input type="hidden" name="user_id" value="{{.UserID}}">
+                <button type="submit" class="btn btn-danger btn-sm"
+                        onclick="return confirm('Remove this member?')">Remove</button>
+              </form>
+              <form method="POST" action="/orgs/{{$.Org.Slug}}/members" style="display:inline">
+                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+                <input type="hidden" name="action" value="change_role">
+                <input type="hidden" name="user_id" value="{{.UserID}}">
+                <select name="role" class="form-control form-control-inline">
+                  <option value="member"{{if eq .Role "member"}} selected{{end}}>Member</option>
+                  <option value="admin"{{if eq .Role "admin"}} selected{{end}}>Admin</option>
+                </select>
+                <button type="submit" class="btn btn-outline btn-sm">Update Role</button>
+              </form>
+              {{end}}
+            </td>
+            {{end}}
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}
+    <p class="text-muted">No members yet.</p>
+    {{end}}
+  </div>
+
+  {{if .IsAdminOrOwner}}
+  <div class="card">
+    <h2 class="card-title">Invite Member</h2>
+    <form method="POST" action="/orgs/{{.Org.Slug}}/members">
+      <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+      <input type="hidden" name="action" value="invite">
+      <div class="form-group">
+        <label for="email">Email Address <span class="text-danger">*</span></label>
+        <input class="form-control" type="email" id="email" name="email"
+               required placeholder="user@example.com">
+      </div>
+      <div class="form-group">
+        <label for="role">Role <span class="text-danger">*</span></label>
+        <select class="form-control" id="role" name="role">
+          <option value="member">Member</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary">Send Invitation</button>
+    </form>
+  </div>
+  {{end}}
+</div>
+{{end}}

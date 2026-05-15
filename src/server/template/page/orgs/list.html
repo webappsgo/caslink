@@ -1,0 +1,55 @@
+{{template "base" .}}
+{{define "content"}}
+<div class="container container-md">
+  <div class="flex-between mb-4">
+    <h1>Organizations</h1>
+    <a href="/orgs/new" class="btn btn-primary btn-sm">Create Organization</a>
+  </div>
+  {{if .Flash}}
+  <div class="alert alert-{{.Flash.Type}}" data-autohide="5000">{{.Flash.Message}}</div>
+  {{end}}
+  {{if .Orgs}}
+  <div class="card">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Slug</th>
+            <th>Members</th>
+            <th>Your Role</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Orgs}}
+          <tr>
+            <td><a href="/orgs/{{.Slug}}/">{{.Name}}</a></td>
+            <td class="text-muted text-sm">{{.Slug}}</td>
+            <td class="text-muted text-sm">{{.MemberCount}}</td>
+            <td>
+              {{if eq .Role "owner"}}
+              <span class="badge badge-green">Owner</span>
+              {{else if eq .Role "admin"}}
+              <span class="badge badge-blue">Admin</span>
+              {{else}}
+              <span class="badge badge-gray">Member</span>
+              {{end}}
+            </td>
+            <td>
+              <a href="/orgs/{{.Slug}}/" class="btn btn-outline btn-sm">View</a>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {{else}}
+  <div class="card">
+    <p class="text-muted">You don't belong to any organizations yet.</p>
+    <a href="/orgs/new" class="btn btn-primary btn-sm mt-2">Create your first organization</a>
+  </div>
+  {{end}}
+</div>
+{{end}}

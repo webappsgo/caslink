@@ -174,6 +174,45 @@ func (s *OrgService) GetOrgMembers(ctx context.Context, orgID int64) ([]*OrgMemb
 	return members, nil
 }
 
+// OrgMemberDetail joins org_members with users to include the username.
+type OrgMemberDetail struct {
+	ID       int64
+	OrgID    int64
+	UserID   int64
+	Username string
+	Role     string
+	JoinedAt time.Time
+}
+
+// GetMembersWithUsernames returns org members including their usernames.
+func (s *OrgService) GetMembersWithUsernames(ctx context.Context, orgID int64) ([]*OrgMemberDetail, error) {
+	query := `SELECT m.id, m.org_id, m.user_id, u.username, m.role, m.joined_at
+	          FROM org_members m
+	          JOIN users u ON u.id = m.user_id
+	          WHERE m.org_id = ?
+	          ORDER BY m.joined_at ASC`
+
+	rows, err := s.store.UsersDB.QueryContext(ctx, query, orgID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query members: %w", err)
+	}
+	defer rows.Close()
+
+	var members []*OrgMemberDetail
+	for rows.Next() {
+		var m OrgMemberDetail
+		if err := rows.Scan(&m.ID, &m.OrgID, &m.UserID, &m.Username, &m.Role, &m.JoinedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan member: %w", err)
+		}
+		members = append(members, &m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("member row iteration failed: %w", err)
+	}
+
+	return members, nil
+}
+
 // IsMember checks if a user is a member of an organization
 func (s *OrgService) IsMember(ctx context.Context, orgID, userID int64) (bool, string, error) {
 	query := `SELECT role FROM org_members WHERE org_id = ? AND user_id = ?`

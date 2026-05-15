@@ -147,20 +147,24 @@ func (s *Server) setupRoutes() {
 	qrService := service.NewQRService(s.store)
 	orgService := service.NewOrgService(s.store)
 	domainService := service.NewDomainService(s.store)
+	analyticsService := service.NewAnalyticsService(s.store)
+	bulkService := service.NewBulkService(s.store, urlService)
+	userAdminService := service.NewUserAdminService(s.store)
 
 	// Token service (needed by user handler and bearer middleware)
 	tokenService := service.NewTokenService(s.store)
 
 	// Create handlers
-	urlHandler := handler.NewURLHandler(urlService)
+	urlHandler := handler.NewURLHandler(urlService, analyticsService)
 	qrHandler := handler.NewQRHandler(qrService, urlService)
-	adminHandler := handler.NewAdminHandler(authService, s.Version, s.mode.String(), adminPath)
+	bulkHandler := handler.NewBulkHandler(bulkService)
+	adminHandler := handler.NewAdminHandler(authService, userAdminService, s.Version, s.mode.String(), adminPath)
 	setupHandler := handler.NewSetupHandler(authService, s.Version)
 	authUserHandler := handler.NewAuthUserHandler(authService, s.renderer, s.config)
 	twoFactorHandler := handler.NewTwoFactorHandler(authService, totpService)
 	passwordHandler := handler.NewPasswordHandler(authService, emailService, s.renderer, s.config)
 	userHandler := handler.NewUserHandler(authService, tokenService, urlService, s.renderer, s.config)
-	orgHandler := handler.NewOrgHandler(orgService, authService)
+	orgHandler := handler.NewOrgHandler(orgService, authService, s.renderer, s.config)
 	domainHandler := handler.NewDomainHandler(domainService, authService)
 
 	// Static assets (CSS, JS, PWA manifest, service worker)
@@ -222,7 +226,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/security", userHandler.Security)
 
 		// Security sub-routes per spec PART 23
-		userSecurityHandler := handler.NewUserSecurityHandler(authService, totpService, qrService, emailService)
+		userSecurityHandler := handler.NewUserSecurityHandler(authService, totpService, qrService, emailService, s.renderer, s.config)
 		r.HandleFunc("/security/password", userSecurityHandler.Password)
 		r.HandleFunc("/security/sessions", userSecurityHandler.Sessions)
 		r.HandleFunc("/security/2fa", userSecurityHandler.TwoFactor)
@@ -273,6 +277,12 @@ func (s *Server) setupRoutes() {
 			ar.Use(AdminAuthMiddleware(authService))
 			ar.Use(CSRFMiddleware())
 			ar.Get("/dashboard", adminHandler.Dashboard)
+
+			// User moderation
+			ar.Get("/config/users", adminHandler.UserList)
+			ar.Get("/config/users/{id}", adminHandler.UserDetail)
+			ar.Post("/config/users/{id}/suspend", adminHandler.SuspendUser)
+			ar.Post("/config/users/{id}/activate", adminHandler.ActivateUser)
 		})
 	})
 
@@ -295,10 +305,13 @@ func (s *Server) setupRoutes() {
 			ar.Post("/register", authUserHandler.Register)
 		})
 
-		// Admin API — /api/v1/server/admin/*
+		// Admin API — /api/v1/server/{adminPath}/*
 		r.Route("/server/"+adminPath, func(ar chi.Router) {
 			ar.Use(bearerMiddleware)
-			// Admin API endpoints wired to handlers
+			ar.Get("/config/users", adminHandler.APIUserList)
+			ar.Get("/config/users/{id}", adminHandler.APIUserDetail)
+			ar.Post("/config/users/{id}/suspend", adminHandler.APISuspendUser)
+			ar.Post("/config/users/{id}/activate", adminHandler.APIActivateUser)
 		})
 
 		// URL management endpoints (require Bearer auth per spec)
@@ -309,6 +322,7 @@ func (s *Server) setupRoutes() {
 
 		// Public read endpoints
 		r.Get("/urls/{code}", urlHandler.GetURL)
+		r.Get("/urls/{code}/stats", urlHandler.Stats)
 
 		// QR code endpoints
 		r.Get("/qr/{code}", qrHandler.GenerateQR)
@@ -316,13 +330,17 @@ func (s *Server) setupRoutes() {
 		// Users API — /api/v1/users/*
 		r.Route("/users", func(ar chi.Router) {
 			ar.Use(bearerMiddleware)
-			// Placeholder — token-authenticated user API
+			ar.Get("/urls/export", bulkHandler.Export)
+			ar.Post("/urls/import", bulkHandler.Import)
 		})
 
 		// Orgs API — /api/v1/orgs/*
 		r.Route("/orgs", func(ar chi.Router) {
 			ar.Use(bearerMiddleware)
-			// Placeholder — token-authenticated org API
+			ar.Get("/", orgHandler.APIListOrgs)
+			ar.Post("/", orgHandler.APICreateOrg)
+			ar.Get("/{slug}", orgHandler.APIGetOrg)
+			ar.Get("/{slug}/members", orgHandler.APIGetMembers)
 		})
 	})
 

@@ -33,7 +33,6 @@ code lands; items added when a new gap is found.
 
 ## Admin moderation (PART 23)
 
-- [ ] `/server/{adminPath}/moderation/users` list + detail + suspend/unsuspend
 - [ ] `/server/{adminPath}/moderation/orgs` list + detail + suspend
 - [ ] `/server/{adminPath}/domains` list + suspend
 - [ ] `/server/{adminPath}/settings` runtime config overrides
@@ -41,9 +40,8 @@ code lands; items added when a new gap is found.
 
 ## Analytics, QR, bulk, billing, federation, notifications
 
-- [ ] Analytics aggregation, GeoIP enrichment, bot exclusion, per-link reports
-- [ ] QR SVG + PDF output (only PNG works; SVG falls through to PNG)
-- [ ] Bulk CSV/JSON import + export
+- [ ] GeoIP enrichment and bot exclusion for analytics
+- [ ] QR PDF output (`GET /api/v1/qr/{code}?format=pdf` returns 501; needs a PDF library)
 - [ ] Billing (Stripe / Paddle / PayPal / LemonSqueezy / Manual) — disabled by default
 - [ ] Federation server + client (signed messages, `/.well-known/caslink`)
 - [ ] Notifications: SMTP works, add SendGrid / SES / SMS / Push providers
@@ -62,7 +60,6 @@ code lands; items added when a new gap is found.
 
 ## Tests
 
-- [ ] Unit tests for username/email validation, short-code generation, Argon2id round-trip
 - [ ] Integration test for register → login → create URL → redirect → click recorded
 - [ ] Integration test for password reset flow
 - [ ] Integration test for organization create + member join

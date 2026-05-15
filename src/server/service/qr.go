@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"image/color"
 	"image/png"
 
 	"github.com/skip2/go-qrcode"
@@ -62,13 +63,14 @@ func (s *QRService) GenerateQRCode(ctx context.Context, urlID int64, url string,
 
 	switch opts.Format {
 	case "svg":
-		// SVG generation (simplified - library doesn't have built-in SVG)
-		// Generate as PNG first, then convert or use a different library
-		// For now, fall back to PNG
-		fallthrough
+		svgData, err := generateSVG(url, opts.Size)
+		if err != nil {
+			return nil, "", fmt.Errorf("failed to generate SVG QR code: %w", err)
+		}
+		data = svgData
+		ct = "image/svg+xml"
 
 	default: // png
-		// PNG generation
 		qr, err := qrcode.New(url, qrcode.Medium)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to create QR code: %w", err)
@@ -76,7 +78,6 @@ func (s *QRService) GenerateQRCode(ctx context.Context, urlID int64, url string,
 
 		img := qr.Image(opts.Size)
 
-		// Encode to PNG
 		var buf bytes.Buffer
 		if err := png.Encode(&buf, img); err != nil {
 			return nil, "", fmt.Errorf("failed to encode PNG: %w", err)
@@ -133,6 +134,49 @@ func (s *QRService) ClearCache(ctx context.Context, urlID int64) error {
 	query := `DELETE FROM qr_codes WHERE url_id = ?`
 	_, err := s.store.ServerDB.ExecContext(ctx, query, urlID)
 	return err
+}
+
+// generateSVG renders a QR code as SVG by iterating the bitmap from go-qrcode.
+// Each dark module becomes a <rect> element so the output scales cleanly.
+func generateSVG(data string, size int) ([]byte, error) {
+	qr, err := qrcode.New(data, qrcode.Medium)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create QR code: %w", err)
+	}
+
+	img := qr.Image(size)
+	bounds := img.Bounds()
+	w := bounds.Max.X - bounds.Min.X
+	h := bounds.Max.Y - bounds.Min.Y
+
+	var buf bytes.Buffer
+	fmt.Fprintf(&buf, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" width="%d" height="%d">`, w, h, size, size)
+	fmt.Fprintf(&buf, `<rect width="%d" height="%d" fill="white"/>`, w, h)
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, b, _ := img.At(x, y).RGBA()
+			// Dark module: luminance below 50% (each channel is 16-bit from RGBA())
+			if isDarkPixel(color.RGBA{
+				R: uint8(r >> 8),
+				G: uint8(g >> 8),
+				B: uint8(b >> 8),
+				A: 255,
+			}) {
+				fmt.Fprintf(&buf, `<rect x="%d" y="%d" width="1" height="1" fill="black"/>`, x-bounds.Min.X, y-bounds.Min.Y)
+			}
+		}
+	}
+
+	buf.WriteString(`</svg>`)
+	return buf.Bytes(), nil
+}
+
+// isDarkPixel returns true when the pixel colour is closer to black than white.
+func isDarkPixel(c color.RGBA) bool {
+	// Simple luminance threshold: average of R, G, B < 128
+	lum := (int(c.R) + int(c.G) + int(c.B)) / 3
+	return lum < 128
 }
 
 // GenerateQRCodeForText generates a QR code for any text/URL (used for TOTP).

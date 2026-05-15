@@ -1,0 +1,94 @@
+{{template "base" .}}
+{{define "content"}}
+<div class="container container-md">
+  <div class="mb-4">
+    <a href="/users/security" class="text-muted text-sm">&larr; Back to Security</a>
+  </div>
+  <h1 class="mb-4">Two-Factor Authentication</h1>
+  {{if .Flash}}
+  <div class="alert alert-{{.Flash.Type}}" data-autohide="5000">{{.Flash.Message}}</div>
+  {{end}}
+
+  {{if .TOTPEnabled}}
+  <div class="card mb-4">
+    <div class="flex-between">
+      <div>
+        <h2>TOTP Status</h2>
+        <p class="text-muted text-sm mt-1">
+          <span class="badge badge-green">Enabled</span>
+          Your account is protected with an authenticator app.
+        </p>
+        {{if .RecoveryKeysRemaining}}
+        <p class="text-muted text-sm">{{.RecoveryKeysRemaining}} recovery keys remaining.</p>
+        {{end}}
+      </div>
+    </div>
+  </div>
+  <div class="card card-danger">
+    <h2 class="card-title">Disable Two-Factor Authentication</h2>
+    <p class="text-muted text-sm">This will remove TOTP protection from your account. Your recovery keys will also be invalidated.</p>
+    <form method="POST" action="/users/security/2fa">
+      <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+      <input type="hidden" name="action" value="disable">
+      <div class="form-group">
+        <label for="password">Confirm your password</label>
+        <input class="form-control" type="password" id="password" name="password"
+               required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-danger">Disable 2FA</button>
+    </form>
+  </div>
+
+  {{else if .QRDataURL}}
+  <div class="card mb-4">
+    <h2 class="card-title">Step 2: Scan QR Code</h2>
+    <p class="text-muted text-sm mb-3">Scan this QR code with your authenticator app (Google Authenticator, Authy, 1Password, etc.).</p>
+    <div class="text-center mb-3">
+      <img src="{{.QRDataURL}}" alt="TOTP QR Code" style="max-width:200px;border-radius:8px;">
+    </div>
+    {{if .TOTPSecret}}
+    <div class="form-group">
+      <label class="text-muted text-sm">Manual entry key</label>
+      <div class="flex-between">
+        <code id="totp-secret" class="break-all">{{.TOTPSecret}}</code>
+        <button type="button" class="btn btn-outline btn-sm copy-btn" data-copy="totp-secret">Copy</button>
+      </div>
+    </div>
+    {{end}}
+  </div>
+  <div class="card">
+    <h2 class="card-title">Step 3: Enter Verification Code</h2>
+    <form method="POST" action="/users/security/2fa">
+      <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+      <input type="hidden" name="action" value="verify">
+      <input type="hidden" name="secret" value="{{.TOTPSecret}}">
+      <div class="form-group">
+        <label for="code">6-digit code from your app</label>
+        <input class="form-control" type="text" id="code" name="code"
+               required maxlength="6" pattern="[0-9]{6}"
+               placeholder="000000" autocomplete="one-time-code" autofocus>
+      </div>
+      <button type="submit" class="btn btn-primary">Verify and Enable</button>
+      <a href="/users/security/2fa" class="btn btn-outline ml-2">Cancel</a>
+    </form>
+  </div>
+
+  {{else}}
+  <div class="card">
+    <h2 class="card-title">Enable Two-Factor Authentication</h2>
+    <p class="text-muted text-sm mb-3">Protect your account with a time-based one-time password (TOTP) from an authenticator app.</p>
+    <h3 class="text-sm mb-2">Step 1: Confirm your password</h3>
+    <form method="POST" action="/users/security/2fa">
+      <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+      <input type="hidden" name="action" value="enable">
+      <div class="form-group">
+        <label for="password">Current Password</label>
+        <input class="form-control" type="password" id="password" name="password"
+               required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-primary">Continue</button>
+    </form>
+  </div>
+  {{end}}
+</div>
+{{end}}

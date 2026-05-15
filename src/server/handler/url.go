@@ -21,13 +21,15 @@ var clickRecordWorkers = make(chan struct{}, 64)
 
 // URLHandler handles URL shortening endpoints
 type URLHandler struct {
-	urlService *service.URLService
+	urlService       *service.URLService
+	analyticsService *service.AnalyticsService
 }
 
 // NewURLHandler creates a new URL handler
-func NewURLHandler(urlService *service.URLService) *URLHandler {
+func NewURLHandler(urlService *service.URLService, analyticsService *service.AnalyticsService) *URLHandler {
 	return &URLHandler{
-		urlService: urlService,
+		urlService:       urlService,
+		analyticsService: analyticsService,
 	}
 }
 
@@ -127,6 +129,23 @@ func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
 
 	// Redirect to long URL
 	http.Redirect(w, r, url.LongURL, http.StatusFound)
+}
+
+// Stats handles GET /api/v1/urls/{code}/stats
+func (h *URLHandler) Stats(w http.ResponseWriter, r *http.Request) {
+	code := chi.URLParam(r, "code")
+	if code == "" {
+		respondError(w, http.StatusBadRequest, "Short code required")
+		return
+	}
+
+	stats, err := h.analyticsService.GetURLStats(r.Context(), code)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "URL not found or no stats available")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, stats)
 }
 
 // respondJSON sends a JSON response

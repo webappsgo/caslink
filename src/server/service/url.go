@@ -159,6 +159,72 @@ func (s *URLService) RecordClick(ctx context.Context, urlID int64, ipAddress, us
 	return nil
 }
 
+// CreateURLForUser creates a shortened URL owned by the given userID.
+func (s *URLService) CreateURLForUser(ctx context.Context, userID int64, req *model.CreateURLRequest) (*model.URL, error) {
+	// Validate URL
+	if _, err := url.ParseRequestURI(req.LongURL); err != nil {
+		return nil, fmt.Errorf("invalid URL: %w", err)
+	}
+
+	var shortCode string
+	var isCustom bool
+
+	if req.CustomCode != "" {
+		if err := s.validateCustomCode(req.CustomCode); err != nil {
+			return nil, err
+		}
+		exists, err := s.codeExists(ctx, req.CustomCode)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check code: %w", err)
+		}
+		if exists {
+			return nil, model.ErrCodeAlreadyExists
+		}
+		shortCode = req.CustomCode
+		isCustom = true
+	} else {
+		code, err := s.generateRandomCode(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate code: %w", err)
+		}
+		shortCode = code
+	}
+
+	var expiresAt *time.Time
+	if req.ExpiresAt != nil {
+		expiresAt = req.ExpiresAt
+	} else if req.ExpireAfter != "" {
+		exp := parseExpiration(req.ExpireAfter)
+		expiresAt = &exp
+	}
+
+	query := `INSERT INTO urls (short_code, long_url, title, description, user_id, custom_code, expires_at)
+	          VALUES (?, ?, ?, ?, ?, ?, ?)`
+
+	result, err := s.store.ServerDB.ExecContext(ctx, query,
+		shortCode, req.LongURL, req.Title, req.Description, userID, isCustom, expiresAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to insert URL: %w", err)
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get insert ID: %w", err)
+	}
+
+	return &model.URL{
+		ID:        id,
+		ShortCode: shortCode,
+		LongURL:   req.LongURL,
+		Title:     req.Title,
+		UserID:    &userID,
+		CustomCode: isCustom,
+		ExpiresAt: expiresAt,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}, nil
+}
+
 // ListByUser returns the most recent URLs created by a user (up to limit).
 func (s *URLService) ListByUser(ctx context.Context, userID int64, limit int) ([]*model.URL, error) {
 	if limit <= 0 {

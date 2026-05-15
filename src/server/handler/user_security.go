@@ -1,29 +1,38 @@
 package handler
 
 import (
+	"context"
 	"encoding/base64"
-	"fmt"
+	"encoding/json"
+	"html/template"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/casjaysdevdocker/caslink/src/config"
 	"github.com/casjaysdevdocker/caslink/src/server/service"
+	"github.com/casjaysdevdocker/caslink/src/server/tmpl"
 )
 
-// UserSecurityHandler handles user security-related routes
+// UserSecurityHandler handles user security-related routes.
 type UserSecurityHandler struct {
 	authService  *service.AuthService
 	totpService  *service.TOTPService
 	qrService    *service.QRService
 	emailService *service.EmailService
+	renderer     *tmpl.Renderer
+	config       *config.Config
 }
 
-// NewUserSecurityHandler creates a new user security handler
-func NewUserSecurityHandler(authService *service.AuthService, totpService *service.TOTPService, qrService *service.QRService, emailService *service.EmailService) *UserSecurityHandler {
+// NewUserSecurityHandler creates a new user security handler.
+func NewUserSecurityHandler(authService *service.AuthService, totpService *service.TOTPService, qrService *service.QRService, emailService *service.EmailService, renderer *tmpl.Renderer, cfg *config.Config) *UserSecurityHandler {
 	return &UserSecurityHandler{
 		authService:  authService,
 		totpService:  totpService,
 		qrService:    qrService,
 		emailService: emailService,
+		renderer:     renderer,
+		config:       cfg,
 	}
 }
 
@@ -45,31 +54,10 @@ func (h *UserSecurityHandler) Password(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// renderPasswordPage renders the password change form
+// renderPasswordPage renders the password change form.
 func (h *UserSecurityHandler) renderPasswordPage(w http.ResponseWriter, r *http.Request, user *service.User) {
-	// Pending (tracked in TODO.AI.md): Render password change HTML page per PART 17
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `
-		<h1>Change Password</h1>
-		<p>User: %s</p>
-		<form method="POST" action="/users/security/password">
-			<div>
-				<label>Current Password:</label>
-				<input type="password" name="current_password" required />
-			</div>
-			<div>
-				<label>New Password:</label>
-				<input type="password" name="new_password" required />
-			</div>
-			<div>
-				<label>Confirm Password:</label>
-				<input type="password" name="confirm_password" required />
-			</div>
-			<button type="submit">Change Password</button>
-		</form>
-		<p><a href="/users/security">Back to Security</a></p>
-	`, user.Username)
+	data := newPageData(h.config, r, "Change Password", user)
+	h.renderer.Render(w, "template/page/users/security/password.html", data)
 }
 
 // handlePasswordChange processes password change requests
@@ -133,69 +121,63 @@ func (h *UserSecurityHandler) Sessions(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// renderSessionsPage renders the active sessions list
+// sessionView is the view model for a single session row.
+type sessionView struct {
+	ID         string
+	ShortID    string
+	IPAddress  string
+	UserAgent  string
+	CreatedAt  string
+	LastActive string
+	IsCurrent  bool
+}
+
+// renderSessionsPage renders the active sessions list.
 func (h *UserSecurityHandler) renderSessionsPage(w http.ResponseWriter, r *http.Request, user *service.User) {
-	// Get active sessions from auth service
-	sessions, err := h.authService.GetUserSessions(r.Context(), user.ID, "user")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	sessions, err := h.authService.GetUserSessions(ctx, user.ID, "user")
 	if err != nil {
 		http.Error(w, "Failed to load sessions", http.StatusInternalServerError)
 		return
 	}
-	
-	// Get current session ID to identify it
+
 	currentSessionCookie, _ := r.Cookie("user_session")
 	currentSessionID := ""
 	if currentSessionCookie != nil {
 		currentSessionID = currentSessionCookie.Value
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	
-	html := fmt.Sprintf(`
-		<h1>Active Sessions</h1>
-		<p>User: %s</p>
-		<p>Manage your active login sessions across all devices.</p>
-		<ul>
-	`, user.Username)
-	
-	for _, session := range sessions {
-		isCurrent := session.ID == currentSessionID
-		if isCurrent {
-			html += fmt.Sprintf(`
-				<li>
-					<strong>Current Session (This Device)</strong><br>
-					Created: %s<br>
-					Expires: %s<br>
-					<em>Cannot revoke current session</em>
-				</li>
-			`, session.CreatedAt.Format("2006-01-02 15:04:05"), session.ExpiresAt.Format("2006-01-02 15:04:05"))
-		} else {
-			html += fmt.Sprintf(`
-				<li>
-					Session ID: %s...<br>
-					Created: %s<br>
-					Expires: %s<br>
-					<form method="POST" action="/users/security/sessions" style="display:inline;">
-						<input type="hidden" name="session_id" value="%s" />
-						<button type="submit">Revoke</button>
-					</form>
-				</li>
-			`, session.ID[:8], session.CreatedAt.Format("2006-01-02 15:04:05"), 
-			   session.ExpiresAt.Format("2006-01-02 15:04:05"), session.ID)
+	views := make([]sessionView, 0, len(sessions))
+	for _, s := range sessions {
+		shortID := s.ID
+		if len(shortID) > 8 {
+			shortID = shortID[len(shortID)-8:]
 		}
+		lastActive := s.LastActive.Format("2006-01-02 15:04")
+		if s.LastActive.IsZero() {
+			lastActive = s.CreatedAt.Format("2006-01-02 15:04")
+		}
+		views = append(views, sessionView{
+			ID:         s.ID,
+			ShortID:    shortID,
+			IPAddress:  s.IPAddress,
+			UserAgent:  s.UserAgent,
+			CreatedAt:  s.CreatedAt.Format("2006-01-02 15:04"),
+			LastActive: lastActive,
+			IsCurrent:  s.ID == currentSessionID,
+		})
 	}
-	
-	html += `
-		</ul>
-		<hr>
-		<form method="POST" action="/users/security/sessions/revoke-all">
-			<button type="submit" onclick="return confirm('Revoke all other sessions? You will stay logged in on this device.')">Revoke All Other Sessions</button>
-		</form>
-		<p><a href="/users/security">Back to Security</a></p>
-	`
-	
-	fmt.Fprint(w, html)
+
+	data := struct {
+		tmpl.Data
+		Sessions []sessionView
+	}{
+		Data:     newPageData(h.config, r, "Active Sessions", user),
+		Sessions: views,
+	}
+	h.renderer.Render(w, "template/page/users/security/sessions.html", data)
 }
 
 // handleSessionRevocation revokes a specific session
@@ -240,49 +222,26 @@ func (h *UserSecurityHandler) TwoFactor(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-// renderTwoFactorPage renders the 2FA setup/management page
+// renderTwoFactorPage renders the 2FA setup/management page.
 func (h *UserSecurityHandler) renderTwoFactorPage(w http.ResponseWriter, r *http.Request, user *service.User) {
-	// Check if user has 2FA enabled
 	has2FA := h.totpService.HasTOTP(user.ID)
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	
+	recoveryKeysRemaining := 0
 	if has2FA {
-		fmt.Fprintf(w, `
-			<h1>Two-Factor Authentication (TOTP)</h1>
-			<p>User: %s</p>
-			<p>Status: <strong>Enabled</strong> ✅</p>
-			<div>
-				<h2>Disable 2FA</h2>
-				<p>This will remove two-factor authentication from your account.</p>
-				<form method="POST" action="/users/security/2fa">
-					<input type="hidden" name="action" value="disable" />
-					<div>
-						<label>Confirm your password:</label>
-						<input type="password" name="password" required />
-					</div>
-					<button type="submit">Disable 2FA</button>
-				</form>
-			</div>
-			<p><a href="/users/security">Back to Security</a></p>
-		`, user.Username)
-	} else {
-		fmt.Fprintf(w, `
-			<h1>Two-Factor Authentication (TOTP)</h1>
-			<p>User: %s</p>
-			<p>Status: Not Enabled</p>
-			<div>
-				<h2>Enable 2FA</h2>
-				<p>Secure your account with time-based one-time passwords (TOTP)</p>
-				<form method="POST" action="/users/security/2fa">
-					<input type="hidden" name="action" value="enable" />
-					<button type="submit">Enable 2FA</button>
-				</form>
-			</div>
-			<p><a href="/users/security">Back to Security</a></p>
-		`, user.Username)
+		recoveryKeysRemaining, _ = h.totpService.GetRemainingRecoveryKeyCount(user.ID)
 	}
+
+	data := struct {
+		tmpl.Data
+		TOTPEnabled           bool
+		QRDataURL             string
+		TOTPSecret            string
+		RecoveryKeysRemaining int
+	}{
+		Data:                  newPageData(h.config, r, "Two-Factor Authentication", user),
+		TOTPEnabled:           has2FA,
+		RecoveryKeysRemaining: recoveryKeysRemaining,
+	}
+	h.renderer.Render(w, "template/page/users/security/2fa.html", data)
 }
 
 // handleTwoFactorAction handles 2FA enable/disable/verify actions
@@ -338,61 +297,42 @@ func (h *UserSecurityHandler) handleTOTPEnable(w http.ResponseWriter, r *http.Re
 	h.renderTOTPSetup(w, r, user, secret, qrURL)
 }
 
-// renderTOTPPasswordConfirm renders password confirmation form
+// renderTOTPPasswordConfirm renders the password-confirm step before generating a TOTP secret.
 func (h *UserSecurityHandler) renderTOTPPasswordConfirm(w http.ResponseWriter, r *http.Request, user *service.User) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `
-		<h1>Enable Two-Factor Authentication</h1>
-		<h2>Step 1: Confirm Your Password</h2>
-		<form method="POST" action="/users/security/2fa">
-			<input type="hidden" name="action" value="enable" />
-			<div>
-				<label>Password:</label>
-				<input type="password" name="password" required />
-			</div>
-			<button type="submit">Continue</button>
-		</form>
-		<p><a href="/users/security/2fa">Back</a></p>
-	`)
+	data := struct {
+		tmpl.Data
+		TOTPEnabled           bool
+		QRDataURL             string
+		TOTPSecret            string
+		RecoveryKeysRemaining int
+	}{
+		Data: newPageData(h.config, r, "Enable Two-Factor Authentication", user),
+	}
+	h.renderer.Render(w, "template/page/users/security/2fa.html", data)
 }
 
-// renderTOTPSetup renders QR code and manual key per PART 23 line 20094-20106
+// renderTOTPSetup renders the QR code and code-entry step.
 func (h *UserSecurityHandler) renderTOTPSetup(w http.ResponseWriter, r *http.Request, user *service.User, secret, qrURL string) {
-	// Generate QR code image
 	qrImage, err := h.qrService.GenerateQRCodeForText(qrURL, 200)
 	if err != nil {
 		http.Error(w, "Failed to generate QR code", http.StatusInternalServerError)
 		return
 	}
-	
-	// Encode as base64 for inline display
-	qrBase64 := base64.StdEncoding.EncodeToString(qrImage)
-	
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `
-		<h1>Enable Two-Factor Authentication</h1>
-		<h2>Step 2: Scan QR Code</h2>
-		<p>Scan this QR code with your authenticator app (Google Authenticator, Authy, etc.)</p>
-		<div>
-			<img src="data:image/png;base64,%s" alt="QR Code" />
-		</div>
-		<p><strong>Can't scan? Manual key:</strong> %s</p>
-		<button onclick="navigator.clipboard.writeText('%s')">Copy Key</button>
-		
-		<h2>Step 3: Enter Verification Code</h2>
-		<form method="POST" action="/users/security/2fa">
-			<input type="hidden" name="action" value="verify" />
-			<input type="hidden" name="secret" value="%s" />
-			<div>
-				<label>6-digit code from your app:</label>
-				<input type="text" name="code" maxlength="6" pattern="[0-9]{6}" required />
-			</div>
-			<button type="submit">Verify and Enable</button>
-		</form>
-		<p><a href="/users/security/2fa">Cancel</a></p>
-	`, qrBase64, secret, secret, secret)
+
+	qrDataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(qrImage)
+
+	data := struct {
+		tmpl.Data
+		TOTPEnabled           bool
+		QRDataURL             string
+		TOTPSecret            string
+		RecoveryKeysRemaining int
+	}{
+		Data:      newPageData(h.config, r, "Enable Two-Factor Authentication", user),
+		QRDataURL: qrDataURL,
+		TOTPSecret: secret,
+	}
+	h.renderer.Render(w, "template/page/users/security/2fa.html", data)
 }
 
 // handleTOTPVerify verifies TOTP code and enables 2FA per PART 23 line 20140-20147
@@ -422,53 +362,25 @@ func (h *UserSecurityHandler) handleTOTPVerify(w http.ResponseWriter, r *http.Re
 	h.renderRecoveryKeys(w, r, user, recoveryKeys)
 }
 
-// renderRecoveryKeys displays recovery keys per PART 23 line 20032-20055
+// renderRecoveryKeys displays recovery keys per PART 23 line 20032-20055.
+// Keys are shown exactly once; the page must not be re-rendered from a bookmark.
 func (h *UserSecurityHandler) renderRecoveryKeys(w http.ResponseWriter, r *http.Request, user *service.User, keys []string) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	
-	// Format keys in 2 columns per spec
-	keysHTML := ""
-	for i := 0; i < len(keys); i++ {
-		keysHTML += fmt.Sprintf("%d. %s    ", i+1, keys[i])
-		if i == 4 {
-			keysHTML += "<br>"
-		}
+	keysJSON, err := json.Marshal(keys)
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
 	}
-	
-	fmt.Fprintf(w, `
-		<h1>🔑 SAVE YOUR RECOVERY KEYS</h1>
-		<p><strong>⚠️ SAVE THESE NOW - THEY WILL NOT BE SHOWN AGAIN</strong></p>
-		<p>These keys can be used to access your account if you lose access to your 2FA device. Each key can only be used once.</p>
-		<div style="font-family: monospace; padding: 20px; background: #f5f5f5;">
-			%s
-		</div>
-		<button onclick="downloadKeys()">Download as TXT</button>
-		<button onclick="copyKeys()">Copy All</button>
-		<form method="POST" action="/users/security/2fa/complete">
-			<div>
-				<input type="checkbox" name="confirmed" id="confirmed" required />
-				<label for="confirmed">☑️ I have saved my recovery keys</label>
-			</div>
-			<button type="submit">Continue</button>
-		</form>
-		<script>
-		function downloadKeys() {
-			const keys = %q;
-			const blob = new Blob([keys.join('\n')], {type: 'text/plain'});
-			const url = URL.createObjectURL(blob);
-			const a = document.createElement('a');
-			a.href = url;
-			a.download = 'caslink-recovery-keys.txt';
-			a.click();
-		}
-		function copyKeys() {
-			const keys = %q;
-			navigator.clipboard.writeText(keys.join('\n'));
-			alert('Recovery keys copied to clipboard');
-		}
-		</script>
-	`, keysHTML, keys, keys)
+	type recoveryKeysData struct {
+		tmpl.Data
+		Keys    []string
+		KeysJSON template.JS
+	}
+	data := recoveryKeysData{
+		Data:    newPageData(h.config, r, "Save Recovery Keys", user),
+		Keys:    keys,
+		KeysJSON: template.JS(keysJSON),
+	}
+	h.renderer.Render(w, "template/page/users/security/recovery-keys.html", data)
 }
 
 // handleTOTPDisable disables 2FA (requires password confirmation)
@@ -522,52 +434,10 @@ func (h *UserSecurityHandler) Passkeys(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// renderPasskeysPage renders the passkey management page
+// renderPasskeysPage renders the passkey management page.
 func (h *UserSecurityHandler) renderPasskeysPage(w http.ResponseWriter, r *http.Request, user *service.User) {
-	// Get user's registered passkeys from database
-	passkeys, err := h.getPasskeysForUser(user.ID)
-	if err != nil {
-		http.Error(w, "Failed to load passkeys", http.StatusInternalServerError)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	
-	passkeyList := ""
-	if len(passkeys) == 0 {
-		passkeyList = "<p>No passkeys registered yet.</p>"
-	} else {
-		passkeyList = "<ul>"
-		for _, pk := range passkeys {
-			passkeyList += fmt.Sprintf(`
-				<li>
-					<strong>%s</strong><br>
-					Added: %s<br>
-					Last used: %s<br>
-					<form method="POST" action="/users/security/passkeys" style="display:inline;">
-						<input type="hidden" name="action" value="delete" />
-						<input type="hidden" name="passkey_id" value="%s" />
-						<button type="submit" onclick="return confirm('Delete this passkey?')">Delete</button>
-					</form>
-				</li>
-			`, pk.Name, pk.CreatedAt, pk.LastUsed, pk.ID)
-		}
-		passkeyList += "</ul>"
-	}
-	
-	fmt.Fprintf(w, `
-		<h1>Passkeys (WebAuthn)</h1>
-		<p>User: %s</p>
-		<p>Use fingerprint, Face ID, or hardware security keys to sign in.</p>
-		<div>
-			<h2>Registered Passkeys</h2>
-			%s
-			<p><strong>Note:</strong> Passkey registration requires JavaScript and browser support for WebAuthn.</p>
-			<p>This feature will be fully implemented when the web frontend is complete.</p>
-		</div>
-		<p><a href="/users/security">Back to Security</a></p>
-	`, user.Username, passkeyList)
+	data := newPageData(h.config, r, "Passkeys", user)
+	h.renderer.Render(w, "template/page/users/security/passkeys.html", data)
 }
 
 // Passkey represents a WebAuthn credential
@@ -636,52 +506,27 @@ func (h *UserSecurityHandler) Recovery(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// renderRecoveryPage renders the recovery keys page
+// renderRecoveryPage renders the recovery keys status page.
 func (h *UserSecurityHandler) renderRecoveryPage(w http.ResponseWriter, r *http.Request, user *service.User) {
-	// Check if user has MFA enabled (recovery keys only exist when MFA is enabled)
 	hasMFA := h.totpService.HasTOTP(user.ID)
-	
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	
-	if hasMFA {
-		remainingKeys, _ := h.totpService.GetRemainingRecoveryKeyCount(user.ID)
-		fmt.Fprintf(w, `
-			<h1>Recovery Keys</h1>
-			<p>User: %s</p>
-			<div>
-				<h2>About Recovery Keys</h2>
-				<p>Recovery keys allow you to access your account if you lose access to your 2FA device.</p>
-				<ul>
-					<li>10 keys were generated when you enabled 2FA</li>
-					<li>Each key can only be used once</li>
-					<li>Keys are shown only once during setup</li>
-					<li>Format: a1b2c3d4-e5f6</li>
-				</ul>
-				<p><strong>Status:</strong> %d recovery keys remaining</p>
-				<p>Recovery keys cannot be viewed again. If you lose all keys, you'll need to contact an administrator.</p>
-			</div>
-			<p><a href="/users/security">Back to Security</a></p>
-		`, user.Username, remainingKeys)
-	} else {
-		fmt.Fprintf(w, `
-			<h1>Recovery Keys</h1>
-			<p>User: %s</p>
-			<div>
-				<h2>About Recovery Keys</h2>
-				<p>Recovery keys allow you to access your account if you lose access to your 2FA device or passkey.</p>
-				<ul>
-					<li>10 keys are generated when you enable 2FA or passkeys</li>
-					<li>Each key can only be used once</li>
-					<li>Keys are shown only once - save them securely</li>
-					<li>Format: a1b2c3d4-e5f6</li>
-				</ul>
-				<p><strong>Status:</strong> MFA not enabled (recovery keys not generated)</p>
-				<p>Enable 2FA or passkeys to generate recovery keys.</p>
-			</div>
-			<p><a href="/users/security">Back to Security</a></p>
-		`, user.Username)
+
+	type recoveryPageData struct {
+		tmpl.Data
+		HasMFA                bool
+		RecoveryKeysRemaining int
 	}
+
+	var remaining int
+	if hasMFA {
+		remaining, _ = h.totpService.GetRemainingRecoveryKeyCount(user.ID)
+	}
+
+	data := recoveryPageData{
+		Data:                  newPageData(h.config, r, "Recovery Keys", user),
+		HasMFA:                hasMFA,
+		RecoveryKeysRemaining: remaining,
+	}
+	h.renderer.Render(w, "template/page/users/security/recovery.html", data)
 }
 
 // handleRecoveryAction handles recovery key regeneration
