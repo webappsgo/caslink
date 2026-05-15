@@ -616,12 +616,67 @@ if cacheSize > 1024*1024*1024 {
 | **Docker builds on EVERY push** | Any branch push triggers Docker image build |
 | **Docker tags** | Any push → `devel`, `{commit}`; beta → adds `beta`; tag → `{version}`, `latest`, `YYMM`, `{commit}` |
 | **Workflow permissions** | Default to read-only / least privilege; grant write only to the specific release/publish job that needs it |
-| **Third-party action pinning** | External actions MUST be pinned to a full commit SHA - never float on `@main`, `@master`, or broad tags |
+| **Third-party action pinning** | External actions MUST be pinned to a full commit SHA — never float on `@main`, `@master`, or broad tags; verify runtime and maintenance status on every SHA update |
 | **Unsafe PR triggers forbidden by default** | Do NOT use `pull_request_target` for untrusted code execution, build, test, or artifact upload paths |
 | **Secrets never exposed to forks** | Fork PR workflows run without repo secrets, write tokens, publish steps, or deployment credentials |
 | **Dependency updates are automated** | Public repos include dependency update automation for every ecosystem in use |
 | **Secret scanning is mandatory** | Public repos run automated secret scanning on push/PR and treat findings as blockers |
 | **Release outputs are verifiable** | Releases publish checksums, SBOM, release notes, and provenance/attestation when the host platform supports it |
+
+### Workflow Permissions
+
+Set `contents: read` at the workflow level as the read-only baseline. Grant write permissions only on the specific job that performs the release or publish step — never workflow-wide.
+
+| Permission | Scope | Why |
+|------------|-------|-----|
+| `contents: read` | All jobs (baseline) | Checkout |
+| `contents: write` | Release job only | Create GitHub release, upload assets |
+| `packages: write` | Release job only | Push images to `ghcr.io` |
+| `id-token: write` | Release job only | OIDC token for Sigstore/cosign artifact signing |
+| `attestations: write` | Release job only | GitHub artifact attestation (SBOM, provenance) |
+
+```yaml
+# Workflow-level: read-only baseline
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # Inherits read-only — no overrides needed
+    runs-on: ubuntu-latest
+    ...
+
+  release:
+    needs: build
+    permissions:
+      contents: write      # create GitHub release + upload assets
+      packages: write      # push to ghcr.io
+      id-token: write      # OIDC token for cosign signing
+      attestations: write  # GitHub artifact attestations (SBOM, provenance)
+    ...
+```
+
+Third-party registry publishing uses repository secrets, not GitHub token permissions (e.g. `NODE_AUTH_TOKEN` for npm).
+
+### Third-party Action Pinning
+
+Every external action (`uses: owner/action@...`) MUST be pinned to a full commit SHA — never a mutable tag or branch:
+
+```yaml
+# Wrong — tag can silently change or be deleted
+- uses: actions/checkout@v4
+
+# Correct — SHA is immutable
+- uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+```
+
+**When updating a pinned SHA**, verify three things:
+
+1. **Action is still maintained** — check the upstream repo is not archived, deprecated, or abandoned
+2. **Runtime is still supported** — open the action's `action.yml` at the new SHA and check `runs.using`; if it names a runtime that GitHub has deprecated or scheduled for removal, the action will silently fail after that date. Example: `node20` is removed from GitHub-hosted runners on **2026-09-16** — any action still on `node20` must be updated to a SHA where it has migrated to `node24` — all common `actions/*` and `docker/*` actions have already done so
+3. **No supply-chain change** — skim the diff between the old and new SHA; unexpected new dependencies, changed entrypoints, or network calls added to setup steps are red flags
+
+Dependabot covers `github-actions` ecosystem updates automatically when `.github/dependabot.yml` is configured — but it only updates the SHA, not the runtime verification. The runtime check is always manual.
 
 ### Public Repository Governance
 
