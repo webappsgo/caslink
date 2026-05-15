@@ -68,7 +68,10 @@ func (s *URLService) CreateURL(ctx context.Context, req *model.CreateURLRequest)
 	// Hash password if provided (using Argon2id per SPEC line 129)
 	var passwordHash *string
 	if req.Password != "" {
-		hash := hashPasswordArgon2id(req.Password)
+		hash, err := hashPasswordArgon2id(req.Password)
+		if err != nil {
+			return nil, fmt.Errorf("failed to hash URL password: %w", err)
+		}
 		passwordHash = &hash
 	}
 
@@ -154,6 +157,35 @@ func (s *URLService) RecordClick(ctx context.Context, urlID int64, ipAddress, us
 	}
 
 	return nil
+}
+
+// ListByUser returns the most recent URLs created by a user (up to limit).
+func (s *URLService) ListByUser(ctx context.Context, userID int64, limit int) ([]*model.URL, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	query := `SELECT id, short_code, long_url, title, description, user_id, custom_code, password_hash, expires_at, created_at, updated_at
+	          FROM urls WHERE user_id = ? ORDER BY created_at DESC LIMIT ?`
+
+	rows, err := s.store.ServerDB.QueryContext(ctx, query, userID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list URLs: %w", err)
+	}
+	defer rows.Close()
+
+	var urls []*model.URL
+	for rows.Next() {
+		var u model.URL
+		if err := rows.Scan(
+			&u.ID, &u.ShortCode, &u.LongURL, &u.Title, &u.Description,
+			&u.UserID, &u.CustomCode, &u.PasswordHash, &u.ExpiresAt,
+			&u.CreatedAt, &u.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan URL row: %w", err)
+		}
+		urls = append(urls, &u)
+	}
+	return urls, rows.Err()
 }
 
 // validateCustomCode validates a custom short code

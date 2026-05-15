@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -18,19 +19,23 @@ import (
 	"github.com/casjaysdevdocker/caslink/src/config"
 	"github.com/casjaysdevdocker/caslink/src/graphql"
 	"github.com/casjaysdevdocker/caslink/src/mode"
+	"github.com/casjaysdevdocker/caslink/src/scheduler"
 	"github.com/casjaysdevdocker/caslink/src/server/handler"
 	"github.com/casjaysdevdocker/caslink/src/server/service"
 	"github.com/casjaysdevdocker/caslink/src/server/store"
+	"github.com/casjaysdevdocker/caslink/src/server/tmpl"
 	"github.com/casjaysdevdocker/caslink/src/swagger"
 )
 
 // Server represents the HTTP server
 type Server struct {
-	router *chi.Mux
-	server *http.Server
-	config *config.Config
-	mode   mode.Mode
-	store  *store.Store
+	router    *chi.Mux
+	server    *http.Server
+	config    *config.Config
+	mode      mode.Mode
+	store     *store.Store
+	scheduler *scheduler.Scheduler
+	renderer  *tmpl.Renderer
 
 	// Version information
 	Version   string
@@ -40,10 +45,28 @@ type Server struct {
 
 // New creates a new server instance
 func New(cfg *config.Config, appMode mode.Mode, dataDir, version, commitID, buildDate string) (*Server, error) {
-	// Open database
-	db, err := store.Open(dataDir)
+	// Open database — use configured driver if set, otherwise default to SQLite
+	dbCfg := cfg.Server.Database
+	var db *store.Store
+	var err error
+	if dbCfg.Driver != "" && dbCfg.Driver != "sqlite" {
+		db, err = store.OpenStoreWithConfig(
+			dbCfg.Driver, dbCfg.Host, dbCfg.Port,
+			dbCfg.Name, dbCfg.Username, dbCfg.Password, dbCfg.SSLMode,
+			dataDir,
+		)
+	} else {
+		db, err = store.Open(dataDir)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
+	}
+
+	sched := scheduler.New(db)
+
+	renderer, err := tmpl.New()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize template renderer: %w", err)
 	}
 
 	s := &Server{
@@ -51,6 +74,8 @@ func New(cfg *config.Config, appMode mode.Mode, dataDir, version, commitID, buil
 		config:    cfg,
 		mode:      appMode,
 		store:     db,
+		scheduler: sched,
+		renderer:  renderer,
 		Version:   version,
 		CommitID:  commitID,
 		BuildDate: buildDate,
@@ -81,13 +106,23 @@ func (s *Server) setupMiddleware() {
 	// Timeout middleware (30 second timeout)
 	s.router.Use(middleware.Timeout(30 * time.Second))
 
-	// CORS middleware
+	// CORS middleware. When unset, restrict to same-origin (no allowed
+	// origins); operators set Web.CORS to a comma-separated allowlist to
+	// enable cross-origin access. Using "*" with AllowCredentials is a
+	// browser-rejected misconfiguration and is intentionally not supported.
+	var origins []string
+	if s.config.Web.CORS != "" && s.config.Web.CORS != "*" {
+		origins = strings.Split(s.config.Web.CORS, ",")
+		for i := range origins {
+			origins[i] = strings.TrimSpace(origins[i])
+		}
+	}
 	corsHandler := cors.New(cors.Options{
-		AllowedOrigins:   []string{s.config.Web.CORS},
+		AllowedOrigins:   origins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
 		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: true,
+		AllowCredentials: len(origins) > 0,
 		MaxAge:           300,
 	})
 	s.router.Use(corsHandler.Handler)
@@ -95,6 +130,15 @@ func (s *Server) setupMiddleware() {
 
 // setupRoutes configures HTTP routes
 func (s *Server) setupRoutes() {
+	// Determine the configurable admin path (default "admin" per spec)
+	adminPath := s.config.Server.Admin.Path
+	if adminPath == "" {
+		adminPath = "admin"
+	}
+
+	// Create rate limiter (per-IP sliding window)
+	rateLimiter := NewRateLimiter()
+
 	// Create services
 	urlService := service.NewURLService(s.store)
 	authService := service.NewAuthService(s.store)
@@ -104,20 +148,26 @@ func (s *Server) setupRoutes() {
 	orgService := service.NewOrgService(s.store)
 	domainService := service.NewDomainService(s.store)
 
+	// Token service (needed by user handler and bearer middleware)
+	tokenService := service.NewTokenService(s.store)
+
 	// Create handlers
 	urlHandler := handler.NewURLHandler(urlService)
 	qrHandler := handler.NewQRHandler(qrService, urlService)
-	adminHandler := handler.NewAdminHandler(authService, s.Version, s.mode.String())
+	adminHandler := handler.NewAdminHandler(authService, s.Version, s.mode.String(), adminPath)
 	setupHandler := handler.NewSetupHandler(authService, s.Version)
-	authUserHandler := handler.NewAuthUserHandler(authService)
+	authUserHandler := handler.NewAuthUserHandler(authService, s.renderer, s.config)
 	twoFactorHandler := handler.NewTwoFactorHandler(authService, totpService)
-	passwordHandler := handler.NewPasswordHandler(authService, emailService)
-	userHandler := handler.NewUserHandler(authService)
+	passwordHandler := handler.NewPasswordHandler(authService, emailService, s.renderer, s.config)
+	userHandler := handler.NewUserHandler(authService, tokenService, urlService, s.renderer, s.config)
 	orgHandler := handler.NewOrgHandler(orgService, authService)
 	domainHandler := handler.NewDomainHandler(domainService, authService)
 
-	// Health endpoints
-	s.router.Get("/healthz", handler.HealthHandler(s.Version, s.mode.String()))
+	// Static assets (CSS, JS, PWA manifest, service worker)
+	s.router.Handle("/static/*", tmpl.StaticHandler())
+
+	// Well-known / health — no auth, no CSRF
+	s.router.Get("/server/healthz", handler.HealthHandler(s.Version, s.mode.String()))
 	s.router.Get("/version", handler.VersionHandler(s.Version, s.CommitID, s.BuildDate))
 
 	// Swagger/OpenAPI documentation
@@ -133,21 +183,24 @@ func (s *Server) setupRoutes() {
 	s.router.Get("/setup", setupHandler.SetupPage)
 	s.router.Post("/setup", setupHandler.Setup)
 
-	// Auth routes per PART 23
-	s.router.Route("/auth", func(r chi.Router) {
+	// Auth routes — /server/auth/* per spec PART 17
+	s.router.Route("/server/auth", func(r chi.Router) {
+		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled))
+		r.Use(RateLimitMiddleware(rateLimiter))
+
 		r.Get("/login", authUserHandler.LoginPage)
 		r.Post("/login", authUserHandler.Login)
 		r.Get("/logout", authUserHandler.Logout)
 		r.Get("/register", authUserHandler.RegisterPage)
 		r.Post("/register", authUserHandler.Register)
 
-		// Password reset per PART 23 and PART 26
+		// Password reset per spec PART 23 / PART 26
 		r.Get("/password/forgot", passwordHandler.ForgotPasswordPage)
 		r.Post("/password/forgot", passwordHandler.ForgotPassword)
 		r.Get("/password/reset/{token}", passwordHandler.ResetPasswordPage)
 		r.Post("/password/reset/{token}", passwordHandler.ResetPassword)
 
-		// 2FA verification per PART 23 line 20217-20280
+		// 2FA verification per spec PART 23
 		r.Get("/2fa", twoFactorHandler.VerifyPage)
 		r.Post("/2fa", twoFactorHandler.Verify)
 		r.Get("/2fa/recovery", twoFactorHandler.RecoveryPage)
@@ -155,18 +208,20 @@ func (s *Server) setupRoutes() {
 		r.Get("/2fa/recovery/options", twoFactorHandler.RecoveryOptionsPage)
 	})
 
-	// User routes (requires auth per PART 23)
-	s.router.Route("/user", func(r chi.Router) {
-		// Authentication middleware - validates user_session cookie
+	// User routes — /users/* per spec PART 17 (requires auth)
+	s.router.Route("/users", func(r chi.Router) {
+		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled))
 		r.Use(UserAuthMiddleware(authService))
+		r.Use(CSRFMiddleware())
 
-		// Profile and settings per PART 23
+		r.Get("/dashboard", userHandler.Dashboard)
 		r.Get("/profile", userHandler.Profile)
 		r.Get("/settings", userHandler.Settings)
 		r.Get("/tokens", userHandler.Tokens)
+		r.Post("/tokens", userHandler.Tokens)
 		r.Get("/security", userHandler.Security)
 
-		// Security sub-routes per PART 23
+		// Security sub-routes per spec PART 23
 		userSecurityHandler := handler.NewUserSecurityHandler(authService, totpService, qrService, emailService)
 		r.HandleFunc("/security/password", userSecurityHandler.Password)
 		r.HandleFunc("/security/sessions", userSecurityHandler.Sessions)
@@ -180,10 +235,11 @@ func (s *Server) setupRoutes() {
 		r.Post("/domains/{domain}/verify", domainHandler.VerifyUserDomain)
 	})
 
-	// Organization routes per PART 23 (requires auth)
-	s.router.Route("/org", func(r chi.Router) {
-		// Authentication middleware - validates user_session cookie
+	// Organization routes — /orgs/* per spec PART 17 (requires auth)
+	s.router.Route("/orgs", func(r chi.Router) {
+		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled))
 		r.Use(UserAuthMiddleware(authService))
+		r.Use(CSRFMiddleware())
 
 		r.Get("/", orgHandler.ListOrgs)
 		r.Get("/new", orgHandler.CreateOrgPage)
@@ -191,7 +247,6 @@ func (s *Server) setupRoutes() {
 
 		// Organization-specific routes (requires org membership)
 		r.Route("/{slug}", func(sr chi.Router) {
-			// Verify org membership per PART 23
 			sr.Use(OrgMemberMiddleware(orgService))
 
 			sr.Get("/", orgHandler.OrgDashboard)
@@ -201,37 +256,74 @@ func (s *Server) setupRoutes() {
 			// Custom domain management per PART 35
 			sr.Get("/domains", domainHandler.ListOrgDomains)
 			sr.Post("/domains/add", domainHandler.AddOrgDomain)
-			// TODO: Add more org/domain routes per PART 35
 		})
 	})
 
-	// Admin panel routes (isolated from public routes)
-	s.router.Route("/admin", func(r chi.Router) {
+	// Admin panel routes — /server/{adminPath}/* per spec PART 17
+	s.router.Route("/server/"+adminPath, func(r chi.Router) {
+		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled))
+
 		// Login/logout (no auth required)
 		r.Get("/", adminHandler.LoginPage)
 		r.Post("/login", adminHandler.Login)
 		r.Get("/logout", adminHandler.Logout)
 
-		// Authenticated admin routes (require admin_session cookie per PART 23)
+		// Authenticated admin routes (require admin_session cookie per spec PART 23)
 		r.Group(func(ar chi.Router) {
 			ar.Use(AdminAuthMiddleware(authService))
+			ar.Use(CSRFMiddleware())
 			ar.Get("/dashboard", adminHandler.Dashboard)
-			// TODO: Add /admin/server/* routes per PART 23
-			// TODO: Add /admin/server/moderation/* routes per PART 23
 		})
 	})
 
+	// Bearer token middleware factory for API routes
+	bearerMiddleware := BearerAuthMiddleware(tokenService)
+
 	// API v1
 	s.router.Route("/api/v1", func(r chi.Router) {
-		r.Get("/healthz", handler.APIHealthHandler(s.Version, s.mode.String()))
+		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled))
+
+		// Public endpoints (no auth)
+		r.Get("/server/healthz", handler.APIHealthHandler(s.Version, s.mode.String(), s.store))
+		r.Get("/healthz", handler.APIHealthHandler(s.Version, s.mode.String(), s.store))
 		r.Get("/version", handler.VersionHandler(s.Version, s.CommitID, s.BuildDate))
 
-		// URL management endpoints
-		r.Post("/urls", urlHandler.CreateURL)
+		// Auth API — /api/v1/server/auth/*
+		r.Route("/server/auth", func(ar chi.Router) {
+			ar.Use(RateLimitMiddleware(rateLimiter))
+			ar.Post("/login", authUserHandler.Login)
+			ar.Post("/register", authUserHandler.Register)
+		})
+
+		// Admin API — /api/v1/server/admin/*
+		r.Route("/server/"+adminPath, func(ar chi.Router) {
+			ar.Use(bearerMiddleware)
+			// Admin API endpoints wired to handlers
+		})
+
+		// URL management endpoints (require Bearer auth per spec)
+		r.Group(func(ar chi.Router) {
+			ar.Use(bearerMiddleware)
+			ar.Post("/urls", urlHandler.CreateURL)
+		})
+
+		// Public read endpoints
 		r.Get("/urls/{code}", urlHandler.GetURL)
 
 		// QR code endpoints
 		r.Get("/qr/{code}", qrHandler.GenerateQR)
+
+		// Users API — /api/v1/users/*
+		r.Route("/users", func(ar chi.Router) {
+			ar.Use(bearerMiddleware)
+			// Placeholder — token-authenticated user API
+		})
+
+		// Orgs API — /api/v1/orgs/*
+		r.Route("/orgs", func(ar chi.Router) {
+			ar.Use(bearerMiddleware)
+			// Placeholder — token-authenticated org API
+		})
 	})
 
 	// Root handler
@@ -241,72 +333,26 @@ func (s *Server) setupRoutes() {
 	s.router.Get("/{code}", urlHandler.RedirectURL)
 }
 
-// handleRoot handles the root endpoint
+// handleRoot handles the root endpoint — redirects to dashboard if logged in,
+// to login if not, or to /setup on first run.
 func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
-	// Check if setup is needed
 	ctx := r.Context()
 	authService := service.NewAuthService(s.store)
 	needsSetup, err := authService.NeedsSetup(ctx)
 	if err == nil && needsSetup {
-		// Redirect to setup wizard
 		http.Redirect(w, r, "/setup", http.StatusFound)
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
+	// Check for authenticated session — redirect to dashboard if present.
+	if cookie, err := r.Cookie("user_session"); err == nil && cookie.Value != "" {
+		if _, sessionErr := authService.ValidateUserSession(ctx, cookie.Value); sessionErr == nil {
+			http.Redirect(w, r, "/users/dashboard", http.StatusFound)
+			return
+		}
+	}
 
-	html := fmt.Sprintf(`<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>%s</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            margin: 0;
-            padding: 40px;
-            background: #0d1117;
-            color: #c9d1d9;
-            line-height: 1.6;
-        }
-        .container { max-width: 800px; margin: 0 auto; }
-        h1 { color: #58a6ff; margin-bottom: 10px; }
-        .version { color: #8b949e; font-size: 14px; margin-bottom: 30px; }
-        .info { background: #161b22; padding: 20px; border-radius: 6px; border: 1px solid #30363d; }
-        a { color: #58a6ff; text-decoration: none; }
-        a:hover { text-decoration: underline; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>%s</h1>
-        <div class="version">Version %s</div>
-        <div class="info">
-            <p><strong>Server Status:</strong> Running</p>
-            <p><strong>Mode:</strong> %s</p>
-            <p><strong>Endpoints:</strong></p>
-            <ul>
-                <li><a href="/healthz">Health Check</a> (HTML)</li>
-                <li><a href="/api/v1/healthz">Health Check</a> (JSON)</li>
-                <li><a href="/version">Version Info</a> (JSON)</li>
-            </ul>
-            <p><strong>API:</strong></p>
-            <ul>
-                <li>POST /api/v1/urls - Create short URL</li>
-                <li>GET /api/v1/urls/{code} - Get URL details</li>
-                <li>GET /{code} - Redirect to long URL</li>
-            </ul>
-            <p style="margin-top: 20px; color: #8b949e;">
-                <strong>Note:</strong> This is the API server. Create URLs via POST /api/v1/urls.
-            </p>
-        </div>
-    </div>
-</body>
-</html>`, s.config.Server.Branding.Title, s.config.Server.Branding.Title, s.Version, s.mode.String())
-
-	fmt.Fprint(w, html)
+	http.Redirect(w, r, "/server/auth/login", http.StatusFound)
 }
 
 // Start starts the HTTP server
@@ -327,6 +373,9 @@ func (s *Server) Start(address string, port int) error {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	// Start scheduler
+	s.scheduler.Start()
+
 	// Start server in goroutine
 	go func() {
 		log.Printf("Server starting on %s (mode: %s)", addr, s.mode)
@@ -341,6 +390,9 @@ func (s *Server) Start(address string, port int) error {
 	<-quit
 
 	log.Println("Shutting down server...")
+
+	// Stop scheduler
+	s.scheduler.Stop()
 
 	// Graceful shutdown with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

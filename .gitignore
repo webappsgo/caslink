@@ -108,3 +108,197 @@ releases/
 
 # Runtime volume data (NEVER commit)
 rootfs/
+
+
+# Backup files left by editors
+
+# Temporary files left when a process holds an open handle to a deleted file
+
+
+
+# NFS stale file handles
+
+.DS_Store
+
+
+
+
+
+
+# Crash dump files
+
+# Core dumps (Linux/macOS)
+core
+core.*
+vgcore.*
+
+
+
+
+
+### Editors ###
+# Visual Studio Code
+.vscode/
+!.vscode/extensions.json
+
+# JetBrains IDEs (IntelliJ, GoLand, RustRover, PyCharm, etc.)
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Vim / Neovim
+*.swp
+*.swo
+.netrwhist
+Session.vim
+.vim/
+
+# Sublime Text
+*.sublime-workspace
+*.sublime-project
+
+# Eclipse / generic Java IDEs
+.project
+.classpath
+.factorypath
+.settings/
+
+### AI tool local configs (personal settings, never commit) ###
+# Claude Code
+.claude/settings.local.json
+
+# Cursor
+.cursor/
+.cursorignore
+.cursorindexingignore
+
+# GitHub Copilot
+.copilot/
+
+# Codeium
+.codeium/
+
+# Tabnine
+.tabnine/
+
+# Aider
+.aider/
+.aider.conf.yml
+.aider.model.settings.yml
+.aiderignore
+
+# General AI assistant local state
+.ai/
+.ai.local/
+
+### Environment and secrets ###
+# Local env overrides — never commit credentials
+.env
+.env.local
+.env.*.local
+
+# Private keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+
+### Build artifacts ###
+build/
+dist/
+out/
+
+# Rust
+target/
+
+# C / C++ / compiled objects
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+### Dependency directories ###
+# Node
+node_modules/
+
+# Go (vendored deps are sometimes committed intentionally, so gitignore only the cache)
+# vendor/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+
+### Logs ###
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+### Temporary and cache ###
+tmp/
+.tmp/
+*.tmp
+*.cache
+.cache/
+
+### Test and coverage ###
+coverage/
+.coverage
+*.cover
+*.coverprofile
+htmlcov/
+.nyc_output/
+.pytest_cache/
+.tox/
+
+### Misc — always allow ###
+
+### Project-specific patterns ###
+# ignore commit message files
+
+
+# ignore backup files
+
+
+
+# ignore .installed marker files
+
+# ignore work-in-progress rewrite/refactor scripts
+
+# ignore local override scripts and configs
+**/*.local.sh
+**/*.local.conf
+**/*.local.yaml
+**/*.local.yml
+
+### Go ###
+# If you prefer the allow list template instead of the deny list, see community template:
+# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
+#
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+# Test binary, built with `go test -c`
+*.test
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+# Dependency directories (remove the comment below to include it)
+# vendor/
+# Go workspace file
+go.work
+

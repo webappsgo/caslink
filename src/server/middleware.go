@@ -2,41 +2,299 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"net/http"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/casjaysdevdocker/caslink/src/server/handler"
 	"github.com/casjaysdevdocker/caslink/src/server/service"
 )
 
-type contextKey string
-
+// Context keys are sourced from the handler package so that middleware
+// and handlers refer to the same typed key (Go requires identical key
+// types — not just identical string values — for context.Value lookups).
 const (
-	userContextKey  contextKey = "user"
-	adminContextKey contextKey = "admin"
+	userContextKey    = handler.UserContextKey
+	adminContextKey   = handler.AdminContextKey
+	orgContextKey     = handler.ContextKey("org")
+	orgRoleContextKey = handler.ContextKey("org_role")
 )
+
+// ---- Security headers middleware ----------------------------------------
+
+// SecurityHeadersMiddleware adds standard security headers to every response.
+// When tlsEnabled is true, an HSTS header is also emitted.
+func SecurityHeadersMiddleware(tlsEnabled bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h := w.Header()
+			h.Set("X-Content-Type-Options", "nosniff")
+			h.Set("X-Frame-Options", "DENY")
+			h.Set("X-XSS-Protection", "1; mode=block")
+			h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+			h.Set("X-Permitted-Cross-Domain-Policies", "none")
+			h.Set("Origin-Agent-Cluster", "?1")
+			if tlsEnabled {
+				h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
+			}
+			// Echo existing request ID (chi sets X-Request-Id) or generate one.
+			reqID := r.Header.Get("X-Request-Id")
+			if reqID == "" {
+				b := make([]byte, 16)
+				_, _ = rand.Read(b)
+				reqID = hex.EncodeToString(b)
+			}
+			h.Set("X-Request-Id", reqID)
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// ---- Rate limiting middleware -------------------------------------------
+
+// rateBucket tracks request counts within a sliding window.
+type rateBucket struct {
+	mu       sync.Mutex
+	requests []time.Time
+}
+
+// allow returns true if the request is within the allowed rate.
+func (b *rateBucket) allow(limit int, window time.Duration) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	cutoff := time.Now().Add(-window)
+
+	// Evict expired entries.
+	valid := b.requests[:0]
+	for _, t := range b.requests {
+		if t.After(cutoff) {
+			valid = append(valid, t)
+		}
+	}
+	b.requests = valid
+
+	if len(b.requests) >= limit {
+		return false
+	}
+	b.requests = append(b.requests, time.Now())
+	return true
+}
+
+// RateLimiter holds per-IP buckets for different endpoint groups.
+type RateLimiter struct {
+	mu      sync.Mutex
+	buckets map[string]*rateBucket
+}
+
+// NewRateLimiter creates a new rate limiter with periodic garbage collection.
+func NewRateLimiter() *RateLimiter {
+	rl := &RateLimiter{buckets: make(map[string]*rateBucket)}
+	go rl.gc()
+	return rl
+}
+
+// gc removes buckets that have had no requests for 2 hours.
+func (rl *RateLimiter) gc() {
+	ticker := time.NewTicker(30 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		cutoff := time.Now().Add(-2 * time.Hour)
+		rl.mu.Lock()
+		for key, b := range rl.buckets {
+			b.mu.Lock()
+			stale := len(b.requests) == 0 ||
+				(len(b.requests) > 0 && b.requests[len(b.requests)-1].Before(cutoff))
+			b.mu.Unlock()
+			if stale {
+				delete(rl.buckets, key)
+			}
+		}
+		rl.mu.Unlock()
+	}
+}
+
+func (rl *RateLimiter) bucket(key string) *rateBucket {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	b, ok := rl.buckets[key]
+	if !ok {
+		b = &rateBucket{}
+		rl.buckets[key] = b
+	}
+	return b
+}
+
+// Allow returns true if the given IP is within the rate limit.
+// limit = max requests, window = time window.
+func (rl *RateLimiter) Allow(ip string, limit int, window time.Duration) bool {
+	return rl.bucket(ip).allow(limit, window)
+}
+
+// RateLimitMiddleware applies auth-endpoint rate limits:
+//   - /server/auth/login, /api/v1/server/auth/login → 5 / 15 min
+//   - /server/auth/register, /api/v1/server/auth/register → 5 / 1 h
+//   - /server/auth/password/* → 3 / 1 h
+//
+// Returns 429 with a generic message; never exposes threshold numbers.
+func RateLimitMiddleware(rl *RateLimiter) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				next.ServeHTTP(w, r)
+				return
+			}
+			ip := realIP(r)
+			path := r.URL.Path
+
+			var limit int
+			var window time.Duration
+
+			switch {
+			case strings.Contains(path, "/login"):
+				limit, window = 5, 15*time.Minute
+			case strings.Contains(path, "/register"):
+				limit, window = 5, time.Hour
+			case strings.Contains(path, "/password"):
+				limit, window = 3, time.Hour
+			case strings.Contains(path, "/2fa"):
+				limit, window = 5, 15*time.Minute
+			default:
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			if !rl.Allow(ip+path, limit, window) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusTooManyRequests)
+				w.Write([]byte(`{"error":"Too many attempts. Please try again later."}`))
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// realIP extracts the real client IP, respecting X-Forwarded-For / X-Real-IP.
+func realIP(r *http.Request) string {
+	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+		parts := strings.SplitN(fwd, ",", 2)
+		return strings.TrimSpace(parts[0])
+	}
+	if real := r.Header.Get("X-Real-IP"); real != "" {
+		return real
+	}
+	// Strip port
+	addr := r.RemoteAddr
+	if idx := strings.LastIndex(addr, ":"); idx != -1 {
+		return addr[:idx]
+	}
+	return addr
+}
+
+// ---- CSRF middleware ----------------------------------------------------
+
+const csrfCookieName = "csrf_token"
+const csrfHeaderName = "X-CSRF-Token"
+const csrfFormField = "_csrf"
+
+// CSRFMiddleware implements the double-submit cookie pattern.
+// Safe methods (GET, HEAD, OPTIONS, TRACE) are always allowed.
+// Requests with Authorization: Bearer are exempt (API token auth).
+// /.well-known/* and /server/healthz are exempt.
+func CSRFMiddleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			path := r.URL.Path
+
+			// Exempt paths
+			if strings.HasPrefix(path, "/.well-known/") ||
+				path == "/server/healthz" ||
+				strings.HasPrefix(path, "/api/v1/server/healthz") {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Safe methods pass through
+			switch r.Method {
+			case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
+				ensureCSRFCookie(w, r)
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Bearer-token auth routes are exempt from cookie CSRF
+			if strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Validate CSRF token
+			cookie, err := r.Cookie(csrfCookieName)
+			if err != nil || cookie.Value == "" {
+				http.Error(w, "CSRF validation failed", http.StatusForbidden)
+				return
+			}
+
+			submitted := r.Header.Get(csrfHeaderName)
+			if submitted == "" {
+				if err2 := r.ParseForm(); err2 == nil {
+					submitted = r.FormValue(csrfFormField)
+				}
+			}
+
+			if submitted == "" || submitted != cookie.Value {
+				http.Error(w, "CSRF validation failed", http.StatusForbidden)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// ensureCSRFCookie sets the csrf_token cookie if not already present.
+func ensureCSRFCookie(w http.ResponseWriter, r *http.Request) {
+	if c, err := r.Cookie(csrfCookieName); err == nil && c.Value != "" {
+		return
+	}
+	b := make([]byte, 32)
+	_, _ = rand.Read(b)
+	token := hex.EncodeToString(b)
+	http.SetCookie(w, &http.Cookie{
+		Name:     csrfCookieName,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   86400,
+		HttpOnly: false, // JS must be able to read it
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+// ---- Auth middleware ----------------------------------------------------
 
 // UserAuthMiddleware requires valid user session
 func UserAuthMiddleware(authService *service.AuthService) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Get user_session cookie per PART 23
 			cookie, err := r.Cookie("user_session")
 			if err != nil || cookie.Value == "" {
-				// No session - redirect to login
-				http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+				http.Redirect(w, r, "/server/auth/login", http.StatusSeeOther)
 				return
 			}
 
-			// Validate session
 			user, err := authService.ValidateUserSession(r.Context(), cookie.Value)
 			if err != nil {
-				// Invalid or expired session - redirect to login
-				http.Redirect(w, r, "/auth/login", http.StatusSeeOther)
+				http.Redirect(w, r, "/server/auth/login", http.StatusSeeOther)
 				return
 			}
 
-			// Add user to request context
 			ctx := context.WithValue(r.Context(), userContextKey, user)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
@@ -47,23 +305,18 @@ func UserAuthMiddleware(authService *service.AuthService) func(http.Handler) htt
 func AdminAuthMiddleware(authService *service.AuthService) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Get admin_session cookie per PART 23
 			cookie, err := r.Cookie("admin_session")
 			if err != nil || cookie.Value == "" {
-				// No session - redirect to admin login
-				http.Redirect(w, r, "/admin", http.StatusSeeOther)
+				http.Redirect(w, r, "/server/admin", http.StatusSeeOther)
 				return
 			}
 
-			// Validate session
 			admin, err := authService.ValidateSession(r.Context(), cookie.Value)
 			if err != nil {
-				// Invalid or expired session - redirect to login
-				http.Redirect(w, r, "/admin", http.StatusSeeOther)
+				http.Redirect(w, r, "/server/admin", http.StatusSeeOther)
 				return
 			}
 
-			// Add admin to request context
 			ctx := context.WithValue(r.Context(), adminContextKey, admin)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
@@ -74,28 +327,24 @@ func AdminAuthMiddleware(authService *service.AuthService) func(http.Handler) ht
 func OrgMemberMiddleware(orgService *service.OrgService) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Get user from context (must be set by UserAuthMiddleware)
 			user, ok := r.Context().Value(userContextKey).(*service.User)
 			if !ok || user == nil {
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				return
 			}
 
-			// Get org slug from URL
 			slug := chi.URLParam(r, "slug")
 			if slug == "" {
 				http.Error(w, "Organization slug required", http.StatusBadRequest)
 				return
 			}
 
-			// Get organization
 			org, err := orgService.GetOrganizationBySlug(r.Context(), slug)
 			if err != nil {
 				http.Error(w, "Organization not found", http.StatusNotFound)
 				return
 			}
 
-			// Check membership
 			isMember, role, err := orgService.IsMember(r.Context(), org.ID, user.ID)
 			if err != nil {
 				http.Error(w, "Error checking membership", http.StatusInternalServerError)
@@ -107,15 +356,48 @@ func OrgMemberMiddleware(orgService *service.OrgService) func(http.Handler) http
 				return
 			}
 
-			// Add org and role to context
 			ctx := r.Context()
-			ctx = context.WithValue(ctx, "org", org)
-			ctx = context.WithValue(ctx, "org_role", role)
+			ctx = context.WithValue(ctx, orgContextKey, org)
+			ctx = context.WithValue(ctx, orgRoleContextKey, role)
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
+
+// ---- Bearer token middleware -------------------------------------------
+
+const bearerContextKey = handler.ContextKey("bearer_user")
+
+// BearerAuthMiddleware validates Authorization: Bearer <token> headers.
+// On failure it returns 401; on success the TokenRecord is stored in context.
+func BearerAuthMiddleware(tokenService *service.TokenService) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			auth := r.Header.Get("Authorization")
+			if !strings.HasPrefix(auth, "Bearer ") {
+				w.Header().Set("WWW-Authenticate", `Bearer realm="caslink"`)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				w.Write([]byte(`{"error":"Bearer token required"}`))
+				return
+			}
+			plaintext := strings.TrimPrefix(auth, "Bearer ")
+			rec, err := tokenService.ValidateToken(r.Context(), plaintext)
+			if err != nil {
+				w.Header().Set("WWW-Authenticate", `Bearer realm="caslink", error="invalid_token"`)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				w.Write([]byte(`{"error":"Invalid or expired token"}`))
+				return
+			}
+			ctx := context.WithValue(r.Context(), bearerContextKey, rec)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// ---- Context helpers ---------------------------------------------------
 
 // GetUserFromContext retrieves user from request context
 func GetUserFromContext(ctx context.Context) (*service.User, bool) {

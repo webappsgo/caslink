@@ -1,0 +1,33 @@
+{{template "base" .}}
+{{define "content"}}
+<div class="auth-wrap">
+  <div class="card auth-card">
+    <div class="auth-title">
+      <h1>Reset Password</h1>
+      <p class="text-muted text-sm">Enter your email to receive a reset link</p>
+    </div>
+    {{if .Error}}
+    <div class="alert alert-danger">{{.Error}}</div>
+    {{end}}
+    {{if .Success}}
+    <div class="alert alert-success">
+      If that email exists in our system, we have sent a password reset link.
+      Check your inbox (and spam folder).
+    </div>
+    {{else}}
+    <form method="POST" action="/server/auth/password/forgot">
+      <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+      <div class="form-group">
+        <label for="email">Email Address</label>
+        <input class="form-control" type="email" id="email" name="email"
+               value="{{.Email}}" required autocomplete="email" autofocus>
+      </div>
+      <button type="submit" class="btn btn-primary btn-full">Send Reset Link</button>
+    </form>
+    {{end}}
+    <div class="auth-footer">
+      <a href="/server/auth/login">Back to sign in</a>
+    </div>
+  </div>
+</div>
+{{end}}

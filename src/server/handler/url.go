@@ -1,14 +1,23 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/casjaysdevdocker/caslink/src/server/model"
 	"github.com/casjaysdevdocker/caslink/src/server/service"
 )
+
+// clickRecordWorkers caps the number of concurrent goroutines used to
+// record analytics so an attacker cannot exhaust memory by replaying
+// redirects. The semaphore is buffered to absorb short bursts but bounded
+// at startup so a flood drops events instead of spawning unbounded
+// goroutines (CLAUDE.md memory-safety rule).
+var clickRecordWorkers = make(chan struct{}, 64)
 
 // URLHandler handles URL shortening endpoints
 type URLHandler struct {
@@ -95,13 +104,26 @@ func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Record click (async - don't block redirect)
-	go func() {
-		ipAddress := r.RemoteAddr
-		userAgent := r.UserAgent()
-		referrer := r.Referer()
-		h.urlService.RecordClick(r.Context(), url.ID, ipAddress, userAgent, referrer)
-	}()
+	// Record click (async - don't block redirect). Cap concurrency with a
+	// semaphore so a flood of redirects cannot spawn unbounded goroutines,
+	// and use a detached context with a deadline so the database write is
+	// not cancelled the moment the response completes.
+	ipAddress := r.RemoteAddr
+	userAgent := r.UserAgent()
+	referrer := r.Referer()
+	urlID := url.ID
+	select {
+	case clickRecordWorkers <- struct{}{}:
+		go func() {
+			defer func() { <-clickRecordWorkers }()
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = h.urlService.RecordClick(ctx, urlID, ipAddress, userAgent, referrer)
+		}()
+	default:
+		// Worker pool saturated — drop the click rather than block the
+		// redirect or queue indefinitely. Analytics are best-effort.
+	}
 
 	// Redirect to long URL
 	http.Redirect(w, r, url.LongURL, http.StatusFound)

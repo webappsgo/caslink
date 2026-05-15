@@ -3,46 +3,19 @@ package store
 import (
 	"database/sql"
 	"fmt"
-	"path/filepath"
 )
 
 // Store represents the dual database system
 type Store struct {
 	ServerDB *sql.DB // URLs, analytics, clicks, QR codes, uploads
 	UsersDB  *sql.DB // Users, sessions, tokens, domains, config, audit logs
+	driver   string  // normalised driver name: sqlite, postgres, mysql, sqlserver
 }
 
-// Open opens both databases (server.db and users.db)
+// Open opens both databases using SQLite (default, backward-compatible entry point).
+// Use OpenStoreWithConfig for other database drivers.
 func Open(dataDir string) (*Store, error) {
-	dbDir := filepath.Join(dataDir, "db")
-
-	// Open server.db
-	serverDBPath := filepath.Join(dbDir, "server.db")
-	serverDB, err := openSQLite(serverDBPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open server.db: %w", err)
-	}
-
-	// Open users.db
-	usersDBPath := filepath.Join(dbDir, "users.db")
-	usersDB, err := openSQLite(usersDBPath)
-	if err != nil {
-		serverDB.Close()
-		return nil, fmt.Errorf("failed to open users.db: %w", err)
-	}
-
-	store := &Store{
-		ServerDB: serverDB,
-		UsersDB:  usersDB,
-	}
-
-	// Initialize schemas
-	if err := store.InitSchema(); err != nil {
-		store.Close()
-		return nil, fmt.Errorf("failed to initialize schema: %w", err)
-	}
-
-	return store, nil
+	return OpenStoreWithConfig("sqlite", "", 0, "", "", "", "", dataDir)
 }
 
 // Close closes both databases

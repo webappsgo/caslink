@@ -1,0 +1,57 @@
+{{define "base"}}<!DOCTYPE html>
+<html lang="en" data-theme="{{if .Theme}}{{.Theme}}{{else}}dark{{end}}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="csrf-token" content="{{.CSRFToken}}">
+  <title>{{if .Title}}{{.Title}} — {{end}}{{.AppName}}</title>
+  <meta name="description" content="{{.AppDesc}}">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+  <style>{{template "inline-css" .}}</style>
+</head>
+<body>
+  {{template "nav" .}}
+  {{if .Flash}}
+  <div class="container mt-3">
+    <div class="alert alert-{{.Flash.Type}}" data-autohide="5000">{{.Flash.Message}}</div>
+  </div>
+  {{end}}
+  <main>
+    {{template "content" .}}
+  </main>
+  <footer class="footer">
+    <div class="container">
+      {{.AppName}} {{.Version}} &mdash; <a href="/server/healthz">Status</a>
+    </div>
+  </footer>
+  <script>{{template "inline-js" .}}</script>
+</body>
+</html>{{end}}
+
+{{define "nav"}}
+<nav class="nav">
+  <a href="/" class="nav-brand">{{.AppName}}</a>
+  <div class="nav-links">
+    {{if .User}}
+    <a href="/users/profile">Profile</a>
+    <a href="/users/tokens">Tokens</a>
+    <a href="/orgs/">Organizations</a>
+    {{end}}
+  </div>
+  <div class="nav-actions">
+    <button class="theme-toggle" id="theme-toggle" title="Toggle theme">☀️</button>
+    <button class="btn hidden" id="pwa-install">Install App</button>
+    {{if .User}}
+    <span class="text-muted text-sm">{{.User.Username}}</span>
+    <a href="/server/auth/logout" class="btn btn-outline btn-sm">Logout</a>
+    {{else}}
+    <a href="/server/auth/login" class="btn btn-outline btn-sm">Login</a>
+    <a href="/server/auth/register" class="btn btn-primary btn-sm">Register</a>
+    {{end}}
+  </div>
+</nav>
+{{end}}
+
+{{define "inline-css"}}{{end}}
+{{define "inline-js"}}{{end}}

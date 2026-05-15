@@ -159,7 +159,7 @@ func (s *DomainService) GetOrgDomains(ctx context.Context, orgID int64) ([]*Cust
 
 // VerifyDomain performs domain verification
 func (s *DomainService) VerifyDomain(ctx context.Context, domainID int64) error {
-	// TODO: Implement DNS verification logic per PART 35
+	// Pending (tracked in TODO.AI.md): Implement DNS verification logic per PART 35
 	// For now, just mark as verified (placeholder)
 	query := `UPDATE custom_domains
 	          SET verification_status = 'verified',

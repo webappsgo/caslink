@@ -49,6 +49,7 @@ type SEOConfig struct {
 // AdminConfig holds admin panel settings
 type AdminConfig struct {
 	Email string `yaml:"email"`
+	Path  string `yaml:"path"` // URL segment for admin panel (default: "admin")
 }
 
 // SSLConfig holds SSL/TLS settings
@@ -286,6 +287,7 @@ func DefaultConfig() *Config {
 			},
 			Admin: AdminConfig{
 				Email: fmt.Sprintf("admin@%s", hostname),
+				Path:  "admin",
 			},
 			SSL: SSLConfig{
 				Enabled:    false,
@@ -368,7 +370,10 @@ func DefaultConfig() *Config {
 			UI: UIConfig{
 				Theme: "dark",
 			},
-			CORS: "*",
+			// Default to same-origin; using "*" alongside AllowCredentials:true
+			// is rejected by browsers and is also a security misconfiguration.
+			// Operators set this explicitly when exposing the API cross-origin.
+			CORS: "",
 		},
 		Caslink: CaslinkConfig{
 			URL: URLConfig{

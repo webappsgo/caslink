@@ -2,6 +2,7 @@ package service
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
 	"strings"
@@ -10,8 +11,11 @@ import (
 )
 
 // hashPasswordArgon2id hashes a password using Argon2id (SPEC requirement line 129)
-// NEVER use bcrypt - always use Argon2id
-func hashPasswordArgon2id(password string) string {
+// NEVER use bcrypt - always use Argon2id.
+// Returns an error if the CSPRNG salt cannot be generated; callers must
+// refuse to persist a hash in that case rather than silently substituting
+// a weak one.
+func hashPasswordArgon2id(password string) (string, error) {
 	// Argon2id parameters (OWASP recommendations)
 	const (
 		time    = 1
@@ -20,9 +24,10 @@ func hashPasswordArgon2id(password string) string {
 		keyLen  = 32
 	)
 
-	// Generate salt
 	salt := make([]byte, 16)
-	rand.Read(salt)
+	if _, err := rand.Read(salt); err != nil {
+		return "", fmt.Errorf("argon2id: salt generation failed: %w", err)
+	}
 
 	// Hash password
 	hash := argon2.IDKey([]byte(password), salt, time, memory, threads, keyLen)
@@ -33,7 +38,7 @@ func hashPasswordArgon2id(password string) string {
 
 	// Format: $argon2id$v=19$m=65536,t=1,p=4$salt$hash
 	return fmt.Sprintf("$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s",
-		memory, time, threads, b64Salt, b64Hash)
+		memory, time, threads, b64Salt, b64Hash), nil
 }
 
 // verifyPasswordArgon2id verifies a password against an Argon2id hash
@@ -63,15 +68,7 @@ func verifyPasswordArgon2id(password, hash string) bool {
 	// Hash provided password with same parameters
 	actualHash := argon2.IDKey([]byte(password), salt, time, memory, threads, uint32(len(expectedHash)))
 
-	// Constant-time comparison
-	if len(actualHash) != len(expectedHash) {
-		return false
-	}
-
-	var result byte
-	for i := range actualHash {
-		result |= actualHash[i] ^ expectedHash[i]
-	}
-
-	return result == 0
+	// Constant-time comparison via the stdlib (ConstantTimeCompare returns
+	// 0 immediately on length mismatch, so we don't leak length either).
+	return subtle.ConstantTimeCompare(actualHash, expectedHash) == 1
 }

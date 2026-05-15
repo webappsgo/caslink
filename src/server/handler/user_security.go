@@ -47,13 +47,13 @@ func (h *UserSecurityHandler) Password(w http.ResponseWriter, r *http.Request) {
 
 // renderPasswordPage renders the password change form
 func (h *UserSecurityHandler) renderPasswordPage(w http.ResponseWriter, r *http.Request, user *service.User) {
-	// TODO: Render password change HTML page per PART 17
+	// Pending (tracked in TODO.AI.md): Render password change HTML page per PART 17
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, `
 		<h1>Change Password</h1>
 		<p>User: %s</p>
-		<form method="POST" action="/user/security/password">
+		<form method="POST" action="/users/security/password">
 			<div>
 				<label>Current Password:</label>
 				<input type="password" name="current_password" required />
@@ -68,7 +68,7 @@ func (h *UserSecurityHandler) renderPasswordPage(w http.ResponseWriter, r *http.
 			</div>
 			<button type="submit">Change Password</button>
 		</form>
-		<p><a href="/user/security">Back to Security</a></p>
+		<p><a href="/users/security">Back to Security</a></p>
 	`, user.Username)
 }
 
@@ -112,7 +112,7 @@ func (h *UserSecurityHandler) handlePasswordChange(w http.ResponseWriter, r *htt
 	}
 
 	// Success - redirect back to security page
-	http.Redirect(w, r, "/user/security?msg=password_changed", http.StatusSeeOther)
+	http.Redirect(w, r, "/users/security?msg=password_changed", http.StatusSeeOther)
 }
 
 // Sessions renders the active sessions management page
@@ -176,7 +176,7 @@ func (h *UserSecurityHandler) renderSessionsPage(w http.ResponseWriter, r *http.
 					Session ID: %s...<br>
 					Created: %s<br>
 					Expires: %s<br>
-					<form method="POST" action="/user/security/sessions" style="display:inline;">
+					<form method="POST" action="/users/security/sessions" style="display:inline;">
 						<input type="hidden" name="session_id" value="%s" />
 						<button type="submit">Revoke</button>
 					</form>
@@ -189,10 +189,10 @@ func (h *UserSecurityHandler) renderSessionsPage(w http.ResponseWriter, r *http.
 	html += `
 		</ul>
 		<hr>
-		<form method="POST" action="/user/security/sessions/revoke-all">
+		<form method="POST" action="/users/security/sessions/revoke-all">
 			<button type="submit" onclick="return confirm('Revoke all other sessions? You will stay logged in on this device.')">Revoke All Other Sessions</button>
 		</form>
-		<p><a href="/user/security">Back to Security</a></p>
+		<p><a href="/users/security">Back to Security</a></p>
 	`
 	
 	fmt.Fprint(w, html)
@@ -219,7 +219,7 @@ func (h *UserSecurityHandler) handleSessionRevocation(w http.ResponseWriter, r *
 	}
 
 	// Success - redirect back
-	http.Redirect(w, r, "/user/security/sessions?msg=session_revoked", http.StatusSeeOther)
+	http.Redirect(w, r, "/users/security/sessions?msg=session_revoked", http.StatusSeeOther)
 }
 
 // TwoFactor renders the 2FA (TOTP) management page
@@ -256,7 +256,7 @@ func (h *UserSecurityHandler) renderTwoFactorPage(w http.ResponseWriter, r *http
 			<div>
 				<h2>Disable 2FA</h2>
 				<p>This will remove two-factor authentication from your account.</p>
-				<form method="POST" action="/user/security/2fa">
+				<form method="POST" action="/users/security/2fa">
 					<input type="hidden" name="action" value="disable" />
 					<div>
 						<label>Confirm your password:</label>
@@ -265,7 +265,7 @@ func (h *UserSecurityHandler) renderTwoFactorPage(w http.ResponseWriter, r *http
 					<button type="submit">Disable 2FA</button>
 				</form>
 			</div>
-			<p><a href="/user/security">Back to Security</a></p>
+			<p><a href="/users/security">Back to Security</a></p>
 		`, user.Username)
 	} else {
 		fmt.Fprintf(w, `
@@ -275,12 +275,12 @@ func (h *UserSecurityHandler) renderTwoFactorPage(w http.ResponseWriter, r *http
 			<div>
 				<h2>Enable 2FA</h2>
 				<p>Secure your account with time-based one-time passwords (TOTP)</p>
-				<form method="POST" action="/user/security/2fa">
+				<form method="POST" action="/users/security/2fa">
 					<input type="hidden" name="action" value="enable" />
 					<button type="submit">Enable 2FA</button>
 				</form>
 			</div>
-			<p><a href="/user/security">Back to Security</a></p>
+			<p><a href="/users/security">Back to Security</a></p>
 		`, user.Username)
 	}
 }
@@ -345,7 +345,7 @@ func (h *UserSecurityHandler) renderTOTPPasswordConfirm(w http.ResponseWriter, r
 	fmt.Fprintf(w, `
 		<h1>Enable Two-Factor Authentication</h1>
 		<h2>Step 1: Confirm Your Password</h2>
-		<form method="POST" action="/user/security/2fa">
+		<form method="POST" action="/users/security/2fa">
 			<input type="hidden" name="action" value="enable" />
 			<div>
 				<label>Password:</label>
@@ -353,7 +353,7 @@ func (h *UserSecurityHandler) renderTOTPPasswordConfirm(w http.ResponseWriter, r
 			</div>
 			<button type="submit">Continue</button>
 		</form>
-		<p><a href="/user/security/2fa">Back</a></p>
+		<p><a href="/users/security/2fa">Back</a></p>
 	`)
 }
 
@@ -382,7 +382,7 @@ func (h *UserSecurityHandler) renderTOTPSetup(w http.ResponseWriter, r *http.Req
 		<button onclick="navigator.clipboard.writeText('%s')">Copy Key</button>
 		
 		<h2>Step 3: Enter Verification Code</h2>
-		<form method="POST" action="/user/security/2fa">
+		<form method="POST" action="/users/security/2fa">
 			<input type="hidden" name="action" value="verify" />
 			<input type="hidden" name="secret" value="%s" />
 			<div>
@@ -391,7 +391,7 @@ func (h *UserSecurityHandler) renderTOTPSetup(w http.ResponseWriter, r *http.Req
 			</div>
 			<button type="submit">Verify and Enable</button>
 		</form>
-		<p><a href="/user/security/2fa">Cancel</a></p>
+		<p><a href="/users/security/2fa">Cancel</a></p>
 	`, qrBase64, secret, secret, secret)
 }
 
@@ -445,7 +445,7 @@ func (h *UserSecurityHandler) renderRecoveryKeys(w http.ResponseWriter, r *http.
 		</div>
 		<button onclick="downloadKeys()">Download as TXT</button>
 		<button onclick="copyKeys()">Copy All</button>
-		<form method="POST" action="/user/security/2fa/complete">
+		<form method="POST" action="/users/security/2fa/complete">
 			<div>
 				<input type="checkbox" name="confirmed" id="confirmed" required />
 				<label for="confirmed">☑️ I have saved my recovery keys</label>
@@ -501,7 +501,7 @@ func (h *UserSecurityHandler) handleTOTPDisable(w http.ResponseWriter, r *http.R
 	// In production, would use a dedicated 2fa_disabled template
 	_ = h.emailService.SendPasswordChanged(user.Email, user.Username, clientIP, "2FA disabled")
 	
-	http.Redirect(w, r, "/user/security?msg=2fa_disabled", http.StatusSeeOther)
+	http.Redirect(w, r, "/users/security?msg=2fa_disabled", http.StatusSeeOther)
 }
 
 // Passkeys renders the passkey/WebAuthn management page
@@ -545,7 +545,7 @@ func (h *UserSecurityHandler) renderPasskeysPage(w http.ResponseWriter, r *http.
 					<strong>%s</strong><br>
 					Added: %s<br>
 					Last used: %s<br>
-					<form method="POST" action="/user/security/passkeys" style="display:inline;">
+					<form method="POST" action="/users/security/passkeys" style="display:inline;">
 						<input type="hidden" name="action" value="delete" />
 						<input type="hidden" name="passkey_id" value="%s" />
 						<button type="submit" onclick="return confirm('Delete this passkey?')">Delete</button>
@@ -566,7 +566,7 @@ func (h *UserSecurityHandler) renderPasskeysPage(w http.ResponseWriter, r *http.
 			<p><strong>Note:</strong> Passkey registration requires JavaScript and browser support for WebAuthn.</p>
 			<p>This feature will be fully implemented when the web frontend is complete.</p>
 		</div>
-		<p><a href="/user/security">Back to Security</a></p>
+		<p><a href="/users/security">Back to Security</a></p>
 	`, user.Username, passkeyList)
 }
 
@@ -661,7 +661,7 @@ func (h *UserSecurityHandler) renderRecoveryPage(w http.ResponseWriter, r *http.
 				<p><strong>Status:</strong> %d recovery keys remaining</p>
 				<p>Recovery keys cannot be viewed again. If you lose all keys, you'll need to contact an administrator.</p>
 			</div>
-			<p><a href="/user/security">Back to Security</a></p>
+			<p><a href="/users/security">Back to Security</a></p>
 		`, user.Username, remainingKeys)
 	} else {
 		fmt.Fprintf(w, `
@@ -679,7 +679,7 @@ func (h *UserSecurityHandler) renderRecoveryPage(w http.ResponseWriter, r *http.
 				<p><strong>Status:</strong> MFA not enabled (recovery keys not generated)</p>
 				<p>Enable 2FA or passkeys to generate recovery keys.</p>
 			</div>
-			<p><a href="/user/security">Back to Security</a></p>
+			<p><a href="/users/security">Back to Security</a></p>
 		`, user.Username)
 	}
 }

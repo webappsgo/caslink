@@ -13,15 +13,25 @@ type AdminHandler struct {
 	authService *service.AuthService
 	version     string
 	mode        string
+	adminPath   string // configurable admin path segment, default "admin"
 }
 
 // NewAdminHandler creates a new admin handler
-func NewAdminHandler(authService *service.AuthService, version, mode string) *AdminHandler {
+func NewAdminHandler(authService *service.AuthService, version, mode, adminPath string) *AdminHandler {
+	if adminPath == "" {
+		adminPath = "admin"
+	}
 	return &AdminHandler{
 		authService: authService,
 		version:     version,
 		mode:        mode,
+		adminPath:   adminPath,
 	}
+}
+
+// basePath returns the full admin URL prefix (e.g., "/server/admin").
+func (h *AdminHandler) basePath() string {
+	return "/server/" + h.adminPath
 }
 
 // LoginPage handles GET /admin - shows login form if not authenticated
@@ -36,7 +46,7 @@ func (h *AdminHandler) LoginPage(w http.ResponseWriter, r *http.Request) {
 
 	// Check if already authenticated
 	if admin := h.getAdminFromSession(r); admin != nil {
-		http.Redirect(w, r, "/admin/dashboard", http.StatusFound)
+		http.Redirect(w, r, h.basePath()+"/dashboard", http.StatusFound)
 		return
 	}
 
@@ -77,7 +87,7 @@ func (h *AdminHandler) Login(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "admin_session",
 		Value:    sessionID,
-		Path:     "/admin",
+		Path:     h.basePath(),
 		Expires:  time.Now().Add(expiration),
 		HttpOnly: true,
 		Secure:   r.TLS != nil,
@@ -85,7 +95,7 @@ func (h *AdminHandler) Login(w http.ResponseWriter, r *http.Request) {
 	})
 
 	// Redirect to dashboard
-	http.Redirect(w, r, "/admin/dashboard", http.StatusFound)
+	http.Redirect(w, r, h.basePath()+"/dashboard", http.StatusFound)
 }
 
 // Logout handles GET /admin/logout
@@ -101,21 +111,21 @@ func (h *AdminHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "admin_session",
 		Value:    "",
-		Path:     "/admin",
+		Path:     h.basePath(),
 		Expires:  time.Unix(0, 0),
 		MaxAge:   -1,
 		HttpOnly: true,
 	})
 
 	// Redirect to login
-	http.Redirect(w, r, "/admin", http.StatusFound)
+	http.Redirect(w, r, h.basePath(), http.StatusFound)
 }
 
 // Dashboard handles GET /admin/dashboard
 func (h *AdminHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	admin := h.getAdminFromSession(r)
 	if admin == nil {
-		http.Redirect(w, r, "/admin", http.StatusFound)
+		http.Redirect(w, r, h.basePath(), http.StatusFound)
 		return
 	}
 
@@ -212,7 +222,7 @@ func (h *AdminHandler) renderLogin(w http.ResponseWriter, username, errorMsg str
         {{if .Error}}
         <div class="error">{{.Error}}</div>
         {{end}}
-        <form method="POST" action="/admin/login">
+        <form method="POST" action="{{.BasePath}}/login">
             <div class="form-group">
                 <label for="username">Username</label>
                 <input type="text" id="username" name="username" value="{{.Username}}" required autofocus>
@@ -237,6 +247,7 @@ func (h *AdminHandler) renderLogin(w http.ResponseWriter, username, errorMsg str
 		"Username": username,
 		"Error":    errorMsg,
 		"Version":  h.version,
+		"BasePath": h.basePath(),
 	}
 	t.Execute(w, data)
 }
@@ -304,7 +315,7 @@ func (h *AdminHandler) renderDashboard(w http.ResponseWriter, admin *service.Adm
         <div class="logo">Caslink Admin</div>
         <div class="user-info">
             <span class="username">{{.Admin.Username}}</span>
-            <a href="/admin/logout" class="logout">Logout</a>
+            <a href="{{.BasePath}}/logout" class="logout">Logout</a>
         </div>
     </div>
     <div class="container">
@@ -349,9 +360,10 @@ func (h *AdminHandler) renderDashboard(w http.ResponseWriter, admin *service.Adm
 
 	t := template.Must(template.New("dashboard").Parse(tmpl))
 	data := map[string]interface{}{
-		"Admin":   admin,
-		"Version": h.version,
-		"Mode":    h.mode,
+		"Admin":    admin,
+		"Version":  h.version,
+		"Mode":     h.mode,
+		"BasePath": h.basePath(),
 	}
 	t.Execute(w, data)
 }

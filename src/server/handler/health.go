@@ -4,47 +4,29 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"runtime"
 	"time"
+
+	"github.com/casjaysdevdocker/caslink/src/server/store"
 )
 
 var startTime = time.Now()
 
-// HealthResponse represents the health check response
-type HealthResponse struct {
-	Status    string            `json:"status"`
-	Version   string            `json:"version"`
-	Mode      string            `json:"mode"`
-	Uptime    string            `json:"uptime"`
-	Timestamp string            `json:"timestamp"`
-	Node      NodeInfo          `json:"node"`
-	Cluster   ClusterInfo       `json:"cluster"`
-	Checks    map[string]string `json:"checks"`
+// apiHealthData is the data payload for the spec-required JSON health response.
+type apiHealthData struct {
+	AppName    string `json:"app_name"`
+	Version    string `json:"version"`
+	CommitHash string `json:"commit_hash"`
+	BuildDate  string `json:"build_date"`
+	Uptime     int64  `json:"uptime"`
+	Mode       string `json:"mode"`
+	DBType     string `json:"db_type"`
+	DBLocality string `json:"db_locality"`
 }
 
-// NodeInfo represents node information
-type NodeInfo struct {
-	ID       string `json:"id"`
-	Hostname string `json:"hostname"`
-}
-
-// ClusterInfo represents cluster information
-type ClusterInfo struct {
-	Enabled bool   `json:"enabled"`
-	Status  string `json:"status,omitempty"`
-	Nodes   int    `json:"nodes,omitempty"`
-	Role    string `json:"role,omitempty"`
-}
-
-// HealthHandler handles /healthz endpoint (HTML)
+// HealthHandler handles /server/healthz endpoint (HTML)
 func HealthHandler(version, mode string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		hostname, _ := os.Hostname()
-		if hostname == "" {
-			hostname = "unknown"
-		}
-
 		uptime := formatUptime(time.Since(startTime))
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -64,48 +46,45 @@ func HealthHandler(version, mode string) http.HandlerFunc {
     </style>
 </head>
 <body>
-    <div class="status healthy">✓ Healthy</div>
+    <div class="status healthy">OK</div>
     <div class="info">
         <div>Version: %s</div>
         <div>Mode: %s</div>
         <div>Uptime: %s</div>
-        <div>Hostname: %s</div>
         <div>Go: %s</div>
-        <div>OS/Arch: %s/%s</div>
     </div>
 </body>
-</html>`, version, mode, uptime, hostname, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+</html>`, version, mode, uptime, runtime.Version())
 
 		fmt.Fprint(w, html)
 	}
 }
 
-// APIHealthHandler handles /api/v1/healthz endpoint (JSON)
-func APIHealthHandler(version, mode string) http.HandlerFunc {
+// APIHealthHandler handles /api/v1/server/healthz endpoint (JSON).
+// The store parameter is used to detect the DB type; pass nil for testing.
+func APIHealthHandler(version, mode string, st *store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		hostname, _ := os.Hostname()
-		if hostname == "" {
-			hostname = "unknown"
+		dbType := "sqlite"
+		dbLocality := "local"
+		if st != nil {
+			dbType = st.DBType()
+			dbLocality = st.DBLocality()
 		}
 
-		response := HealthResponse{
-			Status:    "healthy",
-			Version:   version,
-			Mode:      mode,
-			Uptime:    formatUptime(time.Since(startTime)),
-			Timestamp: time.Now().UTC().Format(time.RFC3339),
-			Node: NodeInfo{
-				ID:       "standalone",
-				Hostname: hostname,
-			},
-			Cluster: ClusterInfo{
-				Enabled: false,
-			},
-			Checks: map[string]string{
-				"database": "ok",
-				"cache":    "ok",
-				"disk":     "ok",
-			},
+		data := apiHealthData{
+			AppName:    "caslink",
+			Version:    version,
+			CommitHash: "",
+			BuildDate:  "",
+			Uptime:     int64(time.Since(startTime).Seconds()),
+			Mode:       mode,
+			DBType:     dbType,
+			DBLocality: dbLocality,
+		}
+
+		response := map[string]interface{}{
+			"ok":   true,
+			"data": data,
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -117,19 +96,11 @@ func APIHealthHandler(version, mode string) http.HandlerFunc {
 // VersionHandler handles /version and /api/v1/version endpoints
 func VersionHandler(version, commitID, buildDate string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		hostname, _ := os.Hostname()
-		if hostname == "" {
-			hostname = "unknown"
-		}
-
 		response := map[string]interface{}{
 			"version":    version,
 			"commit":     commitID,
 			"built":      buildDate,
 			"go_version": runtime.Version(),
-			"os":         runtime.GOOS,
-			"arch":       runtime.GOARCH,
-			"hostname":   hostname,
 		}
 
 		w.Header().Set("Content-Type", "application/json")

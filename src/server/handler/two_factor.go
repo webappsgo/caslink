@@ -36,7 +36,7 @@ func (h *TwoFactorHandler) VerifyPage(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, `
 		<h1>Two-Factor Authentication</h1>
 		<p>Enter the 6-digit code from your authenticator app:</p>
-		<form method="POST" action="/auth/2fa">
+		<form method="POST" action="/server/auth/2fa">
 			<div>
 				<input type="text" name="code" maxlength="6" pattern="[0-9]{6}" required autofocus />
 			</div>
@@ -44,7 +44,7 @@ func (h *TwoFactorHandler) VerifyPage(w http.ResponseWriter, r *http.Request) {
 		</form>
 		<hr>
 		<p>Lost access to your authenticator?</p>
-		<a href="/auth/2fa/recovery">Use Recovery Key</a>
+		<a href="/server/server/auth/2fa/recovery">Use Recovery Key</a>
 	`)
 }
 
@@ -126,7 +126,7 @@ func (h *TwoFactorHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	})
 	
 	// Redirect to user dashboard
-	http.Redirect(w, r, "/user/profile", http.StatusSeeOther)
+	http.Redirect(w, r, "/users/profile", http.StatusSeeOther)
 }
 
 // RecoveryPage renders the recovery key entry page per PART 23 line 20233-20243
@@ -136,14 +136,14 @@ func (h *TwoFactorHandler) RecoveryPage(w http.ResponseWriter, r *http.Request) 
 	fmt.Fprint(w, `
 		<h1>Use Recovery Key</h1>
 		<p>Enter one of your recovery keys:</p>
-		<form method="POST" action="/auth/2fa/recovery">
+		<form method="POST" action="/server/server/auth/2fa/recovery">
 			<div>
 				<input type="text" name="recovery_key" placeholder="a1b2c3d4-e5f6" required autofocus />
 			</div>
 			<p><strong>⚠️ This key will be invalidated after use.</strong></p>
 			<button type="submit">Submit</button>
 		</form>
-		<p><a href="/auth/2fa">Back to 2FA</a></p>
+		<p><a href="/server/auth/2fa">Back to 2FA</a></p>
 	`)
 }
 
@@ -204,7 +204,7 @@ func (h *TwoFactorHandler) renderRecoveryOptionsPageWithKeys(w http.ResponseWrit
 		<p>Recovery key accepted and invalidated.</p>
 		<p>You have %d recovery keys remaining.</p>
 		<h2>What would you like to do?</h2>
-		<form method="POST" action="/auth/2fa/recovery/action">
+		<form method="POST" action="/server/server/server/auth/2fa/recovery/action">
 			<div>
 				<input type="radio" name="action" value="disable" id="disable" />
 				<label for="disable">Disable 2FA temporarily (login with password only)</label>
@@ -246,7 +246,7 @@ func (h *TwoFactorHandler) RecoveryOptionsPage(w http.ResponseWriter, r *http.Re
 		<p>Recovery key accepted and invalidated.</p>
 		<p>You have %d recovery keys remaining.</p>
 		<h2>What would you like to do?</h2>
-		<form method="POST" action="/auth/2fa/recovery/action">
+		<form method="POST" action="/server/server/server/auth/2fa/recovery/action">
 			<div>
 				<input type="radio" name="action" value="disable" id="disable" />
 				<label for="disable">Disable 2FA temporarily (login with password only)</label>

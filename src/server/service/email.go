@@ -1,31 +1,28 @@
 package service
 
 import (
-	_ "embed"
 	"fmt"
 	"net"
 	"net/smtp"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/casjaysdevdocker/caslink/src/config"
+	"github.com/casjaysdevdocker/caslink/src/templates"
 )
 
-//go:embed ../../templates/email/password_reset.txt
-var passwordResetTemplate string
-
-//go:embed ../../templates/email/password_changed.txt
-var passwordChangedTemplate string
-
-//go:embed ../../templates/email/welcome_user.txt
-var welcomeUserTemplate string
-
-//go:embed ../../templates/email/welcome_admin.txt
-var welcomeAdminTemplate string
-
-//go:embed ../../templates/email/email_verify.txt
-var emailVerifyTemplate string
+// Embedded email templates (sourced from src/templates/email/*.txt).
+// go:embed cannot traverse parent directories, so the templates package
+// owns the embed and re-exports the strings.
+var (
+	passwordResetTemplate   = templates.PasswordResetEmail
+	passwordChangedTemplate = templates.PasswordChangedEmail
+	welcomeUserTemplate     = templates.WelcomeUserEmail
+	welcomeAdminTemplate    = templates.WelcomeAdminEmail
+	emailVerifyTemplate     = templates.EmailVerifyEmail
+)
 
 // EmailService handles email sending
 type EmailService struct {
@@ -50,9 +47,9 @@ func (s *EmailService) SMTPConfigured() bool {
 	}
 	
 	port := getEnvOrDefault("SMTP_PORT", "587")
-	
-	// Quick connection test
-	address := fmt.Sprintf("%s:%s", host, port)
+
+	// Quick connection test — use net.JoinHostPort so IPv6 hosts work.
+	address := net.JoinHostPort(host, port)
 	conn, err := net.DialTimeout("tcp", address, 5*time.Second)
 	if err != nil {
 		return false
@@ -69,7 +66,7 @@ func (s *EmailService) AutoDetectSMTP() (string, int, error) {
 	
 	for _, host := range hosts {
 		for _, port := range ports {
-			address := fmt.Sprintf("%s:%d", host, port)
+			address := net.JoinHostPort(host, strconv.Itoa(port))
 			conn, err := net.DialTimeout("tcp", address, 2*time.Second)
 			if err == nil {
 				conn.Close()
@@ -169,14 +166,14 @@ func (s *EmailService) SendWelcome(email, username string, isAdmin bool) error {
 		"fqdn":               getEnvOrDefault("FQDN", "localhost"),
 		"recipient_email":    email,
 		"recipient_username": username,
-		"login_url":          getEnvOrDefault("APP_URL", "http://localhost:64521") + "/auth/login",
-		"profile_url":        getEnvOrDefault("APP_URL", "http://localhost:64521") + "/user/profile",
+		"login_url":          getEnvOrDefault("APP_URL", "http://localhost:64521") + "/server/auth/login",
+		"profile_url":        getEnvOrDefault("APP_URL", "http://localhost:64521") + "/users/profile",
 		"admin_email":        getEnvOrDefault("ADMIN_EMAIL", "admin@localhost"),
 	}
 	
 	if isAdmin {
 		template = welcomeAdminTemplate
-		vars["admin_url"] = getEnvOrDefault("APP_URL", "http://localhost:64521") + "/admin"
+		vars["admin_url"] = getEnvOrDefault("APP_URL", "http://localhost:64521") + "/server/admin"
 		vars["admin_username"] = username
 	}
 	
@@ -199,8 +196,8 @@ func (s *EmailService) sendEmail(to, subject, body string) error {
 	from := fmt.Sprintf("%s <%s>", fromName, fromEmail)
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\n\r\n%s", from, to, subject, body)
 	
-	// Connect to SMTP server
-	address := fmt.Sprintf("%s:%s", host, port)
+	// Connect to SMTP server (IPv6-safe address join).
+	address := net.JoinHostPort(host, port)
 	
 	// Attempt connection with auth if credentials provided
 	var auth smtp.Auth

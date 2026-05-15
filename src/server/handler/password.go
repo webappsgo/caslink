@@ -4,148 +4,224 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/casjaysdevdocker/caslink/src/config"
 	"github.com/casjaysdevdocker/caslink/src/server/service"
+	"github.com/casjaysdevdocker/caslink/src/server/tmpl"
 )
 
 // PasswordHandler handles password reset operations
 type PasswordHandler struct {
 	authService  *service.AuthService
 	emailService *service.EmailService
+	renderer     *tmpl.Renderer
+	cfg          *config.Config
 }
 
 // NewPasswordHandler creates a new password handler
-func NewPasswordHandler(authService *service.AuthService, emailService *service.EmailService) *PasswordHandler {
+func NewPasswordHandler(
+	authService *service.AuthService,
+	emailService *service.EmailService,
+	renderer *tmpl.Renderer,
+	cfg *config.Config,
+) *PasswordHandler {
 	return &PasswordHandler{
 		authService:  authService,
 		emailService: emailService,
+		renderer:     renderer,
+		cfg:          cfg,
 	}
 }
 
 // ForgotPasswordPage renders the password reset request page
 func (h *PasswordHandler) ForgotPasswordPage(w http.ResponseWriter, r *http.Request) {
-	// Check if SMTP is configured per PART 26 line 22666
 	if !h.emailService.SMTPConfigured() {
-		// Show contact administrator message per PART 26
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `<h1>Password Reset Unavailable</h1>
-			<p>Email features require SMTP configuration.</p>
-			<p>Please contact your administrator for assistance.</p>`)
+		data := struct {
+			tmpl.Data
+			Error string
+		}{
+			Data:  newPageData(h.cfg, r, "Reset Password", nil),
+			Error: "Password reset requires email configuration. Please contact your administrator.",
+		}
+		h.renderer.Render(w, "template/page/auth/forgot.html", data)
 		return
 	}
 
-	// TODO: Render forgot password HTML page per PART 17
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, "<h1>Forgot Password</h1><p>Password reset form will be implemented per PART 17</p>")
+	data := struct {
+		tmpl.Data
+		Error   string
+		Email   string
+		Success bool
+	}{
+		Data: newPageData(h.cfg, r, "Reset Password", nil),
+	}
+	h.renderer.Render(w, "template/page/auth/forgot.html", data)
 }
 
-// ForgotPassword handles password reset request
+// ForgotPassword handles password reset request (JSON and form)
 func (h *PasswordHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	isForm := strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded")
 
-	// Check if SMTP is configured per PART 26
 	if !h.emailService.SMTPConfigured() {
+		if isForm {
+			http.Redirect(w, r, "/server/auth/password/forgot", http.StatusSeeOther)
+			return
+		}
 		respondJSON(w, http.StatusServiceUnavailable, map[string]string{
 			"error": "Email features not available",
 		})
 		return
 	}
 
-	// Parse request
-	var req struct {
-		Email string `json:"email"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "Invalid request body",
-		})
-		return
+	var email string
+	if isForm {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Invalid form", http.StatusBadRequest)
+			return
+		}
+		email = r.PostFormValue("email")
+	} else {
+		var req struct {
+			Email string `json:"email"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "Invalid request body",
+			})
+			return
+		}
+		email = req.Email
 	}
 
-	// Create reset token
-	// Note: Returns success even if email doesn't exist per PART 23 line 19998
-	token, err := h.authService.CreatePasswordResetToken(ctx, req.Email, "user")
-	if err != nil {
-		// Log error but return generic success message
-	}
-
-	// Send email if token was created
+	token, _ := h.authService.CreatePasswordResetToken(ctx, email, "user")
 	if token != "" {
-		resetLink := fmt.Sprintf("https://%s/auth/password/reset/%s", r.Host, token)
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		resetLink := fmt.Sprintf("%s://%s/server/auth/password/reset/%s", scheme, r.Host, token)
 		clientIP := r.Header.Get("X-Forwarded-For")
 		if clientIP == "" {
 			clientIP = r.RemoteAddr
 		}
-
-		err = h.emailService.SendPasswordReset(req.Email, resetLink, clientIP)
-		if err != nil {
-			// Log error but don't fail request
-		}
+		_ = h.emailService.SendPasswordReset(email, resetLink, clientIP)
 	}
 
-	// Always return generic success per PART 23 line 19998
+	if isForm {
+		data := struct {
+			tmpl.Data
+			Error   string
+			Email   string
+			Success bool
+		}{
+			Data:    newPageData(h.cfg, r, "Reset Password", nil),
+			Email:   email,
+			Success: true,
+		}
+		h.renderer.Render(w, "template/page/auth/forgot.html", data)
+		return
+	}
 	respondJSON(w, http.StatusOK, map[string]string{
 		"message": "If an account exists, instructions have been sent.",
 	})
 }
 
-// ResetPasswordPage renders the password reset form (with token)
+// ResetPasswordPage renders the password reset form
 func (h *PasswordHandler) ResetPasswordPage(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 
-	// TODO: Render reset password HTML page per PART 17
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, "<h1>Reset Password</h1><p>Token: %s</p><p>Reset password form will be implemented per PART 17</p>", token)
+	_, _, tokenErr := h.authService.ValidatePasswordResetToken(r.Context(), token)
+
+	data := struct {
+		tmpl.Data
+		Error        string
+		Token        string
+		InvalidToken bool
+	}{
+		Data:         newPageData(h.cfg, r, "Set New Password", nil),
+		Token:        token,
+		InvalidToken: tokenErr != nil,
+	}
+	h.renderer.Render(w, "template/page/auth/reset.html", data)
 }
 
-// ResetPassword handles password reset with token
+// ResetPassword handles password reset with token (JSON and form)
 func (h *PasswordHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	token := chi.URLParam(r, "token")
+	isForm := strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded")
 
-	// Parse request
-	var req struct {
-		Password        string `json:"password"`
-		PasswordConfirm string `json:"password_confirm"`
+	var password, passwordConfirm string
+	if isForm {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Invalid form", http.StatusBadRequest)
+			return
+		}
+		password = r.PostFormValue("password")
+		passwordConfirm = r.PostFormValue("confirm_password")
+	} else {
+		var req struct {
+			Password        string `json:"password"`
+			PasswordConfirm string `json:"password_confirm"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+			return
+		}
+		password = req.Password
+		passwordConfirm = req.PasswordConfirm
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "Invalid request body",
-		})
+
+	renderErr := func(msg string, invalidToken bool) {
+		data := struct {
+			tmpl.Data
+			Error        string
+			Token        string
+			InvalidToken bool
+		}{
+			Data:         newPageData(h.cfg, r, "Set New Password", nil),
+			Error:        msg,
+			Token:        token,
+			InvalidToken: invalidToken,
+		}
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		h.renderer.Render(w, "template/page/auth/reset.html", data)
+	}
+
+	if password != passwordConfirm {
+		if isForm {
+			renderErr("Passwords do not match", false)
+			return
+		}
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Passwords do not match"})
+		return
+	}
+	if len(password) < 8 {
+		if isForm {
+			renderErr("Password must be at least 8 characters", false)
+			return
+		}
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Password must be at least 8 characters"})
 		return
 	}
 
-	// Validate passwords match
-	if req.Password != req.PasswordConfirm {
-		respondJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "Passwords do not match",
-		})
+	if err := h.authService.ResetPassword(ctx, token, password); err != nil {
+		if isForm {
+			renderErr("Invalid or expired reset link. Please request a new one.", true)
+			return
+		}
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid or expired reset token"})
 		return
 	}
 
-	// Validate password strength (minimum 8 characters per PART 23)
-	if len(req.Password) < 8 {
-		respondJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "Password must be at least 8 characters",
-		})
+	if isForm {
+		http.Redirect(w, r, "/server/auth/login?reset=1", http.StatusSeeOther)
 		return
 	}
-
-	// Reset password (invalidates all sessions per PART 23 line 20534)
-	err := h.authService.ResetPassword(ctx, token, req.Password)
-	if err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "Invalid or expired reset token",
-		})
-		return
-	}
-
-	// Return success
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"message": "Password has been reset. Please log in with your new password.",

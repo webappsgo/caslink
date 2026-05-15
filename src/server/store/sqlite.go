@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
-	_ "modernc.org/sqlite"
 )
 
 // openSQLite opens a SQLite database file
@@ -57,6 +55,24 @@ func openSQLite(dbPath string) (*sql.DB, error) {
 	}
 
 	return db, nil
+}
+
+// DBType returns the normalised database driver name (sqlite, postgres, mysql, sqlserver).
+func (s *Store) DBType() string {
+	if s.driver != "" {
+		return s.driver
+	}
+	return "sqlite"
+}
+
+// DBLocality returns "local" for SQLite and "remote" for network databases.
+func (s *Store) DBLocality() string {
+	switch s.DBType() {
+	case "postgres", "postgresql", "mysql", "mariadb", "sqlserver", "mssql":
+		return "remote"
+	default:
+		return "local"
+	}
 }
 
 // Ping checks if the database connection is alive

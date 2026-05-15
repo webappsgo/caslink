@@ -76,12 +76,15 @@ func (h *DomainHandler) AddUserDomain(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// VerifyUserDomain triggers domain verification
+// VerifyUserDomain triggers domain verification for a user-owned domain.
+// The actual DNS-TXT verification logic (PART 35) is not implemented yet —
+// this endpoint looks up the requested domain to confirm ownership, then
+// invokes the service which currently marks the row verified as a
+// placeholder. Tracked in TODO.AI.md under "Custom Domains - DNS Verification".
 func (h *DomainHandler) VerifyUserDomain(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	domain := chi.URLParam(r, "domain")
+	domainName := chi.URLParam(r, "domain")
 
-	// Get user from session
 	user, ok := getUserFromRequest(r)
 	if !ok {
 		respondJSON(w, http.StatusUnauthorized, map[string]string{
@@ -90,9 +93,29 @@ func (h *DomainHandler) VerifyUserDomain(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Verify domain ownership and trigger verification per PART 35
-	err := h.domainService.VerifyDomain(ctx, "user", user.ID, domain)
+	// Resolve domain ID and confirm the caller owns it.
+	domains, err := h.domainService.GetUserDomains(ctx, user.ID)
 	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{
+			"error": "failed to load domains",
+		})
+		return
+	}
+	var domainID int64
+	for _, d := range domains {
+		if d.Domain == domainName {
+			domainID = d.ID
+			break
+		}
+	}
+	if domainID == 0 {
+		respondJSON(w, http.StatusNotFound, map[string]string{
+			"error": "domain not found for this user",
+		})
+		return
+	}
+
+	if err := h.domainService.VerifyDomain(ctx, domainID); err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]string{
 			"error": err.Error(),
 		})
@@ -101,7 +124,7 @@ func (h *DomainHandler) VerifyUserDomain(w http.ResponseWriter, r *http.Request)
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
-		"message": fmt.Sprintf("Verification triggered for %s", domain),
+		"message": fmt.Sprintf("verification triggered for %s", domainName),
 	})
 }
 
@@ -140,21 +163,14 @@ func (h *DomainHandler) AddOrgDomain(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	_ = req
+	_ = ctx
 
-	// Note: Would look up org ID from slug and add domain
-	// For now, return placeholder response
+	// Adding an org-scoped domain is not yet wired through the org-membership
+	// check or domain service. Return 501 until the org domain handler is
+	// implemented end-to-end (tracked in TODO.AI.md).
 	respondJSON(w, http.StatusNotImplemented, map[string]interface{}{
-		"error": fmt.Sprintf("Adding domains for organization %s not yet fully implemented", slug),
-
-	respondJSON(w, http.StatusCreated, map[string]interface{}{
-		"success": true,
-		"message": "Domain added (placeholder)",
+		"error": fmt.Sprintf("adding domains for organization %s not yet implemented", slug),
 	})
 }
 
-// getUserFromRequest is a helper to get user from middleware context
-func getUserFromRequest(r *http.Request) (*service.User, bool) {
-type contextKey string
-user, ok := r.Context().Value(contextKey("user")).(*service.User)
-return user, ok
-}

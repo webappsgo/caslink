@@ -101,7 +101,10 @@ func (s *AuthService) CreatePrimaryAdmin(ctx context.Context, username, password
 	}
 
 	// Hash password with Argon2id
-	passwordHash := hashPasswordArgon2id(password)
+	passwordHash, err := hashPasswordArgon2id(password)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
 
 	// Insert primary admin
 	query := `INSERT INTO admins (username, email, password_hash, is_primary, created_at)
@@ -220,7 +223,10 @@ func (s *AuthService) RegisterUser(ctx context.Context, username, email, passwor
 	}
 
 	// Hash password with Argon2id (per spec - NOT bcrypt)
-	passwordHash := hashPasswordArgon2id(password)
+	passwordHash, err := hashPasswordArgon2id(password)
+	if err != nil {
+		return nil, fmt.Errorf("failed to hash password: %w", err)
+	}
 
 	// Insert user
 	query := `INSERT INTO users (username, email, password_hash, email_verified, created_at)
@@ -267,6 +273,10 @@ func (s *AuthService) AuthenticateUser(ctx context.Context, identifier, password
 	)
 
 	if err == sql.ErrNoRows {
+		// Run Argon2id against a dummy hash so timing is identical to
+		// the wrong-password path and leaks no account-existence signal.
+		const dummyHash = "$argon2id$v=19$m=65536,t=1,p=1$dGVzdHNhbHQ$dGVzdGhhc2g"
+		verifyPasswordArgon2id(password, dummyHash)
 		return nil, fmt.Errorf("invalid credentials")
 	}
 	if err != nil {
@@ -417,7 +427,10 @@ func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword stri
 	}
 
 	// Hash new password with Argon2id (per spec - NOT bcrypt)
-	passwordHash := hashPasswordArgon2id(newPassword)
+	passwordHash, err := hashPasswordArgon2id(newPassword)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
 
 	// Update password
 	var updateQuery string
@@ -470,15 +483,17 @@ func (s *AuthService) VerifyPassword(userID int64, password string) error {
 // ChangePassword changes a user's password
 func (s *AuthService) ChangePassword(userID int64, newPassword string) error {
 	// Hash new password with Argon2id
-	passwordHash := hashPasswordArgon2id(newPassword)
-	
+	passwordHash, err := hashPasswordArgon2id(newPassword)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
+
 	// Update password
 	query := `UPDATE users SET password_hash = ? WHERE id = ?`
-	_, err := s.store.UsersDB.Exec(query, passwordHash, userID)
-	if err != nil {
+	if _, err := s.store.UsersDB.Exec(query, passwordHash, userID); err != nil {
 		return fmt.Errorf("failed to update password: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -489,54 +504,56 @@ func hashToken(token string) string {
 }
 
 
-// Session represents an active session with metadata
+// Session represents an active session with metadata.
 type Session struct {
-ID          string
-UserID      int64
-UserType    string
-IPAddress   string
-UserAgent   string
-CreatedAt   time.Time
-ExpiresAt   time.Time
-LastActive  time.Time
+	ID         string
+	UserID     int64
+	UserType   string
+	IPAddress  string
+	UserAgent  string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	LastActive time.Time
 }
 
-// GetUserSessions retrieves all active sessions for a user
+// GetUserSessions retrieves all active sessions for a user.
 func (s *AuthService) GetUserSessions(ctx context.Context, userID int64, userType string) ([]Session, error) {
-query := `SELECT id, user_id, user_type, expires_at, created_at 
-          FROM sessions 
-          WHERE user_id = ? AND user_type = ? AND expires_at > ?
-          ORDER BY created_at DESC`
+	query := `SELECT id, user_id, user_type, expires_at, created_at
+	          FROM sessions
+	          WHERE user_id = ? AND user_type = ? AND expires_at > ?
+	          ORDER BY created_at DESC`
 
-rows, err := s.store.UsersDB.QueryContext(ctx, query, userID, userType, time.Now())
-if err != nil {
-return nil, fmt.Errorf("failed to query sessions: %w", err)
-}
-defer rows.Close()
+	rows, err := s.store.UsersDB.QueryContext(ctx, query, userID, userType, time.Now())
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sessions: %w", err)
+	}
+	defer rows.Close()
 
-var sessions []Session
-for rows.Next() {
-var sess Session
-err := rows.Scan(&sess.ID, &sess.UserID, &sess.UserType, &sess.ExpiresAt, &sess.CreatedAt)
-if err != nil {
-continue
-}
-sessions = append(sessions, sess)
+	var sessions []Session
+	for rows.Next() {
+		var sess Session
+		if err := rows.Scan(&sess.ID, &sess.UserID, &sess.UserType, &sess.ExpiresAt, &sess.CreatedAt); err != nil {
+			continue
+		}
+		sessions = append(sessions, sess)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("session row iteration failed: %w", err)
+	}
+
+	return sessions, nil
 }
 
-return sessions, nil
-}
-
-// RevokeSession revokes a specific session
+// RevokeSession revokes a specific session.
 func (s *AuthService) RevokeSession(ctx context.Context, sessionID string) error {
-query := `DELETE FROM sessions WHERE id = ?`
-_, err := s.store.UsersDB.ExecContext(ctx, query, sessionID)
-return err
+	query := `DELETE FROM sessions WHERE id = ?`
+	_, err := s.store.UsersDB.ExecContext(ctx, query, sessionID)
+	return err
 }
 
-// RevokeAllUserSessions revokes all sessions for a user except the current one
+// RevokeAllUserSessions revokes all sessions for a user except the current one.
 func (s *AuthService) RevokeAllUserSessions(ctx context.Context, userID int64, userType string, exceptSessionID string) error {
-query := `DELETE FROM sessions WHERE user_id = ? AND user_type = ? AND id != ?`
-_, err := s.store.UsersDB.ExecContext(ctx, query, userID, userType, exceptSessionID)
-return err
+	query := `DELETE FROM sessions WHERE user_id = ? AND user_type = ? AND id != ?`
+	_, err := s.store.UsersDB.ExecContext(ctx, query, userID, userType, exceptSessionID)
+	return err
 }

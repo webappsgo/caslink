@@ -278,7 +278,7 @@ func (h *SetupHandler) renderSetupComplete(w http.ResponseWriter, username strin
                 You can now log in to the admin panel to configure your server.
             </p>
         </div>
-        <a href="/admin">Go to Admin Login</a>
+        <a href="/server/admin">Go to Admin Login</a>
     </div>
 </body>
 </html>`

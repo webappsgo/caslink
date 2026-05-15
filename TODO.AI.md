@@ -1,123 +1,68 @@
-# Caslink TODO - Multi-User Implementation
+# Caslink — Open Tasks
 
-## Authentication & Middleware (PART 23)
+Tasks the audit identified as still pending. Items removed when the underlying
+code lands; items added when a new gap is found.
 
-- [x] Implement authentication middleware for /user/* routes
-- [x] Implement authentication middleware for /org/* routes
-- [x] Implement org membership verification middleware
-- [x] Add session validation to handlers
+## Authentication hardening
 
-## User Profile & Settings (PART 23)
+- [ ] "Remember this device" cookie for 2FA
+- [ ] WebAuthn / passkey registration + login (DB row read path is stubbed)
+- [ ] OAuth2/OIDC social login (Google, GitHub, etc.)
 
-- [x] Implement /user/profile page and handlers (placeholder HTML)
-- [x] Implement /user/settings page and handlers (placeholder HTML)
-- [x] Implement /user/tokens (API token management) (placeholder HTML)
-- [x] Implement /user/security routes (password change, 2FA, sessions) (placeholder HTML)
-- [ ] Implement /user/security/password
-- [ ] Implement /user/security/sessions
-- [ ] Implement /user/security/2fa
-- [ ] Implement /user/security/passkeys
-- [ ] Implement /user/security/recovery
+## Organizations
 
-## Password Reset (PART 23 + PART 26)
+- [ ] Org invite + accept flow (`/orgs/{slug}/members/invite`)
+- [ ] Role management UI (`/orgs/{slug}/roles`)
+- [ ] Org security / audit log pages and CSV export
+- [ ] Ownership transfer + delete-with-confirmation flow
+- [ ] URL handlers respect org scope (org-owned links, org token auth)
+- [ ] Org-scoped tokens (`/orgs/{slug}/tokens`)
 
-- [x] Implement /auth/password/forgot page and handler
-- [x] Implement /auth/password/reset/{token} page and handler
-- [x] Implement password reset email service (checks SMTP per PART 26)
-- [x] Implement password reset token generation and validation (24h expiry)
-- [x] Add password_resets table to database schema
-- [ ] Implement actual SMTP email sending
-- [ ] Implement SHA256 token hashing
-- [ ] Create password_reset email template per PART 26 format
+## Custom domains (PART 35)
 
-## Two-Factor Authentication (PART 23)
+- [ ] DNS-TXT verification logic (service stub currently flips the row to verified)
+- [ ] Detect server public IP for A-record instructions
+- [ ] Exponential backoff retry loop for verification
+- [ ] DNS instructions page (user + org)
+- [ ] Let's Encrypt HTTP-01 challenge
+- [ ] Let's Encrypt DNS-01 challenge
+- [ ] Store certs encrypted in DB (cert/key columns exist; encryption is missing)
+- [ ] SSL renewal scheduler task
+- [ ] SSL status page
+- [ ] Wire `POST /orgs/{slug}/domains/add` to the domain service (currently returns 501)
 
-- [ ] Implement TOTP/2FA setup flow
-- [ ] Implement /auth/2fa verification step
-- [ ] Implement QR code generation for TOTP setup
-- [ ] Implement recovery key generation (10 keys, format: a1b2c3d4-e5f6)
-- [ ] Implement recovery key validation
-- [ ] Implement "Remember this device" functionality
+## Admin moderation (PART 23)
 
-## Passkeys/WebAuthn (PART 23)
+- [ ] `/server/{adminPath}/moderation/users` list + detail + suspend/unsuspend
+- [ ] `/server/{adminPath}/moderation/orgs` list + detail + suspend
+- [ ] `/server/{adminPath}/domains` list + suspend
+- [ ] `/server/{adminPath}/settings` runtime config overrides
+- [ ] Username blocklist enforcement
 
-- [ ] Implement WebAuthn registration
-- [ ] Implement /auth/passkey route
-- [ ] Implement passkey management UI
-- [ ] Add passkeys table to database schema
+## Analytics, QR, bulk, billing, federation, notifications
 
-## Organization Features (PART 23)
+- [ ] Analytics aggregation, GeoIP enrichment, bot exclusion, per-link reports
+- [ ] QR SVG + PDF output (only PNG works; SVG falls through to PNG)
+- [ ] Bulk CSV/JSON import + export
+- [ ] Billing (Stripe / Paddle / PayPal / LemonSqueezy / Manual) — disabled by default
+- [ ] Federation server + client (signed messages, `/.well-known/caslink`)
+- [ ] Notifications: SMTP works, add SendGrid / SES / SMS / Push providers
 
-- [ ] Implement /org/{slug}/tokens (org API tokens)
-- [ ] Implement /org/{slug}/members/invite
-- [ ] Implement org member invite flow
-- [ ] Implement /org/{slug}/roles page
-- [ ] Implement /org/{slug}/security page
-- [ ] Implement /org/{slug}/security/audit
-- [ ] Implement /org/{slug}/security/audit/export
-- [ ] Implement org ownership transfer
-- [ ] Update URL handlers to support org context
+## Database
 
-## Custom Domains - DNS Verification (PART 35)
+- [ ] Numbered migration runner (`001…N`) in `src/server/store` — current code is `CREATE TABLE IF NOT EXISTS` only
+- [ ] Cross-dialect schema: SQLite uses `AUTOINCREMENT`/`DATETIME`; postgres/mysql/sqlserver need `SERIAL`/`BIGSERIAL`/`IDENTITY`, `TIMESTAMP`, and `$N`/`?` placeholders
 
-- [ ] Implement DNS lookup and verification logic
-- [ ] Implement server public IP discovery
-- [ ] Implement verification retry logic with backoff
-- [ ] Implement /user/domains/{domain}/dns instructions page
-- [ ] Implement /org/{slug}/domains/{domain}/dns instructions page
+## Documentation
 
-## Custom Domains - SSL Automation (PART 35)
+- [ ] `docs/admin.md` — user/org moderation guide
+- [ ] `docs/configuration.md` — full `server.yml` reference
+- [ ] `docs/api.md` — REST + GraphQL endpoint reference
+- [ ] `docs/custom-domains.md` — DNS + SSL setup walkthrough
 
-- [ ] Implement Let's Encrypt HTTP-01 challenge
-- [ ] Implement Let's Encrypt DNS-01 challenge
-- [ ] Implement SSL certificate storage (encrypted in database)
-- [ ] Implement SSL renewal scheduler task
-- [ ] Implement /user/domains/{domain}/ssl page
-- [ ] Implement SSL status monitoring
+## Tests
 
-## Admin Moderation (PART 23)
-
-- [ ] Implement /admin/server/moderation/users page
-- [ ] Implement /admin/server/moderation/users/{id} detail page
-- [ ] Implement /admin/server/moderation/orgs page
-- [ ] Implement /admin/server/moderation/orgs/{slug} detail page
-- [ ] Implement /admin/server/domains page
-- [ ] Implement user suspension/activation
-- [ ] Implement org suspension
-- [ ] Implement domain suspension
-
-## Web Frontend (PART 17)
-
-- [ ] Create HTML templates for /auth/register
-- [ ] Create HTML templates for /auth/login
-- [ ] Create HTML templates for /user/profile
-- [ ] Create HTML templates for /user/settings
-- [ ] Create HTML templates for /org/* pages
-- [ ] Create HTML templates for /user/domains/* pages
-- [ ] Implement mobile-first CSS per PART 17
-- [ ] Implement dark/light/auto theme switching
-
-## API Endpoints (PART 20)
-
-- [ ] Implement /api/v1/auth/register
-- [ ] Implement /api/v1/auth/login
-- [ ] Implement /api/v1/user/* API routes
-- [ ] Implement /api/v1/org/{slug}/* API routes
-- [ ] Implement /api/v1/user/domains/* API routes
-- [ ] Implement /api/v1/org/{slug}/domains/* API routes
-- [ ] Implement API authentication (Bearer token)
-
-## Testing (PART 13)
-
-- [ ] Write tests for username validation
-- [ ] Write tests for user registration
-- [ ] Write tests for organization creation
-- [ ] Write tests for custom domain verification
-- [ ] Write integration tests for auth flows
-
-## Documentation (PART 33)
-
-- [ ] Create docs/admin.md section for user moderation
-- [ ] Update docs/configuration.md with new config options
-- [ ] Update docs/api.md with user/org/domain endpoints
-- [ ] Add examples for custom domain setup
+- [ ] Unit tests for username/email validation, short-code generation, Argon2id round-trip
+- [ ] Integration test for register → login → create URL → redirect → click recorded
+- [ ] Integration test for password reset flow
+- [ ] Integration test for organization create + member join

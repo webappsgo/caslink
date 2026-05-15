@@ -67,9 +67,10 @@ func (s *TOTPService) GenerateRecoveryKeys() ([]string, error) {
 	return keys, nil
 }
 
-// HashRecoveryKey hashes a recovery key with Argon2id per PART 23 line 20027
-func (s *TOTPService) HashRecoveryKey(key string) string {
-	// Use the same Argon2id hashing as passwords
+// HashRecoveryKey hashes a recovery key with Argon2id per PART 23 line 20027.
+// Returns an empty string if hashing fails; callers must treat that as an
+// error and refuse to persist the recovery key.
+func (s *TOTPService) HashRecoveryKey(key string) (string, error) {
 	return hashPasswordArgon2id(key)
 }
 
@@ -155,7 +156,11 @@ func (s *TOTPService) EnableTOTP(userID int64, secret string) ([]string, error) 
 	// Hash each recovery key before storing per PART 23 line 20027
 	hashedKeys := make([]string, len(recoveryKeys))
 	for i, key := range recoveryKeys {
-		hashedKeys[i] = s.HashRecoveryKey(key)
+		hashed, err := s.HashRecoveryKey(key)
+		if err != nil {
+			return nil, fmt.Errorf("failed to hash recovery key: %w", err)
+		}
+		hashedKeys[i] = hashed
 	}
 	
 	// Note: Secret stored in plaintext for now.

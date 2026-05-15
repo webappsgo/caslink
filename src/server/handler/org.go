@@ -119,9 +119,3 @@ func (h *OrgHandler) OrgMembers(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "<h1>Organization Members: %s</h1><p>Members list will be implemented per PART 17</p>", slug)
 }
 
-// getUserFromRequest is a helper to get user from middleware context
-func getUserFromRequest(r *http.Request) (*service.User, bool) {
-type contextKey string
-user, ok := r.Context().Value(contextKey("user")).(*service.User)
-return user, ok
-}

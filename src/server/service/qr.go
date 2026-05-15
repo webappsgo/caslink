@@ -135,27 +135,25 @@ func (s *QRService) ClearCache(ctx context.Context, urlID int64) error {
 	return err
 }
 
-// GenerateQRCodeForText generates a QR code for any text/URL (used for TOTP)
+// GenerateQRCodeForText generates a QR code for any text/URL (used for TOTP).
 func (s *QRService) GenerateQRCodeForText(text string, size int) ([]byte, error) {
-if size <= 0 {
-size = 200
-}
-if size > 1000 {
-size = 1000
-}
+	if size <= 0 {
+		size = 200
+	}
+	if size > 1000 {
+		size = 1000
+	}
 
-// Generate QR code
-qr, err := qrcode.New(text, qrcode.Medium)
-if err != nil {
-return nil, fmt.Errorf("failed to generate QR code: %w", err)
-}
+	qr, err := qrcode.New(text, qrcode.Medium)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate QR code: %w", err)
+	}
 
-// Encode as PNG
-var buf bytes.Buffer
-img := qr.Image(size)
-if err := png.Encode(&buf, img); err != nil {
-return nil, fmt.Errorf("failed to encode QR code: %w", err)
-}
+	var buf bytes.Buffer
+	img := qr.Image(size)
+	if err := png.Encode(&buf, img); err != nil {
+		return nil, fmt.Errorf("failed to encode QR code: %w", err)
+	}
 
-return buf.Bytes(), nil
+	return buf.Bytes(), nil
 }

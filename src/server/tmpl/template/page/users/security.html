@@ -1,0 +1,73 @@
+{{template "base" .}}
+{{define "content"}}
+<div class="container container-md">
+  <h1 class="mb-4">Security Settings</h1>
+  {{if .Flash}}
+  <div class="alert alert-{{.Flash.Type}}" data-autohide="5000">{{.Flash.Message}}</div>
+  {{end}}
+
+  <div class="card mb-3">
+    <div class="flex-between">
+      <div>
+        <h2>Password</h2>
+        <p class="text-muted text-sm mt-1">Change your account password</p>
+      </div>
+      <a href="/users/security/password" class="btn btn-outline btn-sm">Change Password</a>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="flex-between">
+      <div>
+        <h2>Two-Factor Authentication</h2>
+        <p class="text-muted text-sm mt-1">
+          {{if .TOTPEnabled}}
+          <span class="badge badge-green">Enabled</span> Your account is protected with TOTP.
+          {{else}}
+          Add an extra layer of security with an authenticator app.
+          {{end}}
+        </p>
+      </div>
+      <a href="/users/security/2fa" class="btn btn-outline btn-sm">
+        {{if .TOTPEnabled}}Manage{{else}}Enable{{end}}
+      </a>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="flex-between">
+      <div>
+        <h2>Active Sessions</h2>
+        <p class="text-muted text-sm mt-1">View and revoke active login sessions</p>
+      </div>
+      <a href="/users/security/sessions" class="btn btn-outline btn-sm">Manage Sessions</a>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="flex-between">
+      <div>
+        <h2>Recovery Keys</h2>
+        <p class="text-muted text-sm mt-1">
+          {{if .RecoveryKeyCount}}
+          {{.RecoveryKeyCount}} recovery keys remaining.
+          {{else}}
+          Recovery keys are generated when you enable 2FA.
+          {{end}}
+        </p>
+      </div>
+      <a href="/users/security/recovery" class="btn btn-outline btn-sm">View</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="flex-between">
+      <div>
+        <h2>Passkeys</h2>
+        <p class="text-muted text-sm mt-1">Use Face ID, Touch ID, or a hardware key to sign in</p>
+      </div>
+      <a href="/users/security/passkeys" class="btn btn-outline btn-sm">Manage</a>
+    </div>
+  </div>
+</div>
+{{end}}
