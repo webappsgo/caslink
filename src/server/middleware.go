@@ -34,7 +34,8 @@ func SecurityHeadersMiddleware(tlsEnabled bool) func(http.Handler) http.Handler 
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			h := w.Header()
 			h.Set("X-Content-Type-Options", "nosniff")
-			h.Set("X-Frame-Options", "DENY")
+			// SAMEORIGIN per AI.md PART 11 → "Security Headers"
+			h.Set("X-Frame-Options", "SAMEORIGIN")
 			h.Set("X-XSS-Protection", "1; mode=block")
 			h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 			h.Set("X-Permitted-Cross-Domain-Policies", "none")

@@ -108,6 +108,8 @@ releases/
 
 # Runtime volume data (NEVER commit)
 rootfs/
+# docker/rootfs/ is build-time overlay (entrypoint, config); MUST be committed
+!docker/rootfs/
 
 
 # Backup files left by editors
