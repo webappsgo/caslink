@@ -1,0 +1,25 @@
+Subject: Backup Failed - {app_name}
+---
+BACKUP FAILED
+
+From: {app_name} ({fqdn})
+Time: {timestamp}
+
+The scheduled backup for {app_name} failed.
+
+Error details:
+  Time:      {timestamp}
+  Task:      {task_name}
+  Error:     {error_message}
+
+Action required:
+  1. Review the server logs for details: {logs_admin_url}
+  2. Verify disk space and permissions at: {backup_path}
+  3. Re-run the backup manually from the admin panel: {backup_admin_url}
+  4. Check the backup configuration: {backup_config_url}
+
+The next scheduled backup will run at: {next_run}
+
+--
+{app_name}
+{app_url}

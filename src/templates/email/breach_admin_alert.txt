@@ -1,0 +1,40 @@
+Subject: [{severity}] Security Breach Detected - {app_name}
+---
+[{severity}] SECURITY BREACH DETECTED — IMMEDIATE ACTION REQUIRED
+
+From: {app_name} ({fqdn})
+Time: {timestamp}
+
+A potential security breach has been detected on your {app_name} server.
+
+Incident details:
+  Severity:    {severity}
+  Detected at: {timestamp}
+  Detection:   {detection_method}
+  Scope:       {breach_scope}
+  Affected:    {affected_count} account(s)
+
+Technical details:
+{technical_details}
+
+Immediate actions required:
+  1. Review the security log:
+     {security_log_url}
+
+  2. Check active sessions and revoke suspicious access:
+     {sessions_admin_url}
+
+  3. Review audit log for unauthorized activity:
+     {audit_log_url}
+
+  4. If breach is confirmed, notify affected users using the breach
+     notification tool in the admin panel:
+     {breach_admin_url}
+
+  5. Consider taking the server offline temporarily if the breach is severe.
+
+This alert was generated automatically by {app_name}'s security monitoring.
+
+--
+{app_name}
+{app_url}

@@ -1,0 +1,36 @@
+Subject: Two-Factor Authentication Enabled - {app_name}
+---
+TWO-FACTOR AUTHENTICATION ENABLED
+
+This email was sent to: {recipient_email}
+From: {app_name} ({fqdn})
+
+Hello {recipient_username},
+
+Two-factor authentication (2FA) has been successfully enabled on your
+{app_name} account.
+
+  Enabled at: {timestamp}
+  Method:     {mfa_method}
+
+From now on, you will be prompted for a verification code each time you
+log in. Keep your authenticator app accessible.
+
+Your backup recovery codes (if generated) should be stored in a safe,
+offline location. You can regenerate them at any time in your security
+settings:
+
+{security_url}
+
+If you did not make this change, someone may have access to your account.
+Change your password immediately:
+
+{change_password_url}
+
+────────────────────────────────────────────────────────────────────────
+If you did not enable 2FA, secure your account immediately.
+────────────────────────────────────────────────────────────────────────
+
+--
+{app_name}
+{app_url}

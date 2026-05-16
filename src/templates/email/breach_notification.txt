@@ -1,0 +1,45 @@
+Subject: Important Security Notice - {app_name}
+---
+IMPORTANT SECURITY NOTICE
+
+This email was sent to: {recipient_email}
+From: {app_name} ({fqdn})
+
+Hello {recipient_username},
+
+We are writing to inform you of a security incident that may have affected
+your {app_name} account.
+
+Incident summary:
+  Detected:    {detection_date}
+  Scope:       {breach_scope}
+  Data at risk: {affected_data}
+
+What happened:
+{breach_description}
+
+What we have done:
+{response_actions}
+
+What you should do:
+  1. Change your password immediately:
+     {change_password_url}
+
+  2. Enable two-factor authentication if not already active:
+     {mfa_setup_url}
+
+  3. Review active sessions and revoke any you do not recognise:
+     {sessions_url}
+
+  4. If you use the same password elsewhere, change it on those services too.
+
+We take security seriously and sincerely apologise for this incident.
+If you have questions, contact us at {admin_email}.
+
+────────────────────────────────────────────────────────────────────────
+This is an important security notification sent to all affected accounts.
+────────────────────────────────────────────────────────────────────────
+
+--
+{app_name}
+{app_url}

@@ -1,0 +1,31 @@
+Subject: Security Alert - {app_name}
+---
+SECURITY ALERT
+
+This email was sent to: {recipient_email}
+From: {app_name} ({fqdn})
+
+Hello {recipient_username},
+
+A security event was detected on your {app_name} account.
+
+Event details:
+  Type:      {event_type}
+  Time:      {timestamp}
+  IP address: {ip_address}
+  Details:   {event_details}
+
+If this was you, no action is needed.
+
+If you did not perform this action, secure your account immediately:
+
+{security_url}
+
+────────────────────────────────────────────────────────────────────────
+If you did not perform this action, please review your account activity
+and change your password if you suspect unauthorized access.
+────────────────────────────────────────────────────────────────────────
+
+--
+{app_name}
+{app_url}

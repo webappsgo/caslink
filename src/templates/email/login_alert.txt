@@ -1,0 +1,36 @@
+Subject: New Login Detected - {app_name}
+---
+NEW LOGIN DETECTED
+
+This email was sent to: {recipient_email}
+From: {app_name} ({fqdn})
+
+Hello {recipient_username},
+
+A new login to your {app_name} account was detected.
+
+Login details:
+  Time:      {timestamp}
+  IP address: {ip_address}
+  Location:  {location}
+  Device:    {user_agent}
+
+If this was you, no action is needed.
+
+If you did not log in, your account may be compromised. Secure your account
+immediately by changing your password:
+
+{change_password_url}
+
+You can also review active sessions and revoke access at:
+
+{sessions_url}
+
+────────────────────────────────────────────────────────────────────────
+If you did not perform this action, please change your password immediately
+and consider enabling two-factor authentication.
+────────────────────────────────────────────────────────────────────────
+
+--
+{app_name}
+{app_url}

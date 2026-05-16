@@ -1,0 +1,26 @@
+Subject: Backup Complete - {app_name}
+---
+BACKUP COMPLETED SUCCESSFULLY
+
+From: {app_name} ({fqdn})
+Time: {timestamp}
+
+Your {app_name} backup completed successfully.
+
+Backup details:
+  Filename:   {filename}
+  Size:       {size}
+  Encrypted:  {encrypted}
+  Duration:   {duration}
+  Location:   {backup_path}
+
+Contents included:
+{backup_contents}
+
+To manage or restore backups, visit the admin panel:
+
+{backup_admin_url}
+
+--
+{app_name}
+{app_url}

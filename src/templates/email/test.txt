@@ -1,0 +1,21 @@
+Subject: Test Email - {app_name}
+---
+TEST EMAIL
+
+From: {app_name} ({fqdn})
+Time: {timestamp}
+
+This is a test email sent from {app_name} to verify that your SMTP
+configuration is working correctly.
+
+If you received this message, email delivery is working.
+
+Server details:
+  App:     {app_name}
+  Version: {app_version}
+  Host:    {fqdn}
+  SMTP:    {smtp_host}:{smtp_port}
+
+--
+{app_name}
+{app_url}

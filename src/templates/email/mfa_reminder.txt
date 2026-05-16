@@ -1,0 +1,32 @@
+Subject: Secure Your Account - {app_name}
+---
+SECURE YOUR ACCOUNT WITH TWO-FACTOR AUTHENTICATION
+
+This email was sent to: {recipient_email}
+From: {app_name} ({fqdn})
+
+Hello {recipient_username},
+
+Your {app_name} account does not have two-factor authentication (2FA) enabled.
+Accounts protected with 2FA are significantly harder to compromise, even if
+your password is leaked.
+
+Enable two-factor authentication now:
+
+{mfa_setup_url}
+
+Once enabled, you will need your authenticator app each time you log in.
+
+To stop receiving these reminders, you can either:
+  - Enable 2FA at the link above
+  - Dismiss reminders permanently in your account settings:
+    {dismiss_reminders_url}
+
+────────────────────────────────────────────────────────────────────────
+This reminder is sent periodically until 2FA is enabled or reminders are
+dismissed. We will not send more than one reminder every 6 months.
+────────────────────────────────────────────────────────────────────────
+
+--
+{app_name}
+{app_url}

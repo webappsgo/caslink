@@ -25,23 +25,40 @@ type ServerConfig struct {
 	Daemonize bool   `yaml:"daemonize"`
 	PIDFile   bool   `yaml:"pidfile"`
 
-	Branding       BrandingConfig      `yaml:"branding"`
-	SEO            SEOConfig           `yaml:"seo"`
-	Admin          AdminConfig         `yaml:"admin"`
-	Contact        ContactConfig       `yaml:"contact"`
-	SSL            SSLConfig           `yaml:"ssl"`
-	Database       DatabaseConfig      `yaml:"database"`
-	RateLimit      RateLimitConfig     `yaml:"rate_limit"`
-	Limits         LimitsConfig        `yaml:"limits"`
-	Compression    CompressionConfig   `yaml:"compression"`
+	Branding       BrandingConfig       `yaml:"branding"`
+	SEO            SEOConfig            `yaml:"seo"`
+	Admin          AdminConfig          `yaml:"admin"`
+	Contact        ContactConfig        `yaml:"contact"`
+	SSL            SSLConfig            `yaml:"ssl"`
+	Database       DatabaseConfig       `yaml:"database"`
+	RateLimit      RateLimitConfig      `yaml:"rate_limit"`
+	Limits         LimitsConfig         `yaml:"limits"`
+	Compression    CompressionConfig    `yaml:"compression"`
 	TrustedProxies TrustedProxiesConfig `yaml:"trusted_proxies"`
-	Session        SessionConfig       `yaml:"session"`
-	I18n           I18nConfig          `yaml:"i18n"`
-	Tracking       TrackingConfig      `yaml:"tracking"`
-	Scheduler      SchedulerConfig     `yaml:"scheduler"`
-	Features       FeaturesConfig      `yaml:"features"`
-	Notifications  NotificationsConfig `yaml:"notifications"`
-	Metrics        MetricsConfig       `yaml:"metrics"`
+	Session        SessionConfig        `yaml:"session"`
+	I18n           I18nConfig           `yaml:"i18n"`
+	Tracking       TrackingConfig       `yaml:"tracking"`
+	Scheduler      SchedulerConfig      `yaml:"scheduler"`
+	Security       SecurityConfig       `yaml:"security"`
+	Features       FeaturesConfig       `yaml:"features"`
+	Notifications  NotificationsConfig  `yaml:"notifications"`
+	Metrics        MetricsConfig        `yaml:"metrics"`
+}
+
+// SecurityConfig holds security policy configuration per AI.md PART 17.
+type SecurityConfig struct {
+	Password PasswordPolicyConfig `yaml:"password"`
+}
+
+// PasswordPolicyConfig holds password complexity requirements per AI.md PART 17.
+// All complexity checks are off by default (spec line 16894); they auto-enable
+// when compliance mode (HIPAA/SOC2/PCI-DSS) is active.
+type PasswordPolicyConfig struct {
+	MinLength        int  `yaml:"min_length"`        // minimum password length (default 8)
+	RequireUppercase bool `yaml:"require_uppercase"` // at least one A-Z
+	RequireLowercase bool `yaml:"require_lowercase"` // at least one a-z
+	RequireNumber    bool `yaml:"require_number"`    // at least one 0-9
+	RequireSpecial   bool `yaml:"require_special"`   // at least one !@#$%^&*…
 }
 
 // LimitsConfig holds HTTP request limits per AI.md PART 12.
@@ -584,6 +601,15 @@ func DefaultConfig() *Config {
 				Federation: FederationConfig{
 					Enabled:   false,
 					Instances: []string{},
+				},
+			},
+			Security: SecurityConfig{
+				Password: PasswordPolicyConfig{
+					MinLength:        8,
+					RequireUppercase: false,
+					RequireLowercase: false,
+					RequireNumber:    false,
+					RequireSpecial:   false,
 				},
 			},
 			Metrics: MetricsConfig{

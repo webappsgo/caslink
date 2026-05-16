@@ -1,0 +1,28 @@
+Subject: Scheduled Task Failed - {app_name}
+---
+SCHEDULED TASK FAILED
+
+From: {app_name} ({fqdn})
+Time: {timestamp}
+
+A scheduled task on your {app_name} server failed.
+
+Task details:
+  Task name:   {task_name}
+  Schedule:    {task_schedule}
+  Failed at:   {timestamp}
+  Error:       {error_message}
+
+Next scheduled run: {next_run}
+
+To review task history and logs, visit the admin panel:
+
+{scheduler_admin_url}
+
+If this task continues to fail, review the server logs for more detail:
+
+{logs_admin_url}
+
+--
+{app_name}
+{app_url}

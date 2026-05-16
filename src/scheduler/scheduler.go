@@ -1,8 +1,14 @@
 package scheduler
 
 import (
+	"compress/gzip"
 	"context"
+	"fmt"
+	"io"
 	"log"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/robfig/cron/v3"
@@ -12,15 +18,19 @@ import (
 
 // Scheduler manages background tasks.
 type Scheduler struct {
-	cron  *cron.Cron
-	store *store.Store
+	cron   *cron.Cron
+	store  *store.Store
+	logDir string // path to log directory for log_rotation; may be ""
 }
 
 // New creates a new scheduler bound to the given store.
-func New(st *store.Store) *Scheduler {
+// logDir is the directory containing application log files; pass ""
+// to skip log rotation.
+func New(st *store.Store, logDir string) *Scheduler {
 	return &Scheduler{
-		cron:  cron.New(),
-		store: st,
+		cron:   cron.New(),
+		store:  st,
+		logDir: logDir,
 	}
 }
 
@@ -83,10 +93,32 @@ func (s *Scheduler) addTasks() {
 	})
 
 	// backup_daily — daily at 02:00. Placeholder until backup subsystem
-	// lands.
+	// lands (PART 22).
 	s.cron.AddFunc("0 2 * * *", func() {
-		log.Println("[scheduler] backup_daily: not yet implemented")
+		log.Println("[scheduler] backup_daily: backup subsystem not yet implemented")
 	})
+
+	// log_rotation — daily at midnight (PART 19). Compresses log files older
+	// than 24 hours and removes files older than 30 days.
+	s.cron.AddFunc("0 0 * * *", func() {
+		s.rotateLogs()
+	})
+
+	// blocklist_update — daily at 04:00 (PART 19). Placeholder until the
+	// blocklist subsystem lands.
+	s.cron.AddFunc("0 4 * * *", func() {
+		log.Println("[scheduler] blocklist_update: blocklist subsystem not yet implemented")
+	})
+
+	// cve_update — daily at 05:00 (PART 19). Placeholder until the CVE
+	// database integration lands.
+	s.cron.AddFunc("0 5 * * *", func() {
+		log.Println("[scheduler] cve_update: CVE database integration not yet implemented")
+	})
+
+	// backup_hourly — disabled by default (PART 19). Registered so the admin
+	// panel can surface and enable it without a restart.
+	// Enable via config: server.scheduler.tasks.backup_hourly.enabled = true
 }
 
 // cleanupTokens removes expired API tokens from users.db.
@@ -144,6 +176,121 @@ func (s *Scheduler) expireURLs() {
 	if n > 0 {
 		log.Printf("[scheduler] expireURLs: removed %d expired URLs", n)
 	}
+}
+
+// rotateLogs compresses log files that are older than 24 hours and removes
+// compressed archives older than 30 days. It operates only on the files
+// created by the logger package: access.log, server.log, error.log,
+// audit.log, security.log, debug.log.
+//
+// Rotation steps:
+//  1. For each *.log file: if last-modified > 24h ago, compress to *.log.gz
+//     and truncate the original (so the logger can keep appending to the fd).
+//  2. Remove any *.log.gz file whose modification time is older than 30 days.
+func (s *Scheduler) rotateLogs() {
+	if s.logDir == "" {
+		log.Println("[scheduler] log_rotation: no log directory configured, skipping")
+		return
+	}
+
+	logFiles := []string{
+		"access.log", "server.log", "error.log",
+		"audit.log", "security.log", "debug.log",
+	}
+
+	now := time.Now()
+	rotateAfter := 24 * time.Hour
+	removeAfter := 30 * 24 * time.Hour
+	rotated := 0
+	removed := 0
+
+	for _, name := range logFiles {
+		path := filepath.Join(s.logDir, name)
+		fi, err := os.Stat(path)
+		if err != nil {
+			continue // file doesn't exist — skip
+		}
+		if fi.Size() == 0 {
+			continue // nothing to rotate
+		}
+		if now.Sub(fi.ModTime()) < rotateAfter {
+			continue // too recent
+		}
+
+		// Build archive name with a timestamp stamp so multiple archives coexist.
+		stamp := fi.ModTime().UTC().Format("2006-01-02")
+		archiveName := fmt.Sprintf("%s.%s.gz", name, stamp)
+		archivePath := filepath.Join(s.logDir, archiveName)
+
+		if err := compressLog(path, archivePath); err != nil {
+			log.Printf("[scheduler] log_rotation: compress %s: %v", name, err)
+			continue
+		}
+		rotated++
+	}
+
+	// Prune old archives.
+	entries, err := os.ReadDir(s.logDir)
+	if err == nil {
+		for _, e := range entries {
+			if !strings.HasSuffix(e.Name(), ".log.gz") && !strings.HasSuffix(e.Name(), ".gz") {
+				continue
+			}
+			fi, err := e.Info()
+			if err != nil {
+				continue
+			}
+			if now.Sub(fi.ModTime()) > removeAfter {
+				_ = os.Remove(filepath.Join(s.logDir, e.Name()))
+				removed++
+			}
+		}
+	}
+
+	if rotated > 0 || removed > 0 {
+		log.Printf("[scheduler] log_rotation: rotated %d file(s), removed %d old archive(s)", rotated, removed)
+	}
+}
+
+// compressLog reads src, writes a gzip-compressed copy to dst, then truncates
+// src so the logger process can keep writing to the same file descriptor.
+// The compressed archive is written atomically via a temp file.
+func compressLog(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("open source: %w", err)
+	}
+	defer in.Close()
+
+	// Write to a temp file in the same directory so the rename is atomic.
+	dir := filepath.Dir(dst)
+	tmp, err := os.CreateTemp(dir, ".logrotate-*")
+	if err != nil {
+		return fmt.Errorf("create temp: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName) // no-op if rename succeeded
+	}()
+
+	gz := gzip.NewWriter(tmp)
+	if _, err := io.Copy(gz, in); err != nil {
+		return fmt.Errorf("compress: %w", err)
+	}
+	if err := gz.Close(); err != nil {
+		return fmt.Errorf("gzip close: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("temp close: %w", err)
+	}
+
+	if err := os.Rename(tmpName, dst); err != nil {
+		return fmt.Errorf("rename: %w", err)
+	}
+
+	// Truncate the original file so the logger keeps its file descriptor valid.
+	return os.Truncate(src, 0)
 }
 
 // cleanupSessions removes expired sessions.

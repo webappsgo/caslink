@@ -3,33 +3,38 @@ package handler
 import (
 	"html/template"
 	"net/http"
+	"strings"
+	"unicode"
 
+	"github.com/casjaysdevdocker/caslink/src/config"
 	"github.com/casjaysdevdocker/caslink/src/server/service"
 )
 
 // SetupHandler handles first-run setup wizard
 type SetupHandler struct {
 	authService *service.AuthService
+	cfg         *config.Config
 	version     string
 }
 
 // NewSetupHandler creates a new setup handler
-func NewSetupHandler(authService *service.AuthService, version string) *SetupHandler {
+func NewSetupHandler(authService *service.AuthService, cfg *config.Config, version string) *SetupHandler {
 	return &SetupHandler{
 		authService: authService,
+		cfg:         cfg,
 		version:     version,
 	}
 }
 
 // SetupPage handles GET /setup - shows setup wizard if needed
 func (h *SetupHandler) SetupPage(w http.ResponseWriter, r *http.Request) {
-	h.renderSetupForm(w, "", "")
+	h.renderSetupForm(w, r, "", "")
 }
 
 // Setup handles POST /setup - creates primary admin
 func (h *SetupHandler) Setup(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
-		h.renderSetupForm(w, "", "Invalid form data")
+		h.renderSetupForm(w, r, "", "Invalid form data")
 		return
 	}
 
@@ -38,31 +43,32 @@ func (h *SetupHandler) Setup(w http.ResponseWriter, r *http.Request) {
 	confirmPassword := r.FormValue("confirm_password")
 	email := r.FormValue("email")
 
-	// Validation
+	// Required fields
 	if username == "" || password == "" || email == "" {
-		h.renderSetupForm(w, "", "All fields are required")
+		h.renderSetupForm(w, r, username, "All fields are required")
 		return
 	}
 
 	if len(username) < 3 {
-		h.renderSetupForm(w, "", "Username must be at least 3 characters")
+		h.renderSetupForm(w, r, username, "Username must be at least 3 characters")
 		return
 	}
 
-	if len(password) < 8 {
-		h.renderSetupForm(w, "", "Password must be at least 8 characters")
+	// Validate password against policy from config
+	if errMsg := h.validatePassword(password); errMsg != "" {
+		h.renderSetupForm(w, r, username, errMsg)
 		return
 	}
 
 	if password != confirmPassword {
-		h.renderSetupForm(w, "", "Passwords do not match")
+		h.renderSetupForm(w, r, username, "Passwords do not match")
 		return
 	}
 
 	// Create primary admin
 	err := h.authService.CreatePrimaryAdmin(r.Context(), username, password, email)
 	if err != nil {
-		h.renderSetupForm(w, "", "Failed to create admin account")
+		h.renderSetupForm(w, r, username, "Failed to create admin account")
 		return
 	}
 
@@ -70,8 +76,107 @@ func (h *SetupHandler) Setup(w http.ResponseWriter, r *http.Request) {
 	h.renderSetupComplete(w, username)
 }
 
+// validatePassword checks the submitted password against the configured
+// password policy (AI.md PART 17 — Password Policy Sane Defaults).
+// Returns an empty string on success, or a human-readable error message.
+func (h *SetupHandler) validatePassword(pw string) string {
+	policy := h.cfg.Server.Security.Password
+	minLen := policy.MinLength
+	if minLen <= 0 {
+		minLen = 8
+	}
+
+	if len(pw) < minLen {
+		return strings.Join([]string{
+			"Password must be at least",
+			itoa(minLen),
+			"characters",
+		}, " ")
+	}
+
+	if policy.RequireUppercase {
+		ok := false
+		for _, r := range pw {
+			if unicode.IsUpper(r) {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return "Password must contain at least one uppercase letter"
+		}
+	}
+
+	if policy.RequireLowercase {
+		ok := false
+		for _, r := range pw {
+			if unicode.IsLower(r) {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return "Password must contain at least one lowercase letter"
+		}
+	}
+
+	if policy.RequireNumber {
+		ok := false
+		for _, r := range pw {
+			if unicode.IsDigit(r) {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return "Password must contain at least one number"
+		}
+	}
+
+	if policy.RequireSpecial {
+		ok := false
+		for _, r := range pw {
+			if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return "Password must contain at least one special character"
+		}
+	}
+
+	return ""
+}
+
+// itoa converts a non-negative integer to a decimal string without importing strconv.
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	buf := make([]byte, 0, 10)
+	for n > 0 {
+		buf = append([]byte{byte('0' + n%10)}, buf...)
+		n /= 10
+	}
+	return string(buf)
+}
+
+// csrfTokenFromRequest reads the CSRF cookie value so the form can include it
+// as a hidden field (double-submit cookie pattern per AI.md PART 11).
+// Returns "" if no cookie is present (GET handler calls ensureCSRFCookie first,
+// so the cookie should always exist by the time this is called).
+func csrfTokenFromRequest(r *http.Request) string {
+	if c, err := r.Cookie("csrf_token"); err == nil {
+		return c.Value
+	}
+	return ""
+}
+
 // renderSetupForm renders the setup wizard form
-func (h *SetupHandler) renderSetupForm(w http.ResponseWriter, prefillUsername, errorMsg string) {
+func (h *SetupHandler) renderSetupForm(w http.ResponseWriter, r *http.Request, prefillUsername, errorMsg string) {
+	csrfToken := csrfTokenFromRequest(r)
+
 	tmpl := `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -156,7 +261,7 @@ func (h *SetupHandler) renderSetupForm(w http.ResponseWriter, prefillUsername, e
         <div class="subtitle">First-Time Setup</div>
 
         <div class="step-info">
-            👋 Let's create your admin account. This account will have full control over the server.
+            Let's create your admin account. This account will have full control over the server.
         </div>
 
         {{if .Error}}
@@ -164,6 +269,7 @@ func (h *SetupHandler) renderSetupForm(w http.ResponseWriter, prefillUsername, e
         {{end}}
 
         <form method="POST" action="/setup">
+            <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
             <div class="form-group">
                 <label for="username">Username</label>
                 <input type="text" id="username" name="username" value="{{.Username}}" required autofocus>
@@ -179,7 +285,7 @@ func (h *SetupHandler) renderSetupForm(w http.ResponseWriter, prefillUsername, e
             <div class="form-group">
                 <label for="password">Password</label>
                 <input type="password" id="password" name="password" required>
-                <div class="help-text">At least 8 characters</div>
+                <div class="help-text">{{.PasswordHint}}</div>
             </div>
 
             <div class="form-group">
@@ -197,11 +303,39 @@ func (h *SetupHandler) renderSetupForm(w http.ResponseWriter, prefillUsername, e
 
 	t := template.Must(template.New("setup").Parse(tmpl))
 	data := map[string]interface{}{
-		"Username": prefillUsername,
-		"Error":    errorMsg,
-		"Version":  h.version,
+		"Username":     prefillUsername,
+		"Error":        errorMsg,
+		"Version":      h.version,
+		"CSRFToken":    csrfToken,
+		"PasswordHint": h.passwordHint(),
 	}
-	t.Execute(w, data)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = t.Execute(w, data)
+}
+
+// passwordHint builds a human-readable description of the active password
+// policy to show below the password field.
+func (h *SetupHandler) passwordHint() string {
+	p := h.cfg.Server.Security.Password
+	minLen := p.MinLength
+	if minLen <= 0 {
+		minLen = 8
+	}
+
+	parts := []string{"At least " + itoa(minLen) + " characters"}
+	if p.RequireUppercase {
+		parts = append(parts, "one uppercase letter")
+	}
+	if p.RequireLowercase {
+		parts = append(parts, "one lowercase letter")
+	}
+	if p.RequireNumber {
+		parts = append(parts, "one number")
+	}
+	if p.RequireSpecial {
+		parts = append(parts, "one special character")
+	}
+	return strings.Join(parts, ", ")
 }
 
 // renderSetupComplete renders the setup completion page
@@ -287,5 +421,6 @@ func (h *SetupHandler) renderSetupComplete(w http.ResponseWriter, username strin
 	data := map[string]interface{}{
 		"Username": username,
 	}
-	t.Execute(w, data)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_ = t.Execute(w, data)
 }

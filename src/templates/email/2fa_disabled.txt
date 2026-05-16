@@ -1,0 +1,33 @@
+Subject: Two-Factor Authentication Disabled - {app_name}
+---
+TWO-FACTOR AUTHENTICATION DISABLED
+
+This email was sent to: {recipient_email}
+From: {app_name} ({fqdn})
+
+Hello {recipient_username},
+
+Two-factor authentication (2FA) has been removed from your {app_name} account.
+
+  Disabled at: {timestamp}
+  IP address:  {ip_address}
+
+Your account is now protected by your password only. We strongly recommend
+re-enabling 2FA to keep your account secure:
+
+{mfa_setup_url}
+
+If you did not make this change, your account may be compromised. Change
+your password immediately and contact support:
+
+{change_password_url}
+{support_url}
+
+────────────────────────────────────────────────────────────────────────
+If you did not disable 2FA, treat this as an unauthorized access event
+and secure your account immediately.
+────────────────────────────────────────────────────────────────────────
+
+--
+{app_name}
+{app_url}

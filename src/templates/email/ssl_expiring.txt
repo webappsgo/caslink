@@ -1,0 +1,27 @@
+Subject: SSL Certificate Expiring - {app_name}
+---
+SSL CERTIFICATE EXPIRING SOON
+
+From: {app_name} ({fqdn})
+Time: {timestamp}
+
+Your SSL certificate for {app_name} is expiring soon and requires renewal.
+
+Certificate details:
+  Domain:      {domain}
+  Expiry date: {expiry_date}
+  Days left:   {days_remaining}
+
+If automatic renewal is configured (Let's Encrypt), the certificate will
+renew automatically before expiry. No action is needed unless renewal fails.
+
+To check certificate status or renew manually, visit the admin panel:
+
+{ssl_admin_url}
+
+If automatic renewal is not configured, renew your certificate before it
+expires to avoid service disruption.
+
+--
+{app_name}
+{app_url}

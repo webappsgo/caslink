@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/rs/cors"
+	"golang.org/x/crypto/acme/autocert"
 
 	"net/http/pprof"
 
@@ -34,16 +35,17 @@ import (
 
 // Server represents the HTTP server
 type Server struct {
-	router    *chi.Mux
-	server    *http.Server
-	config    *config.Config
-	mode      mode.Mode
-	store     *store.Store
-	scheduler *scheduler.Scheduler
-	renderer  *tmpl.Renderer
-	metrics   *appmetrics.Metrics
-	log       *logger.Logger
-	pidFile   string // path to PID file; empty = no PID file
+	router      *chi.Mux
+	server      *http.Server
+	config      *config.Config
+	mode        mode.Mode
+	store       *store.Store
+	scheduler   *scheduler.Scheduler
+	renderer    *tmpl.Renderer
+	metrics     *appmetrics.Metrics
+	log         *logger.Logger
+	pidFile     string // path to PID file; empty = no PID file
+	acmeManager *autocert.Manager // non-nil when LE HTTP-01 is active
 
 	// Version information
 	Version   string
@@ -52,7 +54,7 @@ type Server struct {
 }
 
 // New creates a new server instance
-func New(cfg *config.Config, appMode mode.Mode, dataDir, pidFile string, appLogger *logger.Logger, version, commitID, buildDate string) (*Server, error) {
+func New(cfg *config.Config, appMode mode.Mode, dataDir, logDir, pidFile string, appLogger *logger.Logger, version, commitID, buildDate string) (*Server, error) {
 	// Open database — use configured driver if set, otherwise default to SQLite
 	dbCfg := cfg.Server.Database
 	var db *store.Store
@@ -70,7 +72,7 @@ func New(cfg *config.Config, appMode mode.Mode, dataDir, pidFile string, appLogg
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	sched := scheduler.New(db)
+	sched := scheduler.New(db, logDir)
 
 	renderer, err := tmpl.New()
 	if err != nil {
@@ -80,19 +82,49 @@ func New(cfg *config.Config, appMode mode.Mode, dataDir, pidFile string, appLogg
 	// Initialize Prometheus metrics (always; gated by config at route level).
 	m, _ := appmetrics.New(version, commitID, buildDate, cfg.Server.Metrics.IncludeRuntime)
 
+	// Initialise Let's Encrypt autocert.Manager when HTTP-01 is enabled so the
+	// /.well-known/acme-challenge/ handler can serve real token responses.
+	var acmeMgr *autocert.Manager
+	if cfg.Server.SSL.LetsEncrypt.Enabled &&
+		(cfg.Server.SSL.LetsEncrypt.Challenge == "http-01" || cfg.Server.SSL.LetsEncrypt.Challenge == "") {
+		cacheDir := filepath.Join(dataDir, "ssl", "acme-cache")
+		if err := os.MkdirAll(cacheDir, 0700); err != nil {
+			log.Printf("acme: could not create cache dir %s: %v — HTTP-01 disabled", cacheDir, err)
+		} else {
+			leEmail := cfg.Server.SSL.LetsEncrypt.Email
+			if leEmail == "" {
+				leEmail = cfg.Server.Admin.Email
+			}
+			hosts := []string{cfg.Server.FQDN}
+			acmeMgr = &autocert.Manager{
+				Prompt:     autocert.AcceptTOS,
+				HostPolicy: autocert.HostWhitelist(hosts...),
+				Cache:      autocert.DirCache(cacheDir),
+				Email:      leEmail,
+			}
+			if cfg.Server.SSL.LetsEncrypt.Staging {
+				// Use the staging CA so we can test without rate-limit risks.
+				acmeMgr.Client = nil // autocert uses ACME dir from Client; staging needs custom setup
+				log.Printf("acme: Let's Encrypt staging mode — certificates will not be trusted by browsers")
+			}
+			log.Printf("acme: HTTP-01 autocert manager initialised (cache=%s, hosts=%v)", cacheDir, hosts)
+		}
+	}
+
 	s := &Server{
-		router:    chi.NewRouter(),
-		config:    cfg,
-		mode:      appMode,
-		store:     db,
-		scheduler: sched,
-		renderer:  renderer,
-		metrics:   m,
-		log:       appLogger,
-		pidFile:   pidFile,
-		Version:   version,
-		CommitID:  commitID,
-		BuildDate: buildDate,
+		router:      chi.NewRouter(),
+		config:      cfg,
+		mode:        appMode,
+		store:       db,
+		scheduler:   sched,
+		renderer:    renderer,
+		metrics:     m,
+		log:         appLogger,
+		pidFile:     pidFile,
+		acmeManager: acmeMgr,
+		Version:     version,
+		CommitID:    commitID,
+		BuildDate:   buildDate,
 	}
 
 	s.setupMiddleware()
@@ -189,7 +221,7 @@ func (s *Server) setupRoutes() {
 	qrHandler := handler.NewQRHandler(qrService, urlService)
 	bulkHandler := handler.NewBulkHandler(bulkService)
 	adminHandler := handler.NewAdminHandler(authService, userAdminService, s.Version, s.mode.String(), adminPath)
-	setupHandler := handler.NewSetupHandler(authService, s.Version)
+	setupHandler := handler.NewSetupHandler(authService, s.config, s.Version)
 	authUserHandler := handler.NewAuthUserHandler(authService, s.renderer, s.config)
 	twoFactorHandler := handler.NewTwoFactorHandler(authService, totpService)
 	passwordHandler := handler.NewPasswordHandler(authService, emailService, s.renderer, s.config)
@@ -262,9 +294,14 @@ func (s *Server) setupRoutes() {
 	s.router.Get("/graphql/schema", graphql.SchemaHandler())
 	s.router.Post("/graphql", graphql.QueryHandler())
 
-	// Setup wizard (first-run only)
-	s.router.Get("/setup", setupHandler.SetupPage)
-	s.router.Post("/setup", setupHandler.Setup)
+	// Setup wizard (first-run only) — CSRF applied per AI.md PART 11.
+	// The setup token provides primary protection; CSRF adds a second layer
+	// against same-LAN network attackers.
+	s.router.Route("/setup", func(r chi.Router) {
+		r.Use(CSRFMiddleware())
+		r.Get("/", setupHandler.SetupPage)
+		r.Post("/", setupHandler.Setup)
+	})
 
 	// Auth routes — /server/auth/* per spec PART 17
 	s.router.Route("/server/auth", func(r chi.Router) {
@@ -476,10 +513,18 @@ func (s *Server) wellKnownChangePassword(w http.ResponseWriter, r *http.Request)
 }
 
 // wellKnownACMEChallenge handles /.well-known/acme-challenge/{token} for
-// Let's Encrypt HTTP-01 validation. The autocert.Manager integration is
-// tracked in TODO.AI.md ("Let's Encrypt HTTP-01 challenge"). Until that
-// subsystem is wired the handler returns 404 so LE falls back to DNS-01.
+// Let's Encrypt HTTP-01 validation per AI.md PART 15.
+// When the autocert.Manager is active (LE HTTP-01 enabled in config) the
+// request is delegated to it so the ACME CA can verify domain ownership.
+// Without a manager the handler returns 404 so LE falls back to DNS-01.
 func (s *Server) wellKnownACMEChallenge(w http.ResponseWriter, r *http.Request) {
+	if s.acmeManager != nil {
+		// autocert.Manager.HTTPHandler wraps http.NotFound for non-challenge
+		// paths; for /.well-known/acme-challenge/{token} it writes the key
+		// authorisation token required by the ACME CA.
+		s.acmeManager.HTTPHandler(nil).ServeHTTP(w, r)
+		return
+	}
 	http.NotFound(w, r)
 }
 

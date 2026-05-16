@@ -1,0 +1,25 @@
+Subject: SSL Certificate Renewed - {app_name}
+---
+SSL CERTIFICATE RENEWED SUCCESSFULLY
+
+From: {app_name} ({fqdn})
+Time: {timestamp}
+
+Your SSL certificate for {app_name} has been renewed successfully.
+
+Certificate details:
+  Domain:      {domain}
+  Issued:      {issued_date}
+  Expires:     {expiry_date}
+  Issuer:      {issuer}
+
+No action is required. HTTPS connections to your server will continue
+to work without interruption.
+
+To view certificate details, visit the admin panel:
+
+{ssl_admin_url}
+
+--
+{app_name}
+{app_url}
