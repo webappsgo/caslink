@@ -29,11 +29,11 @@ Error, Message}`).
 - Gap: Hardcoded `DENY`, which breaks legitimate same-origin embedding (admin previews, etc.) and contradicts the spec table.
 - Fix: Changed to `SAMEORIGIN`.
 
-### Missing email-config block in `config.Config`
-- File: `src/config/config.go` (no `EmailConfig` / `NotificationsConfig`)
+### [FIXED] Missing email-config block in `config.Config`
+- File: `src/config/config.go` + `src/server/service/email.go`
 - Spec: `AI.md` PART 18 line 31218 (`cfg.Server.Notifications.Email.SMTP.Host`), IDEA.md "Notifications" (SMTP/SendGrid/SES)
-- Gap: `EmailService.SMTPConfigured()` reads `os.Getenv("SMTP_HOST")` etc. directly instead of resolving through `config.Config`. Operator cannot configure SMTP via `server.yml`. Spec assumes `Server.Notifications.Email.{Enabled,From,FromName,ReplyTo,SMTP{Host,Port,Username,Password,UseTLS,UseStartTLS}}`.
-- Fix: Pending — adding the config struct is a wider change that also touches `EmailService`; tracked in TODO.AI.md "Notifications: SMTP works, add SendGrid / SES".
+- Gap: `EmailService.SMTPConfigured()` read `os.Getenv("SMTP_HOST")` etc. directly. Operator could not configure SMTP via `server.yml`.
+- Fix: Added `NotificationsConfig`, `EmailConfig`, and `SMTPConfig` structs to `config.Config.Server.Notifications.Email.{Enabled,From,FromName,ReplyTo,SMTP{Host,Port,Username,Password,UseTLS,UseStartTLS}}` matching the spec's access path. `DefaultConfig()` seeds sane defaults (port 587, StartTLS on, host blank → email disabled). `EmailService` now resolves each field through small helpers (`smtpHost`, `smtpPort`, `smtpUsername`, `smtpPassword`, `fromName`, `fromEmail`) that prefer env-var overrides (PART 26 line 19316 precedence) and fall back to the config struct.
 
 ---
 
@@ -83,11 +83,11 @@ Error, Message}`).
 - File: `src/scheduler/scheduler.go`
 - Spec: PART 19 line 32418–32419 (required when Tor / cluster enabled). Caslink does not ship Tor/cluster in this revision, so these are conditional. No-op.
 
-### Logger middleware always on except in development
-- File: `src/server/server.go:103`
+### [FIXED] Logger middleware always on except in development
+- File: `src/server/server.go:103` + `src/server/middleware.go` (`accessLogMiddleware`)
 - Spec: PART 11 — production logs should still emit access logs at INFO level for audit trail.
-- Gap: `middleware.Logger` is only registered in dev mode. Spec wants structured logs in prod too.
-- Fix: Pending — needs a slog-backed logger middleware; current chi default is too noisy.
+- Gap: `middleware.Logger` was only registered in dev mode. Production had no access log.
+- Fix: Added a compact `accessLogMiddleware` (production-only) that emits a single-line entry per request: `access {method} {path} {status} {bytes} {duration_ms} {ip} {request_id}`. Development continues to use chi's verbose logger. Request paths never carry credentials (PART 11), so logging the raw path is safe.
 
 ### `respondError` exposed `"status"` int in body
 - File: `src/server/handler/url.go:160` (was)
@@ -130,5 +130,9 @@ Error, Message}`).
 - middleware.go: `X-Frame-Options` corrected to `SAMEORIGIN` per PART 11.
 - middleware.go: All `http.Error()` / raw JSON writes replaced with `writeJSONError` emitting canonical envelope.
 - middleware.go: `AdminAuthMiddleware` now accepts `adminPath string`; redirect URL is no longer hardcoded.
+- middleware.go: Production `accessLogMiddleware` added — single-line `access` log entry per request (method, path, status, bytes, duration, IP, request ID).
+- server.go: Access logger now registered in both dev (chi verbose) and prod (compact) modes per PART 11.
 - scheduler.go: Added `token_cleanup`, `healthcheck_self`; session cleanup cadence raised to 15 minutes per PART 19.
 - store.go: Sessions table now includes `ip_address`, `user_agent`, `last_activity` columns required by PART 23 sessions UI.
+- config/config.go: Added `NotificationsConfig`/`EmailConfig`/`SMTPConfig` matching `cfg.Server.Notifications.Email.SMTP.{...}` per PART 18.
+- service/email.go: SMTP fields now resolved through helpers that prefer env vars then config — operator can configure via `server.yml`.

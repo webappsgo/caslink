@@ -98,9 +98,14 @@ func (s *Server) setupMiddleware() {
 	// Real IP middleware
 	s.router.Use(middleware.RealIP)
 
-	// Logging middleware
+	// Access logging middleware. Spec PART 11 wants structured access
+	// logs in both development and production for the audit trail.
+	// Development uses chi's verbose colored logger; production uses
+	// a compact single-line format suitable for log aggregators.
 	if s.mode.IsDevelopment() {
 		s.router.Use(middleware.Logger)
+	} else {
+		s.router.Use(accessLogMiddleware)
 	}
 
 	// Timeout middleware (30 second timeout)

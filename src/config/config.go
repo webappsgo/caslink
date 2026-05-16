@@ -24,14 +24,45 @@ type ServerConfig struct {
 	Daemonize bool   `yaml:"daemonize"`
 	PIDFile   bool   `yaml:"pidfile"`
 
-	Branding  BrandingConfig  `yaml:"branding"`
-	SEO       SEOConfig       `yaml:"seo"`
-	Admin     AdminConfig     `yaml:"admin"`
-	SSL       SSLConfig       `yaml:"ssl"`
-	Database  DatabaseConfig  `yaml:"database"`
-	RateLimit RateLimitConfig `yaml:"rate_limit"`
-	Scheduler SchedulerConfig `yaml:"scheduler"`
-	Features  FeaturesConfig  `yaml:"features"`
+	Branding      BrandingConfig      `yaml:"branding"`
+	SEO           SEOConfig           `yaml:"seo"`
+	Admin         AdminConfig         `yaml:"admin"`
+	SSL           SSLConfig           `yaml:"ssl"`
+	Database      DatabaseConfig      `yaml:"database"`
+	RateLimit     RateLimitConfig     `yaml:"rate_limit"`
+	Scheduler     SchedulerConfig     `yaml:"scheduler"`
+	Features      FeaturesConfig      `yaml:"features"`
+	Notifications NotificationsConfig `yaml:"notifications"`
+}
+
+// NotificationsConfig holds notification channel configuration per AI.md
+// PART 18. The Email sub-struct mirrors the spec's
+// cfg.Server.Notifications.Email.SMTP.{Host,Port,Username,...} access path.
+type NotificationsConfig struct {
+	Email EmailConfig `yaml:"email"`
+}
+
+// EmailConfig holds SMTP / sender configuration. When SMTP.Host is empty
+// the EmailService treats email as unconfigured and silently skips sends
+// per PART 26 "No SMTP = No emails".
+type EmailConfig struct {
+	Enabled  bool       `yaml:"enabled"`
+	From     string     `yaml:"from"`
+	FromName string     `yaml:"from_name"`
+	ReplyTo  string     `yaml:"reply_to"`
+	SMTP     SMTPConfig `yaml:"smtp"`
+}
+
+// SMTPConfig holds SMTP server connection details. Host is the only
+// required field; everything else has a sane default (port 587, no auth,
+// auto-TLS).
+type SMTPConfig struct {
+	Host        string `yaml:"host"`
+	Port        int    `yaml:"port"`
+	Username    string `yaml:"username"`
+	Password    string `yaml:"password"`
+	UseTLS      bool   `yaml:"use_tls"`
+	UseStartTLS bool   `yaml:"use_starttls"`
 }
 
 // BrandingConfig holds branding settings
@@ -363,6 +394,22 @@ func DefaultConfig() *Config {
 				Federation: FederationConfig{
 					Enabled:   false,
 					Instances: []string{},
+				},
+			},
+			Notifications: NotificationsConfig{
+				Email: EmailConfig{
+					Enabled:  false,
+					From:     fmt.Sprintf("no-reply@%s", hostname),
+					FromName: "Caslink",
+					ReplyTo:  "",
+					SMTP: SMTPConfig{
+						Host:        "",
+						Port:        587,
+						Username:    "",
+						Password:    "",
+						UseTLS:      false,
+						UseStartTLS: true,
+					},
 				},
 			},
 		},

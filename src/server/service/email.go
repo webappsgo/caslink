@@ -36,17 +36,83 @@ func NewEmailService(cfg *config.Config) *EmailService {
 	}
 }
 
+// smtpHost resolves the SMTP host with env-var override taking priority
+// over the config file. Returns "" when neither is set.
+func (s *EmailService) smtpHost() string {
+	if v := os.Getenv("SMTP_HOST"); v != "" {
+		return v
+	}
+	if s.config != nil {
+		return s.config.Server.Notifications.Email.SMTP.Host
+	}
+	return ""
+}
+
+// smtpPort resolves the SMTP port. Returns "587" when unset.
+func (s *EmailService) smtpPort() string {
+	if v := os.Getenv("SMTP_PORT"); v != "" {
+		return v
+	}
+	if s.config != nil && s.config.Server.Notifications.Email.SMTP.Port > 0 {
+		return strconv.Itoa(s.config.Server.Notifications.Email.SMTP.Port)
+	}
+	return "587"
+}
+
+// smtpUsername resolves the SMTP username.
+func (s *EmailService) smtpUsername() string {
+	if v := os.Getenv("SMTP_USERNAME"); v != "" {
+		return v
+	}
+	if s.config != nil {
+		return s.config.Server.Notifications.Email.SMTP.Username
+	}
+	return ""
+}
+
+// smtpPassword resolves the SMTP password.
+func (s *EmailService) smtpPassword() string {
+	if v := os.Getenv("SMTP_PASSWORD"); v != "" {
+		return v
+	}
+	if s.config != nil {
+		return s.config.Server.Notifications.Email.SMTP.Password
+	}
+	return ""
+}
+
+// fromName resolves the From display name.
+func (s *EmailService) fromName() string {
+	if v := os.Getenv("SMTP_FROM_NAME"); v != "" {
+		return v
+	}
+	if s.config != nil && s.config.Server.Notifications.Email.FromName != "" {
+		return s.config.Server.Notifications.Email.FromName
+	}
+	return "Caslink"
+}
+
+// fromEmail resolves the From address.
+func (s *EmailService) fromEmail() string {
+	if v := os.Getenv("SMTP_FROM_EMAIL"); v != "" {
+		return v
+	}
+	if s.config != nil && s.config.Server.Notifications.Email.From != "" {
+		return s.config.Server.Notifications.Email.From
+	}
+	return "no-reply@localhost"
+}
+
 // SMTPConfigured checks if SMTP is configured and working
 // Per PART 26: No SMTP = No emails
 func (s *EmailService) SMTPConfigured() bool {
-	// Check environment variables first (highest priority per PART 26 line 19316)
-	host := getEnvOrDefault("SMTP_HOST", "")
+	host := s.smtpHost()
 	if host == "" {
 		// No SMTP configured
 		return false
 	}
-	
-	port := getEnvOrDefault("SMTP_PORT", "587")
+
+	port := s.smtpPort()
 
 	// Quick connection test — use net.JoinHostPort so IPv6 hosts work.
 	address := net.JoinHostPort(host, port)
@@ -184,14 +250,18 @@ func (s *EmailService) SendWelcome(email, username string, isAdmin bool) error {
 
 // sendEmail sends an email via SMTP
 func (s *EmailService) sendEmail(to, subject, body string) error {
-	// Get SMTP configuration from environment
-	host := getEnvOrDefault("SMTP_HOST", "localhost")
-	port := getEnvOrDefault("SMTP_PORT", "587")
-	username := getEnvOrDefault("SMTP_USERNAME", "")
-	password := getEnvOrDefault("SMTP_PASSWORD", "")
-	fromName := getEnvOrDefault("SMTP_FROM_NAME", "Caslink")
-	fromEmail := getEnvOrDefault("SMTP_FROM_EMAIL", "no-reply@localhost")
-	
+	// Resolve SMTP configuration: env vars take precedence over the
+	// config file (per PART 26 line 19316).
+	host := s.smtpHost()
+	if host == "" {
+		host = "localhost"
+	}
+	port := s.smtpPort()
+	username := s.smtpUsername()
+	password := s.smtpPassword()
+	fromName := s.fromName()
+	fromEmail := s.fromEmail()
+
 	// Build email message per RFC 5322
 	from := fmt.Sprintf("%s <%s>", fromName, fromEmail)
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\n\r\n%s", from, to, subject, body)

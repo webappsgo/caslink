@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	stdLog "log"
 	"net/http"
 	"strings"
 	"sync"
@@ -463,4 +464,58 @@ func GetUserFromContext(ctx context.Context) (*service.User, bool) {
 func GetAdminFromContext(ctx context.Context) (*service.Admin, bool) {
 	admin, ok := ctx.Value(adminContextKey).(*service.Admin)
 	return admin, ok
+}
+
+// ---- Access log middleware ---------------------------------------------
+
+// statusRecorder is a minimal http.ResponseWriter wrapper that captures
+// the response status code and the number of bytes written so the access
+// log can include both fields.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+	bytes  int
+}
+
+func (sr *statusRecorder) WriteHeader(code int) {
+	sr.status = code
+	sr.ResponseWriter.WriteHeader(code)
+}
+
+func (sr *statusRecorder) Write(b []byte) (int, error) {
+	if sr.status == 0 {
+		sr.status = http.StatusOK
+	}
+	n, err := sr.ResponseWriter.Write(b)
+	sr.bytes += n
+	return n, err
+}
+
+// accessLogMiddleware writes a compact single-line access log entry for
+// each request. The format is space-separated to keep it cheap to parse
+// in log aggregators and never includes credentials or cookie values:
+//
+//	{method} {path} {status} {bytes} {duration_ms} {ip} {request_id}
+//
+// Used in production; development uses chi's verbose logger instead.
+func accessLogMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w}
+		next.ServeHTTP(rec, r)
+		if rec.status == 0 {
+			rec.status = http.StatusOK
+		}
+		reqID := r.Header.Get("X-Request-Id")
+		if reqID == "" {
+			reqID = "-"
+		}
+		// stdlib log already includes timestamp; just print the fields.
+		// Path is logged as-is — handlers must never put credentials in
+		// the URL (spec PART 11) so this is safe.
+		stdLog.Printf("access %s %s %d %d %dms %s %s",
+			r.Method, r.URL.Path, rec.status, rec.bytes,
+			time.Since(start).Milliseconds(), realIP(r), reqID,
+		)
+	})
 }
