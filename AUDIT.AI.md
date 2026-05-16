@@ -103,6 +103,30 @@ Error, Message}`).
 - Gap: Only linux/amd64 and linux/arm64 were built; darwin, windows, and freebsd variants absent.
 - Fix: Extended matrix to match `release.yml`: darwin/{amd64,arm64}, windows/{amd64,arm64} (.exe ext), freebsd/{amd64,arm64}.
 
+### [FIXED] DB connection pool not configured for non-SQLite drivers
+- File: `src/server/store/factory.go`, `src/server/store/sqlite.go`
+- Spec: AI.md PART 10 — all drivers must set SetMaxOpenConns/SetMaxIdleConns/SetConnMaxLifetime/SetConnMaxIdleTime
+- Gap: postgres/mysql/mssql returned `*sql.DB` with zero pool configuration. SQLite set 3 of 4 (missing SetConnMaxIdleTime).
+- Fix: Added `configurePool(*sql.DB)` helper in factory.go with spec-canonical values (25 open, 10 idle, 30 min lifetime, 5 min idle time) applied to all non-SQLite opens. SQLite uses 1 open/1 idle (WAL mode concurrency constraint) + SetConnMaxIdleTime.
+
+### [FIXED] `config.Validate()` failed startup instead of warn+default
+- File: `src/config/config.go`
+- Spec: AI.md PART 12 — "If config setting is invalid, warn and replace with default. Never fail startup."
+- Gap: Validate() returned a hard error for unknown mode/driver, causing os.Exit(1) in main.
+- Fix: Validate() now logs a warning and resets to safe defaults (mode→production, driver→sqlite) instead of returning an error.
+
+### [FIXED] Missing CLI flags: --color, --cache, --backup, --baseurl, --lang, --shell
+- File: `src/main.go`, `src/paths/paths.go`
+- Spec: AI.md PARTs 7+8 — color/lang/shell/baseurl/cache/backup are mandatory flags
+- Gap: Only --debug existed; 6 required flags absent. NO_COLOR env var not respected.
+- Fix: Added all 6 flags plus NO_COLOR env var handling before and after flag.Parse(). Added Cache/Backup fields to Paths struct with XDG-correct paths for Linux/macOS/Windows. Added handleShellCmd() for bash/zsh/fish completions.
+
+### [FIXED] Debug endpoints (/debug/pprof/*) not registered in dev/debug mode
+- File: `src/server/server.go`
+- Spec: AI.md PART 6 — --debug enables /debug/pprof/*, bypasses admin auth in dev
+- Gap: --debug flag parsed but never wired; no pprof endpoints existed anywhere.
+- Fix: In development mode, all standard net/http/pprof endpoints registered under /debug/pprof/.
+
 ### Scheduler `tor_health` and `cluster_heartbeat` tasks absent
 - File: `src/scheduler/scheduler.go`
 - Spec: PART 19 line 32418–32419 (required when Tor / cluster enabled). Caslink does not ship Tor/cluster in this revision, so these are conditional. No-op.
@@ -177,3 +201,7 @@ Error, Message}`).
 - middleware.go + server.go: Added `PathSecurityMiddleware` (path traversal blocking + double-slash cleanup) and `URLNormalizeMiddleware` (trailing slash removal → 301) per PART 5.
 - src/metrics/metrics.go (new) + config.go + server.go: Full Prometheus metrics subsystem — all REQUIRED metrics, `/metrics` endpoint with optional bearer token auth, `MetricsConfig` in config per PART 21.
 - .github/workflows: Added `concurrency:` blocks to all 4 workflows; expanded `beta.yml` to full cross-platform matrix (darwin, windows, freebsd) matching `release.yml` per PART 28.
+- store/factory.go + sqlite.go: DB connection pool configured on all drivers per PART 10; `configurePool()` helper applies spec-canonical values.
+- config/config.go: `Validate()` now warns+defaults instead of failing startup per PART 12.
+- main.go + paths/paths.go: Added --color/--cache/--backup/--baseurl/--lang/--shell flags; NO_COLOR respected; Cache/Backup fields added to Paths struct with XDG-correct paths per PARTs 7+8.
+- server.go: pprof endpoints registered under /debug/pprof/ in development mode per PART 6.

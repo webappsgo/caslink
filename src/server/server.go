@@ -16,6 +16,8 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/rs/cors"
 
+	"net/http/pprof"
+
 	"github.com/casjaysdevdocker/caslink/src/config"
 	"github.com/casjaysdevdocker/caslink/src/graphql"
 	appmetrics "github.com/casjaysdevdocker/caslink/src/metrics"
@@ -191,6 +193,23 @@ func (s *Server) setupRoutes() {
 
 	// Static assets (CSS, JS, PWA manifest, service worker)
 	s.router.Handle("/static/*", tmpl.StaticHandler())
+
+	// Debug endpoints — only in development/debug mode per AI.md PART 6.
+	// These endpoints MUST NOT be exposed in production (pprof leaks internals).
+	if s.mode.IsDevelopment() {
+		s.router.HandleFunc("/debug/pprof/", pprof.Index)
+		s.router.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		s.router.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		s.router.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		s.router.HandleFunc("/debug/pprof/trace", pprof.Trace)
+		s.router.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
+		s.router.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+		s.router.Handle("/debug/pprof/allocs", pprof.Handler("allocs"))
+		s.router.Handle("/debug/pprof/block", pprof.Handler("block"))
+		s.router.Handle("/debug/pprof/mutex", pprof.Handler("mutex"))
+		s.router.Handle("/debug/pprof/threadcreate", pprof.Handler("threadcreate"))
+		log.Printf("debug: pprof endpoints registered at /debug/pprof/")
+	}
 
 	// Well-known / health — no auth, no CSRF
 	s.router.Get("/server/healthz", handler.HealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String()))

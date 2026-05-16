@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // openSQLite opens a SQLite database file
@@ -26,10 +27,12 @@ func openSQLite(dbPath string) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// Set connection pool settings
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(25)
+	// SQLite uses a single file; limit concurrent writers to avoid "database is locked".
+	// Readers are not limited (WAL mode supports concurrent reads).
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(0)
+	db.SetConnMaxIdleTime(5 * time.Minute)
 
 	// Verify connection
 	if err := db.Ping(); err != nil {

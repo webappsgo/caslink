@@ -5,12 +5,28 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	_ "github.com/microsoft/go-mssqldb"
 	_ "modernc.org/sqlite"
 )
+
+// configurePool applies the spec-canonical connection pool settings to db.
+// Per AI.md PART 10: all drivers must set all four pool parameters.
+//
+//   - maxOpen: 25 — allows concurrent query throughput without starving the server.
+//   - maxIdle: 10 — keep a hot pool without holding unnecessary connections.
+//   - connMaxLifetime: 30 min — recycle connections before they hit server-side
+//     idle timeouts (typically 60 min for MySQL, 1 h for PostgreSQL default).
+//   - connMaxIdleTime: 5 min — release connections that are idle but not expired.
+func configurePool(db *sql.DB) {
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(10)
+	db.SetConnMaxLifetime(30 * time.Minute)
+	db.SetConnMaxIdleTime(5 * time.Minute)
+}
 
 // OpenDB opens a *sql.DB using driver and DSN derived from config values.
 // Supported drivers: sqlite (default), postgres, mysql, sqlserver.
@@ -22,6 +38,7 @@ func OpenDB(driver, host string, port int, name, username, password, sslMode, fi
 		if err != nil {
 			return nil, fmt.Errorf("postgres: open failed: %w", err)
 		}
+		configurePool(db)
 		return db, nil
 
 	case "mysql", "mariadb":
@@ -30,6 +47,7 @@ func OpenDB(driver, host string, port int, name, username, password, sslMode, fi
 		if err != nil {
 			return nil, fmt.Errorf("mysql: open failed: %w", err)
 		}
+		configurePool(db)
 		return db, nil
 
 	case "sqlserver", "mssql":
@@ -38,6 +56,7 @@ func OpenDB(driver, host string, port int, name, username, password, sslMode, fi
 		if err != nil {
 			return nil, fmt.Errorf("sqlserver: open failed: %w", err)
 		}
+		configurePool(db)
 		return db, nil
 
 	default:

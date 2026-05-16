@@ -468,24 +468,24 @@ func DefaultConfig() *Config {
 	}
 }
 
-// Validate validates the configuration
+// Validate validates the configuration, warning on invalid values and replacing
+// them with safe defaults per AI.md PART 12: "If config setting is invalid,
+// warn and replace with default. Never fail startup."
 func Validate(cfg *Config) error {
-	// Validate mode
+	// Validate mode — unknown values fall back to production.
 	if cfg.Server.Mode != "production" && cfg.Server.Mode != "development" {
-		return fmt.Errorf("invalid mode: %s (must be 'production' or 'development')", cfg.Server.Mode)
+		fmt.Printf("config: invalid mode %q — defaulting to production\n", cfg.Server.Mode)
+		cfg.Server.Mode = "production"
 	}
 
-	// Validate database driver
-	validDrivers := []string{"file", "sqlite", "postgres", "mysql", "mariadb", "mssql"}
-	isValid := false
-	for _, driver := range validDrivers {
-		if cfg.Server.Database.Driver == driver {
-			isValid = true
-			break
-		}
+	// Validate database driver — unknown values fall back to sqlite.
+	validDrivers := map[string]bool{
+		"file": true, "sqlite": true, "postgres": true,
+		"mysql": true, "mariadb": true, "mssql": true,
 	}
-	if !isValid {
-		return fmt.Errorf("invalid database driver: %s", cfg.Server.Database.Driver)
+	if !validDrivers[cfg.Server.Database.Driver] {
+		fmt.Printf("config: invalid database driver %q — defaulting to sqlite\n", cfg.Server.Database.Driver)
+		cfg.Server.Database.Driver = "sqlite"
 	}
 
 	return nil

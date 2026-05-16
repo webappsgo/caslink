@@ -11,6 +11,8 @@ import (
 type Paths struct {
 	Config string // Configuration directory
 	Data   string // Data directory
+	Cache  string // Cache directory
+	Backup string // Backup directory
 	Log    string // Log directory
 	PID    string // PID file path
 }
@@ -48,6 +50,8 @@ func getUnixPaths(projectOrg, projectName string, isRoot bool) *Paths {
 		return &Paths{
 			Config: filepath.Join("/etc", projectOrg, projectName),
 			Data:   base,
+			Cache:  filepath.Join("/var/cache", projectOrg, projectName),
+			Backup: filepath.Join(base, "backups"),
 			Log:    filepath.Join("/var/log", projectOrg, projectName),
 			PID:    filepath.Join("/var/run", projectOrg, projectName+".pid"),
 		}
@@ -57,12 +61,15 @@ func getUnixPaths(projectOrg, projectName string, isRoot bool) *Paths {
 	homeDir := getHomeDir()
 	configDir := getEnvOrDefault("XDG_CONFIG_HOME", filepath.Join(homeDir, ".config"))
 	dataDir := getEnvOrDefault("XDG_DATA_HOME", filepath.Join(homeDir, ".local", "share"))
+	cacheDir := getEnvOrDefault("XDG_CACHE_HOME", filepath.Join(homeDir, ".cache"))
 
 	base := filepath.Join(dataDir, projectOrg, projectName)
 
 	return &Paths{
 		Config: filepath.Join(configDir, projectOrg, projectName),
 		Data:   base,
+		Cache:  filepath.Join(cacheDir, projectOrg, projectName),
+		Backup: filepath.Join(base, "backups"),
 		Log:    filepath.Join(base, "logs"),
 		PID:    filepath.Join(base, projectName+".pid"),
 	}
@@ -76,6 +83,8 @@ func getDarwinPaths(projectOrg, projectName string, isRoot bool) *Paths {
 		return &Paths{
 			Config: base,
 			Data:   base,
+			Cache:  filepath.Join("/Library/Caches", projectOrg, projectName),
+			Backup: filepath.Join(base, "backups"),
 			Log:    filepath.Join("/Library/Logs", projectOrg, projectName),
 			PID:    filepath.Join("/var/run", projectOrg, projectName+".pid"),
 		}
@@ -88,6 +97,8 @@ func getDarwinPaths(projectOrg, projectName string, isRoot bool) *Paths {
 	return &Paths{
 		Config: base,
 		Data:   base,
+		Cache:  filepath.Join(homeDir, "Library/Caches", projectOrg, projectName),
+		Backup: filepath.Join(base, "backups"),
 		Log:    filepath.Join(homeDir, "Library/Logs", projectOrg, projectName),
 		PID:    filepath.Join(base, projectName+".pid"),
 	}
@@ -103,6 +114,8 @@ func getWindowsPaths(projectOrg, projectName string, isRoot bool) *Paths {
 		return &Paths{
 			Config: base,
 			Data:   base,
+			Cache:  filepath.Join(base, "cache"),
+			Backup: filepath.Join(base, "backups"),
 			Log:    filepath.Join(base, "logs"),
 			PID:    filepath.Join(base, projectName+".pid"),
 		}
@@ -110,11 +123,14 @@ func getWindowsPaths(projectOrg, projectName string, isRoot bool) *Paths {
 
 	// User paths
 	appData := getEnvOrDefault("APPDATA", filepath.Join(getHomeDir(), "AppData", "Roaming"))
+	localAppData := getEnvOrDefault("LOCALAPPDATA", filepath.Join(getHomeDir(), "AppData", "Local"))
 	base := filepath.Join(appData, projectOrg, projectName)
 
 	return &Paths{
 		Config: base,
 		Data:   base,
+		Cache:  filepath.Join(localAppData, projectOrg, projectName, "cache"),
+		Backup: filepath.Join(base, "backups"),
 		Log:    filepath.Join(base, "logs"),
 		PID:    filepath.Join(base, projectName+".pid"),
 	}
