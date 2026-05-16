@@ -179,9 +179,16 @@ func (s *Server) setupRoutes() {
 	s.router.Get("/server/healthz", handler.HealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String()))
 	s.router.Get("/version", handler.VersionHandler(s.Version, s.CommitID, s.BuildDate))
 
-	// Swagger/OpenAPI documentation
-	s.router.Get("/swagger", swagger.Handler(s.Version))
-	s.router.Get("/swagger/spec.json", swagger.SpecHandler(s.Version))
+	// Swagger/OpenAPI documentation per spec PART 14 + IDEA.md:
+	// web UI at /server/docs/swagger; JSON spec at canonical + alias paths.
+	s.router.Get("/server/docs/swagger", swagger.Handler(s.Version))
+	s.router.Get("/api/swagger", swagger.SpecHandler(s.Version))
+
+	// Well-known routes per spec PART 11 / RFC 9116
+	s.router.Get("/.well-known/security.txt", s.wellKnownSecurityTxt)
+	s.router.Get("/.well-known/change-password", s.wellKnownChangePassword)
+	// ACME HTTP-01 challenge stub — real solver wired in when LE is enabled.
+	s.router.Get("/.well-known/acme-challenge/{token}", s.wellKnownACMEChallenge)
 
 	// GraphQL API
 	s.router.Get("/graphiql", graphql.Handler(s.Version))
@@ -302,6 +309,8 @@ func (s *Server) setupRoutes() {
 		r.Get("/server/healthz", handler.APIHealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String(), s.store))
 		r.Get("/healthz", handler.APIHealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String(), s.store))
 		r.Get("/version", handler.VersionHandler(s.Version, s.CommitID, s.BuildDate))
+		// OpenAPI JSON spec — canonical per spec PART 14 + IDEA.md
+		r.Get("/server/swagger", swagger.SpecHandler(s.Version))
 
 		// Auth API — /api/v1/server/auth/*
 		r.Route("/server/auth", func(ar chi.Router) {
@@ -354,6 +363,50 @@ func (s *Server) setupRoutes() {
 
 	// Short URL redirect (must be last to not catch other routes)
 	s.router.Get("/{code}", urlHandler.RedirectURL)
+}
+
+// wellKnownSecurityTxt serves RFC 9116 security.txt at /.well-known/security.txt.
+// Contact and policy URLs are derived from the server config.
+func (s *Server) wellKnownSecurityTxt(w http.ResponseWriter, r *http.Request) {
+	fqdn := s.config.Server.FQDN
+	scheme := "http"
+	if s.config.Server.SSL.Enabled {
+		scheme = "https"
+	}
+	baseURL := fmt.Sprintf("%s://%s", scheme, fqdn)
+
+	contact := s.config.Server.Admin.Email
+	if contact == "" {
+		contact = fmt.Sprintf("admin@%s", fqdn)
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "Contact: mailto:%s\n", contact)
+	fmt.Fprintf(w, "Policy: %s/.well-known/security.txt\n", baseURL)
+	fmt.Fprintf(w, "Canonical: %s/.well-known/security.txt\n", baseURL)
+	fmt.Fprintf(w, "Preferred-Languages: en\n")
+}
+
+// wellKnownChangePassword redirects per the W3C change-password well-known URL spec.
+// Logged-in users go to the password-change page; others go to the reset flow.
+func (s *Server) wellKnownChangePassword(w http.ResponseWriter, r *http.Request) {
+	authService := service.NewAuthService(s.store)
+	if cookie, err := r.Cookie("user_session"); err == nil && cookie.Value != "" {
+		if _, sessionErr := authService.ValidateUserSession(r.Context(), cookie.Value); sessionErr == nil {
+			http.Redirect(w, r, "/users/security/password", http.StatusFound)
+			return
+		}
+	}
+	http.Redirect(w, r, "/server/auth/password/forgot", http.StatusFound)
+}
+
+// wellKnownACMEChallenge handles /.well-known/acme-challenge/{token} for
+// Let's Encrypt HTTP-01 validation. The autocert.Manager integration is
+// tracked in TODO.AI.md ("Let's Encrypt HTTP-01 challenge"). Until that
+// subsystem is wired the handler returns 404 so LE falls back to DNS-01.
+func (s *Server) wellKnownACMEChallenge(w http.ResponseWriter, r *http.Request) {
+	http.NotFound(w, r)
 }
 
 // handleRoot handles the root endpoint — redirects to dashboard if logged in,

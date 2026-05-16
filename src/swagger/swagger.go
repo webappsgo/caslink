@@ -179,7 +179,7 @@ const swaggerUITemplate = `<!DOCTYPE html>
     <script>
         window.onload = function() {
             SwaggerUIBundle({
-                url: "/swagger/spec.json",
+                url: "/api/v1/server/swagger",
                 dom_id: '#swagger-ui',
                 deepLinking: true,
                 presets: [

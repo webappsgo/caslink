@@ -122,6 +122,18 @@ Error, Message}`).
 - Spec: IDEA.md `default_port: 64580` — using this as the start of the random range is correct.
 - Status: OK.
 
+### [FIXED] Swagger routes at non-spec paths
+- File: `src/server/server.go:183-184`, `src/swagger/swagger.go:184`
+- Spec: PART 14 + IDEA.md — web UI at `/server/docs/swagger`; JSON spec canonical at `/api/{api_version}/server/swagger`; alias at `/api/swagger`
+- Gap: Routes were `/swagger` (UI) and `/swagger/spec.json` (spec). Template hardcoded `/swagger/spec.json` as the spec URL passed to SwaggerUIBundle.
+- Fix: Registered `/server/docs/swagger` (UI), `/api/swagger` (alias, spec JSON), and `/api/v1/server/swagger` inside the `api/v1` route group (canonical). Updated template URL to `/api/v1/server/swagger`.
+
+### [FIXED] Missing well-known routes (RFC 9116, WICG change-password, ACME HTTP-01)
+- File: `src/server/server.go`
+- Spec: PART 11 (security.txt required for all projects), PART 15 (ACME HTTP-01), WICG well-known/change-password
+- Gap: No `/.well-known/*` routes existed.
+- Fix: Added `wellKnownSecurityTxt` (RFC 9116 — Contact+Policy+Canonical from server config), `wellKnownChangePassword` (redirects authenticated users to `/users/security/password`, others to `/server/auth/password/forgot`), and `wellKnownACMEChallenge` (stub 404; full autocert.Manager integration tracked in TODO.AI.md).
+
 ---
 
 ## Completed
@@ -136,3 +148,5 @@ Error, Message}`).
 - store.go: Sessions table now includes `ip_address`, `user_agent`, `last_activity` columns required by PART 23 sessions UI.
 - config/config.go: Added `NotificationsConfig`/`EmailConfig`/`SMTPConfig` matching `cfg.Server.Notifications.Email.SMTP.{...}` per PART 18.
 - service/email.go: SMTP fields now resolved through helpers that prefer env vars then config — operator can configure via `server.yml`.
+- server.go + swagger/swagger.go: Swagger routes relocated to spec-canonical paths (`/server/docs/swagger`, `/api/v1/server/swagger`, `/api/swagger`); template URL updated.
+- server.go: Added `/.well-known/security.txt` (RFC 9116), `/.well-known/change-password` (WICG), `/.well-known/acme-challenge/{token}` (ACME HTTP-01 stub) per PART 11/15.
