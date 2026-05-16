@@ -81,9 +81,59 @@ func jsonEscape(s string) string {
 
 // ---- Security headers middleware ----------------------------------------
 
-// SecurityHeadersMiddleware adds standard security headers to every response.
-// When tlsEnabled is true, an HSTS header is also emitted.
-func SecurityHeadersMiddleware(tlsEnabled bool) func(http.Handler) http.Handler {
+// defaultCSP is the spec-canonical Content-Security-Policy (AI.md PART 11).
+// 'unsafe-inline' is the pragmatic default for Go template projects; tighten
+// with nonces when the project generates them. frame-ancestors / base-uri /
+// form-action are defence-in-depth directives that don't vary per request.
+const defaultCSP = "default-src 'self'; " +
+	"script-src 'self' 'unsafe-inline'; " +
+	"style-src 'self' 'unsafe-inline'; " +
+	"img-src 'self' data: blob: https:; " +
+	"font-src 'self' https:; " +
+	"connect-src 'self'; " +
+	"media-src 'self' blob:; " +
+	"worker-src 'self' blob:; " +
+	"manifest-src 'self'; " +
+	"frame-ancestors 'self'; " +
+	"base-uri 'self'; " +
+	"form-action 'self'"
+
+// defaultPermissionsPolicy is the spec-canonical Permissions-Policy header
+// (AI.md PART 11 "Permissions-Policy Configuration"). Features required by
+// the spec itself are scoped to self; advertising/tracking proposals and all
+// sensor/hardware features are locked to () (disabled for everyone).
+const defaultPermissionsPolicy = "" +
+	"encrypted-media=(self), " +
+	"fullscreen=(self), " +
+	"payment=(self), " +
+	"picture-in-picture=(self), " +
+	"publickey-credentials-get=(self), " +
+	"storage-access=(self), " +
+	"web-share=(self), " +
+	"camera=(), " +
+	"geolocation=(), " +
+	"microphone=(), " +
+	"usb=(), " +
+	"midi=(), " +
+	"interest-cohort=(), " +
+	"browsing-topics=(), " +
+	"attribution-reporting=()"
+
+// SecurityHeadersMiddleware adds standard security headers to every response
+// per AI.md PART 11 "Security Headers". When tlsEnabled is true an HSTS
+// header and the CSP upgrade-insecure-requests directive are also emitted.
+// In dev mode CSP is sent as Content-Security-Policy-Report-Only so that
+// violations are logged without blocking the app.
+func SecurityHeadersMiddleware(tlsEnabled, devMode bool) func(http.Handler) http.Handler {
+	csp := defaultCSP
+	if tlsEnabled {
+		csp += "; upgrade-insecure-requests"
+	}
+	cspHeader := "Content-Security-Policy"
+	if devMode {
+		cspHeader = "Content-Security-Policy-Report-Only"
+	}
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			h := w.Header()
@@ -94,6 +144,11 @@ func SecurityHeadersMiddleware(tlsEnabled bool) func(http.Handler) http.Handler 
 			h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 			h.Set("X-Permitted-Cross-Domain-Policies", "none")
 			h.Set("Origin-Agent-Cluster", "?1")
+			// Cross-origin isolation headers — PART 11 defaults
+			h.Set("Cross-Origin-Opener-Policy", "unsafe-none")
+			h.Set("Cross-Origin-Resource-Policy", "cross-origin")
+			h.Set(cspHeader, csp)
+			h.Set("Permissions-Policy", defaultPermissionsPolicy)
 			if tlsEnabled {
 				h.Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
 			}

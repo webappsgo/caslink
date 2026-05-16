@@ -620,7 +620,7 @@ if cacheSize > 1024*1024*1024 {
 | **Unsafe PR triggers forbidden by default** | Do NOT use `pull_request_target` for untrusted code execution, build, test, or artifact upload paths |
 | **Secrets never exposed to forks** | Fork PR workflows run without repo secrets, write tokens, publish steps, or deployment credentials |
 | **Dependency updates are automated** | Public repos include dependency update automation for every ecosystem in use |
-| **Secret scanning is mandatory** | Public repos run automated secret scanning on push/PR and treat findings as blockers |
+| **Secret scanning is mandatory** | Public repos run `truffleHog` (`trufflesecurity/trufflehog`, Apache-2.0, no license key) on push/PR via `security.yml`; findings are blockers. Never use `gitleaks` — requires a commercial license for org repos |
 | **Release outputs are verifiable** | Releases publish checksums, SBOM, release notes, and provenance/attestation when the host platform supports it |
 
 ### Workflow Permissions

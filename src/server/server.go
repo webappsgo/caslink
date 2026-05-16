@@ -176,7 +176,7 @@ func (s *Server) setupRoutes() {
 	s.router.Handle("/static/*", tmpl.StaticHandler())
 
 	// Well-known / health — no auth, no CSRF
-	s.router.Get("/server/healthz", handler.HealthHandler(s.Version, s.mode.String()))
+	s.router.Get("/server/healthz", handler.HealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String()))
 	s.router.Get("/version", handler.VersionHandler(s.Version, s.CommitID, s.BuildDate))
 
 	// Swagger/OpenAPI documentation
@@ -194,7 +194,7 @@ func (s *Server) setupRoutes() {
 
 	// Auth routes — /server/auth/* per spec PART 17
 	s.router.Route("/server/auth", func(r chi.Router) {
-		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled))
+		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled, s.mode.IsDevelopment()))
 		r.Use(RateLimitMiddleware(rateLimiter))
 
 		r.Get("/login", authUserHandler.LoginPage)
@@ -219,7 +219,7 @@ func (s *Server) setupRoutes() {
 
 	// User routes — /users/* per spec PART 17 (requires auth)
 	s.router.Route("/users", func(r chi.Router) {
-		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled))
+		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled, s.mode.IsDevelopment()))
 		r.Use(UserAuthMiddleware(authService))
 		r.Use(CSRFMiddleware())
 
@@ -240,19 +240,19 @@ func (s *Server) setupRoutes() {
 
 		// Custom domain management per PART 35
 		r.Get("/domains", domainHandler.ListUserDomains)
-		r.Post("/domains/add", domainHandler.AddUserDomain)
+		r.Post("/domains", domainHandler.AddUserDomain)
 		r.Post("/domains/{domain}/verify", domainHandler.VerifyUserDomain)
 	})
 
 	// Organization routes — /orgs/* per spec PART 17 (requires auth)
 	s.router.Route("/orgs", func(r chi.Router) {
-		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled))
+		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled, s.mode.IsDevelopment()))
 		r.Use(UserAuthMiddleware(authService))
 		r.Use(CSRFMiddleware())
 
 		r.Get("/", orgHandler.ListOrgs)
 		r.Get("/new", orgHandler.CreateOrgPage)
-		r.Post("/new", orgHandler.CreateOrg)
+		r.Post("/", orgHandler.CreateOrg)
 
 		// Organization-specific routes (requires org membership)
 		r.Route("/{slug}", func(sr chi.Router) {
@@ -264,13 +264,13 @@ func (s *Server) setupRoutes() {
 
 			// Custom domain management per PART 35
 			sr.Get("/domains", domainHandler.ListOrgDomains)
-			sr.Post("/domains/add", domainHandler.AddOrgDomain)
+			sr.Post("/domains", domainHandler.AddOrgDomain)
 		})
 	})
 
 	// Admin panel routes — /server/{adminPath}/* per spec PART 17
 	s.router.Route("/server/"+adminPath, func(r chi.Router) {
-		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled))
+		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled, s.mode.IsDevelopment()))
 
 		// Login/logout (no auth required)
 		r.Get("/", adminHandler.LoginPage)
@@ -296,11 +296,11 @@ func (s *Server) setupRoutes() {
 
 	// API v1
 	s.router.Route("/api/v1", func(r chi.Router) {
-		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled))
+		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled, s.mode.IsDevelopment()))
 
 		// Public endpoints (no auth)
-		r.Get("/server/healthz", handler.APIHealthHandler(s.Version, s.mode.String(), s.store))
-		r.Get("/healthz", handler.APIHealthHandler(s.Version, s.mode.String(), s.store))
+		r.Get("/server/healthz", handler.APIHealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String(), s.store))
+		r.Get("/healthz", handler.APIHealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String(), s.store))
 		r.Get("/version", handler.VersionHandler(s.Version, s.CommitID, s.BuildDate))
 
 		// Auth API — /api/v1/server/auth/*

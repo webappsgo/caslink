@@ -88,6 +88,22 @@ func (s *Store) Ping() error {
 	return nil
 }
 
+// CountURLs returns the total number of shortened URLs.
+func (s *Store) CountURLs() (int64, error) {
+	var n int64
+	err := s.ServerDB.QueryRow(`SELECT COUNT(*) FROM urls`).Scan(&n)
+	return n, err
+}
+
+// CountClicks24h returns the number of clicks recorded in the last 24 hours.
+func (s *Store) CountClicks24h() (int64, error) {
+	var n int64
+	err := s.ServerDB.QueryRow(
+		`SELECT COUNT(*) FROM clicks WHERE clicked_at >= datetime('now', '-1 day')`,
+	).Scan(&n)
+	return n, err
+}
+
 // Stats returns database statistics
 func (s *Store) Stats() (map[string]interface{}, error) {
 	stats := make(map[string]interface{})
