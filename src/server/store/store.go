@@ -1,9 +1,14 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+	"time"
 )
+
+// queryTimeout is the per-statement deadline applied to all schema DDL operations.
+const queryTimeout = 30 * time.Second
 
 // Store represents the dual database system
 type Store struct {
@@ -134,8 +139,31 @@ func (s *Store) initServerSchema() error {
 	}
 
 	for _, query := range queries {
-		if _, err := s.ServerDB.Exec(query); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
+		_, err := s.ServerDB.ExecContext(ctx, query)
+		cancel()
+		if err != nil {
 			return fmt.Errorf("failed to create table: %w", err)
+		}
+	}
+
+	// Idempotent schema updates — safe to run on every startup.
+	serverUpdates := []string{
+		`CREATE INDEX IF NOT EXISTS idx_urls_short_code ON urls(short_code)`,
+		`CREATE INDEX IF NOT EXISTS idx_urls_user_id ON urls(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_urls_org_id ON urls(org_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_urls_expires_at ON urls(expires_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_clicks_url_id ON clicks(url_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_clicks_clicked_at ON clicks(clicked_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_click_daily_stats_url_id ON click_daily_stats(url_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_click_daily_stats_date ON click_daily_stats(date)`,
+	}
+	for _, query := range serverUpdates {
+		ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
+		_, err := s.ServerDB.ExecContext(ctx, query)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("failed to apply schema update: %w", err)
 		}
 	}
 
@@ -323,8 +351,35 @@ func (s *Store) initUsersSchema() error {
 	}
 
 	for _, query := range queries {
-		if _, err := s.UsersDB.Exec(query); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
+		_, err := s.UsersDB.ExecContext(ctx, query)
+		cancel()
+		if err != nil {
 			return fmt.Errorf("failed to create table: %w", err)
+		}
+	}
+
+	// Idempotent schema updates — safe to run on every startup.
+	usersUpdates := []string{
+		`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_api_tokens_user_id ON api_tokens(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_api_tokens_token_hash ON api_tokens(token_hash)`,
+		`CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON audit_log(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_custom_domains_domain ON custom_domains(domain)`,
+		`CREATE INDEX IF NOT EXISTS idx_custom_domains_owner ON custom_domains(owner_type, owner_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_org_members_org_id ON org_members(org_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_org_members_user_id ON org_members(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_password_resets_token_hash ON password_resets(token_hash)`,
+		`CREATE INDEX IF NOT EXISTS idx_email_verifications_token_hash ON email_verifications(token_hash)`,
+	}
+	for _, query := range usersUpdates {
+		ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
+		_, err := s.UsersDB.ExecContext(ctx, query)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("failed to apply schema update: %w", err)
 		}
 	}
 

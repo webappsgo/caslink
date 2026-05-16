@@ -3,8 +3,12 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/casjaysdevdocker/caslink/src/config"
 	"github.com/casjaysdevdocker/caslink/src/mode"
@@ -201,17 +205,37 @@ func main() {
 		}
 	}
 
-	// Handle --status
+	// Handle --status — query the live health endpoint; exit 1 if not reachable.
 	if showStatus {
-		fmt.Printf("Caslink v%s\n", Version)
-		fmt.Printf("Status: Running\n")
-		fmt.Printf("Mode: %s\n", detectedMode)
-		fmt.Printf("Config: %s\n", configDir)
-		fmt.Printf("Data: %s\n", dataDir)
-		fmt.Printf("Log: %s\n", logDir)
-		fmt.Printf("PID: %s\n", pidFile)
-		fmt.Printf("Port: %d\n", cfg.Server.Port)
-		fmt.Printf("Address: %s\n", cfg.Server.Address)
+		port := cfg.Server.Port
+		healthURL := fmt.Sprintf("http://127.0.0.1:%d/healthz", port)
+		client := &http.Client{Timeout: 5 * time.Second}
+		resp, err := client.Get(healthURL)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			// Try to read PID from file to show in output.
+			pid, _ := paths.CheckPIDFile(pidFile, binaryName)
+			if pid > 0 {
+				fmt.Printf("%s is NOT responding (PID %d found but /healthz returned error)\n", binaryName, pid)
+			} else {
+				fmt.Printf("%s is not running\n", binaryName)
+			}
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "  %v\n", err)
+			}
+			os.Exit(1)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		pid, _ := paths.CheckPIDFile(pidFile, binaryName)
+		if pid > 0 {
+			fmt.Printf("%s is running (PID %d)\n", binaryName, pid)
+		} else {
+			fmt.Printf("%s is running\n", binaryName)
+		}
+		fmt.Printf("  Version: %s\n", Version)
+		fmt.Printf("  Mode:    %s\n", detectedMode)
+		fmt.Printf("  Port:    %d\n", port)
+		fmt.Printf("  Health:  %s\n", strings.TrimSpace(string(body)))
 		os.Exit(0)
 	}
 
@@ -233,8 +257,16 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Check PID file — refuse to start if a previous instance is still alive.
+	if cfg.Server.PIDFile {
+		if existingPID, pidErr := paths.CheckPIDFile(pidFile, binaryName); pidErr == paths.ErrAlreadyRunning {
+			fmt.Fprintf(os.Stderr, "%s is already running (PID %d). Use --service stop to stop it first.\n", binaryName, existingPID)
+			os.Exit(1)
+		}
+	}
+
 	// Create and start server
-	srv, err := server.New(cfg, detectedMode, dataDir, Version, CommitID, BuildDate)
+	srv, err := server.New(cfg, detectedMode, dataDir, pidFile, Version, CommitID, BuildDate)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Server initialization failed: %v\n", err)
 		os.Exit(1)

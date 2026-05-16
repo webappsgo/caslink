@@ -24,16 +24,88 @@ type ServerConfig struct {
 	Daemonize bool   `yaml:"daemonize"`
 	PIDFile   bool   `yaml:"pidfile"`
 
-	Branding      BrandingConfig      `yaml:"branding"`
-	SEO           SEOConfig           `yaml:"seo"`
-	Admin         AdminConfig         `yaml:"admin"`
-	SSL           SSLConfig           `yaml:"ssl"`
-	Database      DatabaseConfig      `yaml:"database"`
-	RateLimit     RateLimitConfig     `yaml:"rate_limit"`
-	Scheduler     SchedulerConfig     `yaml:"scheduler"`
-	Features      FeaturesConfig      `yaml:"features"`
-	Notifications NotificationsConfig `yaml:"notifications"`
-	Metrics       MetricsConfig       `yaml:"metrics"`
+	Branding       BrandingConfig      `yaml:"branding"`
+	SEO            SEOConfig           `yaml:"seo"`
+	Admin          AdminConfig         `yaml:"admin"`
+	Contact        ContactConfig       `yaml:"contact"`
+	SSL            SSLConfig           `yaml:"ssl"`
+	Database       DatabaseConfig      `yaml:"database"`
+	RateLimit      RateLimitConfig     `yaml:"rate_limit"`
+	Limits         LimitsConfig        `yaml:"limits"`
+	Compression    CompressionConfig   `yaml:"compression"`
+	TrustedProxies TrustedProxiesConfig `yaml:"trusted_proxies"`
+	Session        SessionConfig       `yaml:"session"`
+	I18n           I18nConfig          `yaml:"i18n"`
+	Tracking       TrackingConfig      `yaml:"tracking"`
+	Scheduler      SchedulerConfig     `yaml:"scheduler"`
+	Features       FeaturesConfig      `yaml:"features"`
+	Notifications  NotificationsConfig `yaml:"notifications"`
+	Metrics        MetricsConfig       `yaml:"metrics"`
+}
+
+// LimitsConfig holds HTTP request limits per AI.md PART 12.
+type LimitsConfig struct {
+	MaxBodySize   string `yaml:"max_body_size"`   // e.g., "10MB"
+	ReadTimeout   int    `yaml:"read_timeout"`    // seconds
+	WriteTimeout  int    `yaml:"write_timeout"`   // seconds
+	IdleTimeout   int    `yaml:"idle_timeout"`    // seconds
+}
+
+// CompressionConfig holds response compression settings per AI.md PART 12.
+type CompressionConfig struct {
+	Enabled bool     `yaml:"enabled"`
+	Level   int      `yaml:"level"` // 1–9
+	Types   []string `yaml:"types"` // MIME types to compress
+}
+
+// TrustedProxiesConfig holds X-Forwarded-* trust gate config per AI.md PART 12.
+type TrustedProxiesConfig struct {
+	Additional []string `yaml:"additional"` // extra public IPs/CIDRs/hostnames
+}
+
+// SessionConfig holds admin and user session cookie settings per AI.md PART 12.
+type SessionConfig struct {
+	Admin            SessionCookieConfig `yaml:"admin"`
+	User             SessionCookieConfig `yaml:"user"`
+	ExtendOnActivity bool                `yaml:"extend_on_activity"`
+	Secure           string              `yaml:"secure"`    // auto|true|false
+	HTTPOnly         bool                `yaml:"http_only"`
+	SameSite         string              `yaml:"same_site"` // strict|lax|none
+}
+
+// SessionCookieConfig holds per-role session cookie settings.
+type SessionCookieConfig struct {
+	CookieName  string `yaml:"cookie_name"`
+	MaxAge      int    `yaml:"max_age"`      // seconds
+	IdleTimeout int    `yaml:"idle_timeout"` // seconds
+}
+
+// I18nConfig holds internationalisation settings per AI.md PART 12.
+type I18nConfig struct {
+	DefaultLanguage string   `yaml:"default_language"`
+	Supported       []string `yaml:"supported"`
+}
+
+// TrackingConfig holds analytics platform configuration per AI.md PART 12.
+// Only active when the user explicitly sets Type — telemetry is opt-in.
+type TrackingConfig struct {
+	Type string `yaml:"type"` // google|matomo|plausible|umami|fathom|simple|cloudflare
+	ID   string `yaml:"id"`   // tracking / measurement ID
+	URL  string `yaml:"url"`  // self-hosted instance URL (required for some types)
+}
+
+// ContactConfig holds unified notification recipient config per AI.md PART 12.
+type ContactConfig struct {
+	Admin    ContactRecipient `yaml:"admin"`
+	Security ContactRecipient `yaml:"security"`
+	General  ContactRecipient `yaml:"general"`
+}
+
+// ContactRecipient holds a single notification role's target address and optional
+// webhook transports. Webhook fields are keyed by provider name.
+type ContactRecipient struct {
+	Email    string            `yaml:"email"`
+	Webhooks map[string]string `yaml:"webhooks,omitempty"` // provider → URL
 }
 
 // MetricsConfig holds Prometheus metrics configuration per AI.md PART 21.
@@ -329,6 +401,63 @@ func DefaultConfig() *Config {
 			Admin: AdminConfig{
 				Email: fmt.Sprintf("admin@%s", hostname),
 				Path:  "admin",
+			},
+			Contact: ContactConfig{
+				Admin: ContactRecipient{
+					Email: fmt.Sprintf("admin@%s", hostname),
+				},
+				Security: ContactRecipient{
+					Email: fmt.Sprintf("security@%s", hostname),
+				},
+				General: ContactRecipient{
+					Email: fmt.Sprintf("admin@%s", hostname),
+				},
+			},
+			Limits: LimitsConfig{
+				MaxBodySize:  "10MB",
+				ReadTimeout:  30,
+				WriteTimeout: 30,
+				IdleTimeout:  120,
+			},
+			Compression: CompressionConfig{
+				Enabled: true,
+				Level:   6,
+				Types: []string{
+					"text/html",
+					"text/css",
+					"text/javascript",
+					"application/json",
+					"application/javascript",
+					"image/svg+xml",
+				},
+			},
+			TrustedProxies: TrustedProxiesConfig{
+				Additional: []string{},
+			},
+			Session: SessionConfig{
+				Admin: SessionCookieConfig{
+					CookieName:  "caslink_admin_session",
+					MaxAge:      86400,    // 24 hours
+					IdleTimeout: 3600,     // 1 hour
+				},
+				User: SessionCookieConfig{
+					CookieName:  "caslink_session",
+					MaxAge:      2592000,  // 30 days
+					IdleTimeout: 86400,    // 24 hours
+				},
+				ExtendOnActivity: true,
+				Secure:           "auto",
+				HTTPOnly:         true,
+				SameSite:         "lax",
+			},
+			I18n: I18nConfig{
+				DefaultLanguage: "en",
+				Supported:       []string{"en"},
+			},
+			Tracking: TrackingConfig{
+				Type: "",
+				ID:   "",
+				URL:  "",
 			},
 			SSL: SSLConfig{
 				Enabled:    false,

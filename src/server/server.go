@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -40,6 +41,7 @@ type Server struct {
 	scheduler *scheduler.Scheduler
 	renderer  *tmpl.Renderer
 	metrics   *appmetrics.Metrics
+	pidFile   string // path to PID file; empty = no PID file
 
 	// Version information
 	Version   string
@@ -48,7 +50,7 @@ type Server struct {
 }
 
 // New creates a new server instance
-func New(cfg *config.Config, appMode mode.Mode, dataDir, version, commitID, buildDate string) (*Server, error) {
+func New(cfg *config.Config, appMode mode.Mode, dataDir, pidFile, version, commitID, buildDate string) (*Server, error) {
 	// Open database — use configured driver if set, otherwise default to SQLite
 	dbCfg := cfg.Server.Database
 	var db *store.Store
@@ -84,6 +86,7 @@ func New(cfg *config.Config, appMode mode.Mode, dataDir, version, commitID, buil
 		scheduler: sched,
 		renderer:  renderer,
 		metrics:   m,
+		pidFile:   pidFile,
 		Version:   version,
 		CommitID:  commitID,
 		BuildDate: buildDate,
@@ -502,12 +505,35 @@ func (s *Server) Start(address string, port int) error {
 
 	addr := fmt.Sprintf("%s:%d", address, port)
 
+	// Resolve timeouts from config (LimitsConfig); fall back to safe defaults.
+	limits := s.config.Server.Limits
+	readTimeout := time.Duration(limits.ReadTimeout) * time.Second
+	writeTimeout := time.Duration(limits.WriteTimeout) * time.Second
+	idleTimeout := time.Duration(limits.IdleTimeout) * time.Second
+	if readTimeout <= 0 {
+		readTimeout = 30 * time.Second
+	}
+	if writeTimeout <= 0 {
+		writeTimeout = 30 * time.Second
+	}
+	if idleTimeout <= 0 {
+		idleTimeout = 120 * time.Second
+	}
+
 	s.server = &http.Server{
 		Addr:         addr,
 		Handler:      s.router,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		ReadTimeout:  readTimeout,
+		WriteTimeout: writeTimeout,
+		IdleTimeout:  idleTimeout,
+	}
+
+	// Write PID file after the http.Server struct is set up but before
+	// ListenAndServe so that --status can locate us immediately.
+	if s.pidFile != "" && s.config.Server.PIDFile {
+		if err := writePIDFile(s.pidFile); err != nil {
+			log.Printf("Warning: could not write PID file %s: %v", s.pidFile, err)
+		}
 	}
 
 	// Start scheduler
@@ -528,6 +554,11 @@ func (s *Server) Start(address string, port int) error {
 
 	log.Println("Shutting down server...")
 
+	// Remove PID file before stopping so monitoring knows we are shutting down.
+	if s.pidFile != "" {
+		_ = os.Remove(s.pidFile)
+	}
+
 	// Stop scheduler
 	s.scheduler.Stop()
 
@@ -541,6 +572,17 @@ func (s *Server) Start(address string, port int) error {
 
 	log.Println("Server stopped")
 	return nil
+}
+
+// writePIDFile writes the current process PID to the given path, creating
+// parent directories as needed.
+func writePIDFile(path string) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	data := []byte(fmt.Sprintf("%d\n", os.Getpid()))
+	return os.WriteFile(path, data, 0644)
 }
 
 // Stop stops the HTTP server gracefully
