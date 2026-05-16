@@ -1,0 +1,51 @@
+# Docker ignore file for caslink
+# See AI.md PART 27 for Docker rules
+
+# Build outputs
+binaries/
+releases/
+
+# Runtime volumes (never commit)
+volumes/
+
+# AI tool config (regenerated)
+.claude/
+.cursor/
+.aider/
+.ai/
+.windsurf/
+
+# Development files
+.git/
+.gitignore
+.gitattributes
+.editorconfig
+
+# Documentation (not needed in image)
+docs/
+*.md
+!README.md
+
+# Test scripts
+tests/
+
+# CI/CD
+.github/
+.gitea/
+.forgejo/
+Jenkinsfile
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+ehthumbs.db
+Thumbs.db
+*~
+
+# Go build artifacts
+*.test
+*.prof

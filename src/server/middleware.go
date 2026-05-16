@@ -95,15 +95,19 @@ const defaultCSP = "default-src 'self'; " +
 	"media-src 'self' blob:; " +
 	"worker-src 'self' blob:; " +
 	"manifest-src 'self'; " +
+	"frame-src 'self'; " +
 	"frame-ancestors 'self'; " +
 	"base-uri 'self'; " +
-	"form-action 'self'"
+	"form-action 'self'; " +
+	"object-src 'none'; " +
+	"report-uri /api/v1/server/reports/csp"
 
 // defaultPermissionsPolicy is the spec-canonical Permissions-Policy header
 // (AI.md PART 11 "Permissions-Policy Configuration"). Features required by
 // the spec itself are scoped to self; advertising/tracking proposals and all
 // sensor/hardware features are locked to () (disabled for everyone).
 const defaultPermissionsPolicy = "" +
+	"autoplay=(self), " +
 	"encrypted-media=(self), " +
 	"fullscreen=(self), " +
 	"payment=(self), " +
@@ -547,33 +551,47 @@ func (sr *statusRecorder) Write(b []byte) (int, error) {
 	return n, err
 }
 
+// AccessLogger is the subset of the logger package's Logger used by the
+// access log middleware. Defined here to avoid a circular import.
+type AccessLogger interface {
+	Access(ip, method, path, proto string, status, bytes int, duration time.Duration)
+}
+
 // accessLogMiddleware writes a compact single-line access log entry for
-// each request. The format is space-separated to keep it cheap to parse
-// in log aggregators and never includes credentials or cookie values:
+// each request. The format is Apache common log (file) plus a compact
+// space-separated line to stderr:
 //
 //	{method} {path} {status} {bytes} {duration_ms} {ip} {request_id}
 //
+// appLog may be nil (e.g., in tests); logging is then skipped.
 // Used in production; development uses chi's verbose logger instead.
-func accessLogMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		rec := &statusRecorder{ResponseWriter: w}
-		next.ServeHTTP(rec, r)
-		if rec.status == 0 {
-			rec.status = http.StatusOK
-		}
-		reqID := r.Header.Get("X-Request-Id")
-		if reqID == "" {
-			reqID = "-"
-		}
-		// stdlib log already includes timestamp; just print the fields.
-		// Path is logged as-is — handlers must never put credentials in
-		// the URL (spec PART 11) so this is safe.
-		stdLog.Printf("access %s %s %d %d %dms %s %s",
-			r.Method, r.URL.Path, rec.status, rec.bytes,
-			time.Since(start).Milliseconds(), realIP(r), reqID,
-		)
-	})
+func accessLogMiddleware(appLog AccessLogger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			rec := &statusRecorder{ResponseWriter: w}
+			next.ServeHTTP(rec, r)
+			if rec.status == 0 {
+				rec.status = http.StatusOK
+			}
+			dur := time.Since(start)
+			ip := realIP(r)
+			reqID := r.Header.Get("X-Request-Id")
+			if reqID == "" {
+				reqID = "-"
+			}
+			// Write to the structured log file (Apache format).
+			if appLog != nil {
+				appLog.Access(ip, r.Method, r.URL.Path,
+					r.Proto, rec.status, rec.bytes, dur)
+			}
+			// Also emit a compact line to stderr for live tailing.
+			stdLog.Printf("access %s %s %d %d %dms %s %s",
+				r.Method, r.URL.Path, rec.status, rec.bytes,
+				dur.Milliseconds(), ip, reqID,
+			)
+		})
+	}
 }
 
 // ---- Path security middleware -------------------------------------------

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -329,6 +330,7 @@ func Load(configDir string) (*Config, error) {
 		if err := Save(configDir, cfg); err != nil {
 			return nil, fmt.Errorf("failed to create default config: %w", err)
 		}
+		applyEnvOverrides(cfg)
 		return cfg, nil
 	}
 
@@ -349,7 +351,56 @@ func Load(configDir string) (*Config, error) {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
+	// Apply environment variable overrides (PART 26 precedence: env > config > default).
+	applyEnvOverrides(&cfg)
+
 	return &cfg, nil
+}
+
+// applyEnvOverrides overlays environment variables on top of the loaded config
+// per AI.md PART 26 precedence rules. Env vars always win over server.yml.
+func applyEnvOverrides(cfg *Config) {
+	if v := envStr("MODE"); v != "" {
+		cfg.Server.Mode = v
+	}
+	if v := envStr("DOMAIN"); v != "" {
+		cfg.Server.FQDN = v
+	}
+	if v := envStr("PORT"); v != "" {
+		if n := parseInt(v); n > 0 {
+			cfg.Server.Port = n
+		}
+	}
+	if v := envStr("LISTEN"); v != "" {
+		cfg.Server.Address = v
+	}
+	if v := envStr("DATABASE_DRIVER"); v != "" {
+		cfg.Server.Database.Driver = v
+	}
+	if v := envStr("DATABASE_URL"); v != "" {
+		cfg.Server.Database.Host = v // full DSN — factory.go resolves per driver
+	}
+}
+
+// envStr returns the trimmed value of an environment variable, or "".
+func envStr(key string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		return ""
+	}
+	return strings.TrimSpace(v)
+}
+
+// parseInt parses an integer from a string, returning 0 on error.
+func parseInt(s string) int {
+	n := 0
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return 0
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n
 }
 
 // Save saves configuration to server.yml

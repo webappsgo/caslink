@@ -12,13 +12,49 @@ import (
 // APIResponse is the canonical envelope for all JSON responses per
 // AI.md PART 9 ("Response Format") and IDEA.md "API surface".
 //
-// Success: {"ok": true, "data": {...}}
-// Error:   {"ok": false, "error": "CODE", "message": "..."}
+// Success (single):  {"ok": true, "data": {...}}
+// Success (list):    {"ok": true, "data": [...], "pagination": {...}}
+// Error:             {"ok": false, "error": "CODE", "message": "..."}
 type APIResponse struct {
-	OK      bool        `json:"ok"`
-	Data    interface{} `json:"data,omitempty"`
-	Error   string      `json:"error,omitempty"`
-	Message string      `json:"message,omitempty"`
+	OK         bool        `json:"ok"`
+	Data       interface{} `json:"data,omitempty"`
+	Pagination *Pagination `json:"pagination,omitempty"`
+	Error      string      `json:"error,omitempty"`
+	Message    string      `json:"message,omitempty"`
+}
+
+// Pagination holds list pagination metadata per AI.md PART 9.
+type Pagination struct {
+	Page  int `json:"page"`
+	Limit int `json:"limit"`
+	Total int `json:"total"`
+	Pages int `json:"pages"`
+}
+
+// NewPagination builds a Pagination value and clamps limit to sane bounds.
+func NewPagination(page, limit, total int) *Pagination {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 250 {
+		limit = 250
+	}
+	if page <= 0 {
+		page = 1
+	}
+	pages := total / limit
+	if total%limit != 0 {
+		pages++
+	}
+	return &Pagination{Page: page, Limit: limit, Total: total, Pages: pages}
+}
+
+// respondJSONList sends a canonical success envelope for list endpoints:
+// {"ok":true,"data":[...],"pagination":{...}}.
+func respondJSONList(w http.ResponseWriter, status int, data interface{}, pg *Pagination) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(APIResponse{OK: true, Data: data, Pagination: pg})
 }
 
 // respondJSON sends a canonical success envelope: {"ok":true,"data":data}.

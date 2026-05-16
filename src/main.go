@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/casjaysdevdocker/caslink/src/config"
+	"github.com/casjaysdevdocker/caslink/src/logger"
 	"github.com/casjaysdevdocker/caslink/src/mode"
 	"github.com/casjaysdevdocker/caslink/src/paths"
 	"github.com/casjaysdevdocker/caslink/src/server"
@@ -265,8 +266,16 @@ func main() {
 		}
 	}
 
+	// Initialize log files per AI.md PART 13.
+	appLogger, err := logger.New(logDir, detectedMode.IsDevelopment())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error initializing logger: %v\n", err)
+		os.Exit(1)
+	}
+	defer appLogger.Close()
+
 	// Create and start server
-	srv, err := server.New(cfg, detectedMode, dataDir, pidFile, Version, CommitID, BuildDate)
+	srv, err := server.New(cfg, detectedMode, dataDir, pidFile, appLogger, Version, CommitID, BuildDate)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Server initialization failed: %v\n", err)
 		os.Exit(1)

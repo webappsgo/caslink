@@ -21,6 +21,7 @@ import (
 
 	"github.com/casjaysdevdocker/caslink/src/config"
 	"github.com/casjaysdevdocker/caslink/src/graphql"
+	"github.com/casjaysdevdocker/caslink/src/logger"
 	appmetrics "github.com/casjaysdevdocker/caslink/src/metrics"
 	"github.com/casjaysdevdocker/caslink/src/mode"
 	"github.com/casjaysdevdocker/caslink/src/scheduler"
@@ -41,6 +42,7 @@ type Server struct {
 	scheduler *scheduler.Scheduler
 	renderer  *tmpl.Renderer
 	metrics   *appmetrics.Metrics
+	log       *logger.Logger
 	pidFile   string // path to PID file; empty = no PID file
 
 	// Version information
@@ -50,7 +52,7 @@ type Server struct {
 }
 
 // New creates a new server instance
-func New(cfg *config.Config, appMode mode.Mode, dataDir, pidFile, version, commitID, buildDate string) (*Server, error) {
+func New(cfg *config.Config, appMode mode.Mode, dataDir, pidFile string, appLogger *logger.Logger, version, commitID, buildDate string) (*Server, error) {
 	// Open database — use configured driver if set, otherwise default to SQLite
 	dbCfg := cfg.Server.Database
 	var db *store.Store
@@ -86,6 +88,7 @@ func New(cfg *config.Config, appMode mode.Mode, dataDir, pidFile, version, commi
 		scheduler: sched,
 		renderer:  renderer,
 		metrics:   m,
+		log:       appLogger,
 		pidFile:   pidFile,
 		Version:   version,
 		CommitID:  commitID,
@@ -116,7 +119,7 @@ func (s *Server) setupMiddleware() {
 	if s.mode.IsDevelopment() {
 		s.router.Use(middleware.Logger)
 	} else {
-		s.router.Use(accessLogMiddleware)
+		s.router.Use(accessLogMiddleware(s.log))
 	}
 
 	// URL normalization and path security per AI.md PART 5.
@@ -375,6 +378,13 @@ func (s *Server) setupRoutes() {
 		r.Get("/version", handler.VersionHandler(s.Version, s.CommitID, s.BuildDate))
 		// OpenAPI JSON spec — canonical per spec PART 14 + IDEA.md
 		r.Get("/server/swagger", swagger.SpecHandler(s.Version))
+
+		// CSP violation report endpoint (AI.md PART 11 report-uri)
+		r.Post("/server/reports/csp", func(w http.ResponseWriter, req *http.Request) {
+			// Accept and discard CSP reports (browser POST, no body processing needed for now).
+			// Full processing (log + alert) is a future enhancement.
+			w.WriteHeader(http.StatusNoContent)
+		})
 
 		// Auth API — /api/v1/server/auth/*
 		r.Route("/server/auth", func(ar chi.Router) {
