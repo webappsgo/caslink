@@ -63,11 +63,11 @@ Error, Message}`).
 - Gap: `sessions` table was `(id, user_id, user_type, data, expires_at, created_at)`. The Sessions page could not render IP/UA/last-active.
 - Fix: Added `ip_address TEXT`, `user_agent TEXT`, `last_activity DATETIME DEFAULT CURRENT_TIMESTAMP` to the `CREATE TABLE IF NOT EXISTS sessions` DDL.
 
-### CSRF middleware not applied to `/setup` POST
+### [FIXED] CSRF middleware not applied to `/setup` POST
 - File: `src/server/server.go:188`
 - Spec: `AI.md` PART 11 line 14910 (CSRF on by default), PART 16 → CSRF
 - Gap: `/setup` is mounted before any middleware group. A first-run attacker on the local network could submit the initial admin form. Risk is low because the setup token gates it, but the spec wants CSRF on every non-GET.
-- Fix: Pending — needs `setup` route group with CSRF; the setup token already provides equivalent protection, so flagged not fixed.
+- Fix: Wrapped `/setup` in a `router.Route("/setup", ...)` group with `CSRFMiddleware()`. The GET sets the CSRF cookie; the POST form includes a hidden `_csrf` field injected by reading the cookie in `csrfTokenFromRequest(r)`. Both layers now active.
 
 ---
 
@@ -142,19 +142,19 @@ Error, Message}`).
 - Spec: PART 9 — canonical shape has no `status` field; status is the HTTP code only.
 - Fix: Removed as part of helpers.go rewrite (CRITICAL fix above).
 
-### Setup wizard does not enforce password complexity client-side
+### [FIXED] Setup wizard does not enforce password complexity
 - File: `src/server/handler/setup.go`
-- Spec: AI.md auth conventions (PART 11) require password length / complexity checks.
-- Fix: Pending.
+- Spec: AI.md PART 17 — PasswordPolicyConfig (min_length, require_uppercase/lowercase/number/special).
+- Fix: Added `validatePassword()` in SetupHandler that reads `cfg.Server.Security.Password` and enforces every active constraint. Added `SecurityConfig`/`PasswordPolicyConfig` to config.go with defaults (min 8, all complexity off). Password hint below the field reflects the active policy dynamically.
 
 ---
 
 ## LOW
 
-### Email templates under `src/templates/email/` use `.txt` only — no HTML variants
+### [FIXED] Email templates under `src/templates/email/` — 13 missing templates
 - Files: `src/templates/email/*.txt`
-- Spec: PART 18 line 31144–31160 — spec lists ~18 templates; only 5 exist (`welcome_admin`, `welcome_user`, `password_reset`, `password_changed`, `email_verify`). Missing: `login_alert`, `security_alert`, `mfa_reminder`, `2fa_enabled`, `2fa_disabled`, `backup_complete`, `backup_failed`, `ssl_expiring`, `ssl_renewed`, `scheduler_error`, `breach_notification`, `breach_admin_alert`, `test`.
-- Fix: Pending — most of these depend on features not yet implemented (SSL renewal, backups, breach detection). Tracked.
+- Spec: PART 18 line 31144–31160 — all 18 templates required.
+- Fix: Created all 13 missing templates: `login_alert`, `security_alert`, `mfa_reminder`, `2fa_enabled`, `2fa_disabled`, `backup_complete`, `backup_failed`, `ssl_expiring`, `ssl_renewed`, `scheduler_error`, `breach_notification`, `breach_admin_alert`, `test`. All follow the `Subject: …\n---\nbody` format with global variables and account email requirements (visible link, disclaimer, why-sent) per PART 18.
 
 ### Page templates: `dashboard.html` is at top level and the orgs/users hierarchy splits dashboards
 - Files: `src/server/template/page/dashboard.html` + `src/server/template/page/orgs/dashboard.html`
@@ -176,11 +176,11 @@ Error, Message}`).
 - Gap: Routes were `/swagger` (UI) and `/swagger/spec.json` (spec). Template hardcoded `/swagger/spec.json` as the spec URL passed to SwaggerUIBundle.
 - Fix: Registered `/server/docs/swagger` (UI), `/api/swagger` (alias, spec JSON), and `/api/v1/server/swagger` inside the `api/v1` route group (canonical). Updated template URL to `/api/v1/server/swagger`.
 
-### [FIXED] Missing well-known routes (RFC 9116, WICG change-password, ACME HTTP-01)
+### [FIXED] Missing well-known routes + ACME HTTP-01 autocert integration
 - File: `src/server/server.go`
 - Spec: PART 11 (security.txt required for all projects), PART 15 (ACME HTTP-01), WICG well-known/change-password
-- Gap: No `/.well-known/*` routes existed.
-- Fix: Added `wellKnownSecurityTxt` (RFC 9116 — Contact+Policy+Canonical from server config), `wellKnownChangePassword` (redirects authenticated users to `/users/security/password`, others to `/server/auth/password/forgot`), and `wellKnownACMEChallenge` (stub 404; full autocert.Manager integration tracked in TODO.AI.md).
+- Gap: No `/.well-known/*` routes existed; ACME challenge was a 404 stub.
+- Fix: Added `wellKnownSecurityTxt` (RFC 9116), `wellKnownChangePassword` (WICG). `wellKnownACMEChallenge` now delegates to `autocert.Manager.HTTPHandler` when `ssl.letsencrypt.enabled=true` and `challenge=http-01`; falls back to 404 otherwise. Manager initialised in `New()` with `DirCache(dataDir/ssl/acme-cache)`, `HostWhitelist(cfg.FQDN)`, `AcceptTOS`, and admin email.
 
 ---
 
