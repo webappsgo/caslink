@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	stdLog "log"
 	"net/http"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -572,5 +573,73 @@ func accessLogMiddleware(next http.Handler) http.Handler {
 			r.Method, r.URL.Path, rec.status, rec.bytes,
 			time.Since(start).Milliseconds(), realIP(r), reqID,
 		)
+	})
+}
+
+// ---- Path security middleware -------------------------------------------
+
+// PathSecurityMiddleware blocks path-traversal attacks and normalizes paths
+// per AI.md PART 5. It must run after URLNormalizeMiddleware so the path is
+// already in canonical form before traversal checks run.
+func PathSecurityMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		original := r.URL.Path
+
+		// r.URL.Path is already percent-decoded by net/http; check RawPath too.
+		rawPath := r.URL.RawPath
+		if rawPath == "" {
+			rawPath = r.URL.Path
+		}
+
+		// Block path traversal — both decoded ("..") and percent-encoded (%2e).
+		if strings.Contains(original, "..") ||
+			strings.Contains(rawPath, "..") ||
+			strings.Contains(strings.ToLower(rawPath), "%2e") {
+			writeJSONError(w, http.StatusBadRequest, "path traversal not permitted")
+			return
+		}
+
+		// Normalize the path (collapses double slashes, etc.).
+		cleaned := path.Clean(original)
+
+		// Ensure leading slash.
+		if !strings.HasPrefix(cleaned, "/") {
+			cleaned = "/" + cleaned
+		}
+
+		// Preserve trailing slash when the original had one (router may need it).
+		if original != "/" && strings.HasSuffix(original, "/") && !strings.HasSuffix(cleaned, "/") {
+			cleaned += "/"
+		}
+
+		r.URL.Path = cleaned
+		next.ServeHTTP(w, r)
+	})
+}
+
+// ---- URL normalize middleware -------------------------------------------
+
+// URLNormalizeMiddleware removes trailing slashes and issues a 301 redirect
+// to the canonical URL per AI.md PART 5 / PART 16. Root "/" is exempt.
+// Requests for paths that end with a file extension are exempt (e.g. /robots.txt).
+// Must run before PathSecurityMiddleware in the global middleware stack.
+func URLNormalizeMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+
+		if p != "/" && strings.HasSuffix(p, "/") {
+			// Keep the slash if the last path segment looks like a file.
+			last := p[strings.LastIndex(p, "/"):]
+			if !strings.Contains(last, ".") {
+				canonical := strings.TrimSuffix(p, "/")
+				if r.URL.RawQuery != "" {
+					canonical += "?" + r.URL.RawQuery
+				}
+				http.Redirect(w, r, canonical, http.StatusMovedPermanently)
+				return
+			}
+		}
+
+		next.ServeHTTP(w, r)
 	})
 }

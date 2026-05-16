@@ -9,6 +9,10 @@ on:
 env:
   PROJECTNAME: caslink
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest

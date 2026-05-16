@@ -33,6 +33,16 @@ type ServerConfig struct {
 	Scheduler     SchedulerConfig     `yaml:"scheduler"`
 	Features      FeaturesConfig      `yaml:"features"`
 	Notifications NotificationsConfig `yaml:"notifications"`
+	Metrics       MetricsConfig       `yaml:"metrics"`
+}
+
+// MetricsConfig holds Prometheus metrics configuration per AI.md PART 21.
+type MetricsConfig struct {
+	Enabled        bool   `yaml:"enabled"`
+	Endpoint       string `yaml:"endpoint"`
+	IncludeSystem  bool   `yaml:"include_system"`
+	IncludeRuntime bool   `yaml:"include_runtime"`
+	Token          string `yaml:"token"`
 }
 
 // NotificationsConfig holds notification channel configuration per AI.md
@@ -395,6 +405,13 @@ func DefaultConfig() *Config {
 					Enabled:   false,
 					Instances: []string{},
 				},
+			},
+			Metrics: MetricsConfig{
+				Enabled:        true,
+				Endpoint:       "/metrics",
+				IncludeSystem:  true,
+				IncludeRuntime: true,
+				Token:          "",
 			},
 			Notifications: NotificationsConfig{
 				Email: EmailConfig{

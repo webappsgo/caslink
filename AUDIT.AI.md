@@ -79,6 +79,30 @@ Error, Message}`).
 - Gap: Emitted `{"error":"Too many attempts..."}`, spec requires `{"ok":false,"error":"RATE_LIMITED","message":"..."}`.
 - Fix: Replaced with `writeJSONError(w, http.StatusTooManyRequests, "...")` (same refactor as OrgMemberMiddleware above).
 
+### [FIXED] `PathSecurityMiddleware` and `URLNormalizeMiddleware` absent
+- File: `src/server/middleware.go`, `src/server/server.go`
+- Spec: AI.md PART 5 (path traversal blocking, URL normalization)
+- Gap: Neither middleware existed; double-slash paths were not cleaned, path traversal sequences were not blocked.
+- Fix: Added both in `middleware.go`; wired into global middleware stack in `setupMiddleware()` with correct order (URLNormalize → PathSecurity → timeout per PART 5).
+
+### [FIXED] Prometheus metrics subsystem entirely absent
+- File: `src/metrics/metrics.go` (new), `src/server/server.go`, `src/config/config.go`
+- Spec: AI.md PART 21 (ALL projects MUST have built-in Prometheus-compatible metrics)
+- Gap: No metrics package, no `/metrics` endpoint, no metric registration.
+- Fix: Created `src/metrics/metrics.go` with all REQUIRED metrics (app_info, app_uptime_seconds, app_start_timestamp, http_requests_total/duration/size, db_queries/duration/connections/errors, auth_attempts/sessions_active, scheduler_tasks_total). Added `MetricsConfig` to config. Wired HTTP metrics middleware and `/metrics` endpoint (with optional bearer token auth) in server.go.
+
+### [FIXED] CI/CD workflows missing `concurrency:` blocks
+- File: `.github/workflows/{beta,daily,docker,release}.yml`
+- Spec: AI.md PART 28 (branch-push workflows must cancel in-progress runs on same ref)
+- Gap: All four workflows had no `concurrency:` stanza; parallel builds on the same ref could race.
+- Fix: Added `concurrency: { group: {name}-${{ github.ref }}, cancel-in-progress: true }` to all four files.
+
+### [FIXED] `beta.yml` missing cross-platform build matrix
+- File: `.github/workflows/beta.yml`
+- Spec: AI.md PART 28 (beta should match release matrix for platform coverage)
+- Gap: Only linux/amd64 and linux/arm64 were built; darwin, windows, and freebsd variants absent.
+- Fix: Extended matrix to match `release.yml`: darwin/{amd64,arm64}, windows/{amd64,arm64} (.exe ext), freebsd/{amd64,arm64}.
+
 ### Scheduler `tor_health` and `cluster_heartbeat` tasks absent
 - File: `src/scheduler/scheduler.go`
 - Spec: PART 19 line 32418–32419 (required when Tor / cluster enabled). Caslink does not ship Tor/cluster in this revision, so these are conditional. No-op.
@@ -150,3 +174,6 @@ Error, Message}`).
 - service/email.go: SMTP fields now resolved through helpers that prefer env vars then config — operator can configure via `server.yml`.
 - server.go + swagger/swagger.go: Swagger routes relocated to spec-canonical paths (`/server/docs/swagger`, `/api/v1/server/swagger`, `/api/swagger`); template URL updated.
 - server.go: Added `/.well-known/security.txt` (RFC 9116), `/.well-known/change-password` (WICG), `/.well-known/acme-challenge/{token}` (ACME HTTP-01 stub) per PART 11/15.
+- middleware.go + server.go: Added `PathSecurityMiddleware` (path traversal blocking + double-slash cleanup) and `URLNormalizeMiddleware` (trailing slash removal → 301) per PART 5.
+- src/metrics/metrics.go (new) + config.go + server.go: Full Prometheus metrics subsystem — all REQUIRED metrics, `/metrics` endpoint with optional bearer token auth, `MetricsConfig` in config per PART 21.
+- .github/workflows: Added `concurrency:` blocks to all 4 workflows; expanded `beta.yml` to full cross-platform matrix (darwin, windows, freebsd) matching `release.yml` per PART 28.

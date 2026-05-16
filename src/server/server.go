@@ -18,6 +18,7 @@ import (
 
 	"github.com/casjaysdevdocker/caslink/src/config"
 	"github.com/casjaysdevdocker/caslink/src/graphql"
+	appmetrics "github.com/casjaysdevdocker/caslink/src/metrics"
 	"github.com/casjaysdevdocker/caslink/src/mode"
 	"github.com/casjaysdevdocker/caslink/src/scheduler"
 	"github.com/casjaysdevdocker/caslink/src/server/handler"
@@ -36,6 +37,7 @@ type Server struct {
 	store     *store.Store
 	scheduler *scheduler.Scheduler
 	renderer  *tmpl.Renderer
+	metrics   *appmetrics.Metrics
 
 	// Version information
 	Version   string
@@ -69,6 +71,9 @@ func New(cfg *config.Config, appMode mode.Mode, dataDir, version, commitID, buil
 		return nil, fmt.Errorf("failed to initialize template renderer: %w", err)
 	}
 
+	// Initialize Prometheus metrics (always; gated by config at route level).
+	m, _ := appmetrics.New(version, commitID, buildDate, cfg.Server.Metrics.IncludeRuntime)
+
 	s := &Server{
 		router:    chi.NewRouter(),
 		config:    cfg,
@@ -76,6 +81,7 @@ func New(cfg *config.Config, appMode mode.Mode, dataDir, version, commitID, buil
 		store:     db,
 		scheduler: sched,
 		renderer:  renderer,
+		metrics:   m,
 		Version:   version,
 		CommitID:  commitID,
 		BuildDate: buildDate,
@@ -106,6 +112,17 @@ func (s *Server) setupMiddleware() {
 		s.router.Use(middleware.Logger)
 	} else {
 		s.router.Use(accessLogMiddleware)
+	}
+
+	// URL normalization and path security per AI.md PART 5.
+	// Order matters: normalize first, then block traversal on the cleaned path.
+	s.router.Use(URLNormalizeMiddleware)
+	s.router.Use(PathSecurityMiddleware)
+
+	// HTTP metrics middleware — records request counts, latency, and sizes.
+	// Runs after path normalization so labels use clean paths.
+	if s.config.Server.Metrics.Enabled {
+		s.router.Use(s.metrics.Middleware)
 	}
 
 	// Timeout middleware (30 second timeout)
@@ -183,6 +200,31 @@ func (s *Server) setupRoutes() {
 	// web UI at /server/docs/swagger; JSON spec at canonical + alias paths.
 	s.router.Get("/server/docs/swagger", swagger.Handler(s.Version))
 	s.router.Get("/api/swagger", swagger.SpecHandler(s.Version))
+
+	// Prometheus metrics endpoint per AI.md PART 21.
+	// INTERNAL ONLY — operators must firewall or proxy-restrict this path.
+	// When a bearer token is configured only matching requests are served.
+	if s.config.Server.Metrics.Enabled {
+		endpoint := s.config.Server.Metrics.Endpoint
+		if endpoint == "" {
+			endpoint = "/metrics"
+		}
+		_, metricsHandler := appmetrics.New(
+			s.Version, s.CommitID, s.BuildDate,
+			s.config.Server.Metrics.IncludeRuntime,
+		)
+		token := s.config.Server.Metrics.Token
+		s.router.Get(endpoint, func(w http.ResponseWriter, r *http.Request) {
+			if token != "" {
+				auth := r.Header.Get("Authorization")
+				if auth != "Bearer "+token {
+					http.Error(w, "Unauthorized", http.StatusUnauthorized)
+					return
+				}
+			}
+			metricsHandler.ServeHTTP(w, r)
+		})
+	}
 
 	// Well-known routes per spec PART 11 / RFC 9116
 	s.router.Get("/.well-known/security.txt", s.wellKnownSecurityTxt)
