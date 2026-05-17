@@ -448,10 +448,8 @@ func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword stri
 
 	// Invalidate all existing sessions per PART 23 line 20534
 	deleteSessionsQuery := `DELETE FROM sessions WHERE user_id = ? AND user_type = ?`
-	_, err = s.store.UsersDB.ExecContext(ctx, deleteSessionsQuery, userID, userType)
-	if err != nil {
-		// Don't fail password reset if session cleanup fails
-	}
+	// Best-effort cleanup — don't fail password reset if session deletion fails
+	_, _ = s.store.UsersDB.ExecContext(ctx, deleteSessionsQuery, userID, userType)
 
 	return nil
 }
