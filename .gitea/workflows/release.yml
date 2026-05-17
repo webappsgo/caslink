@@ -90,6 +90,19 @@ jobs:
           name: ${{ env.PROJECTNAME }}-cli-${{ matrix.goos }}-${{ matrix.goarch }}
           path: ${{ env.PROJECTNAME }}-cli-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
 
+      - name: Generate SBOM (CycloneDX)
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        run: |
+          go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@latest
+          cyclonedx-gomod app -json -output ${{ env.PROJECTNAME }}-sbom.cdx.json ./src
+
+      - name: Upload SBOM artifact
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: ${{ env.PROJECTNAME }}-sbom
+          path: ${{ env.PROJECTNAME }}-sbom.cdx.json
+
   release:
     name: Release
     needs: build
@@ -126,6 +139,20 @@ jobs:
           tar --exclude='.git' --exclude='.github' --exclude='.gitea' \
             --exclude='binaries' --exclude='releases' --exclude='*.tar.gz' \
             -czf binaries/${{ env.PROJECTNAME }}-${{ env.VERSION }}-source.tar.gz .
+
+      - name: Rename SBOM to versioned filename
+        run: |
+          if [ -f "binaries/${{ env.PROJECTNAME }}-sbom.cdx.json" ]; then
+            mv "binaries/${{ env.PROJECTNAME }}-sbom.cdx.json" \
+               "binaries/${{ env.PROJECTNAME }}-${{ env.VERSION }}-sbom.cdx.json"
+          fi
+
+      - name: Generate SHA-256 checksums
+        run: |
+          cd binaries
+          sha256sum * > checksums.sha256.txt
+          cat checksums.sha256.txt
+          cd ..
 
       - name: Create Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2

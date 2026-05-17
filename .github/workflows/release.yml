@@ -47,6 +47,9 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
 
+      - name: Install build dependencies
+        run: apk add --no-cache git
+
       - name: Set build info
         run: |
           if [ -f release.txt ]; then
@@ -111,11 +114,26 @@ jobs:
           name: ${{ env.PROJECTNAME }}-agent-${{ matrix.goos }}-${{ matrix.goarch }}
           path: ${{ env.PROJECTNAME }}-agent-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
 
+      - name: Generate SBOM (CycloneDX)
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        run: |
+          go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@latest
+          cyclonedx-gomod app -json -output ${{ env.PROJECTNAME }}-sbom.cdx.json ./src
+
+      - name: Upload SBOM artifact
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: ${{ env.PROJECTNAME }}-sbom
+          path: ${{ env.PROJECTNAME }}-sbom.cdx.json
+
   release:
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write      # OIDC token for cosign / Sigstore
+      attestations: write  # GitHub artifact attestations (SBOM, provenance)
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
@@ -147,6 +165,20 @@ jobs:
             --exclude='binaries' --exclude='releases' --exclude='*.tar.gz' \
             -czf binaries/${{ env.PROJECTNAME }}-${{ env.VERSION }}-source.tar.gz .
 
+      - name: Rename SBOM to versioned filename
+        run: |
+          if [ -f "binaries/${{ env.PROJECTNAME }}-sbom.cdx.json" ]; then
+            mv "binaries/${{ env.PROJECTNAME }}-sbom.cdx.json" \
+               "binaries/${{ env.PROJECTNAME }}-${{ env.VERSION }}-sbom.cdx.json"
+          fi
+
+      - name: Generate SHA-256 checksums
+        run: |
+          cd binaries
+          sha256sum * > checksums.sha256.txt
+          cat checksums.sha256.txt
+          cd ..
+
       - name: Create Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2
         with:
@@ -154,3 +186,8 @@ jobs:
           files: binaries/*
           generate_release_notes: true
           make_latest: true
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
+        with:
+          subject-path: 'binaries/*'
