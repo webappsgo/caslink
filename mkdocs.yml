@@ -1,4 +1,4 @@
-site_name: Caslink Documentation
+site_name: Caslink
 site_description: Self-Hosted URL Shortener
 site_author: casapps
 site_url: https://caslink.casapps.us
@@ -10,9 +10,10 @@ edit_uri: edit/main/docs/
 theme:
   name: material
   palette:
+    # Dark/Light/Auto theme toggle - Dark is default
     - scheme: slate
-      primary: indigo
-      accent: indigo
+      primary: deep purple
+      accent: pink
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
@@ -21,8 +22,14 @@ theme:
       accent: indigo
       toggle:
         icon: material/brightness-7
+        name: Switch to auto mode
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
         name: Switch to dark mode
   features:
+    - navigation.instant
+    - navigation.tracking
     - navigation.tabs
     - navigation.sections
     - navigation.expand
@@ -30,22 +37,70 @@ theme:
     - search.suggest
     - search.highlight
     - content.code.copy
-
-nav:
-  - Home: index.md
-  - Installation: installation.md
-  - Configuration: configuration.md
-  - API Reference: api.md
-  - Admin Guide: admin.md
-  - Development: development.md
-
-markdown_extensions:
-  - admonition
-  - codehilite
-  - pymdownx.superfences
-  - pymdownx.tabbed
-  - toc:
-      permalink: true
+    - content.action.edit
+  font:
+    text: Roboto
+    code: Roboto Mono
+  icon:
+    repo: fontawesome/brands/github
 
 extra_css:
   - stylesheets/dark.css
+  - stylesheets/light.css
+
+plugins:
+  - search
+  - minify:
+      minify_html: true
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - meta
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: installation.md
+    - Configuration: configuration.md
+  - Usage:
+    - API Reference: api.md
+    - CLI Reference: cli.md
+    - Admin Panel: admin.md
+    - Security: security.md
+    - Integrations: integrations.md
+  - Development:
+    - Contributing: development.md
