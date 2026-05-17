@@ -58,22 +58,22 @@ func install(m *Manager) error {
 func uninstall(m *Manager, configDir, dataDir, cacheDir, logDir, backupDir, pidFile string) error {
 	fmt.Print("This will delete ALL data, configs, and the system service. Continue? [y/N] ")
 	var answer string
-	fmt.Scanln(&answer)
+	_, _ = fmt.Scanln(&answer)
 	if answer != "y" && answer != "Y" {
 		fmt.Println("Aborted.")
 		return nil
 	}
 
-	exec.Command("launchctl", "unload", plistPath).Run()
-	os.Remove(plistPath)
+	_ = exec.Command("launchctl", "unload", plistPath).Run()
+	_ = os.Remove(plistPath)
 
 	for _, dir := range []string{configDir, dataDir, cacheDir, logDir, backupDir} {
 		if dir != "" {
-			os.RemoveAll(dir)
+			_ = os.RemoveAll(dir)
 		}
 	}
 	if pidFile != "" {
-		os.Remove(pidFile)
+		_ = os.Remove(pidFile)
 	}
 
 	fmt.Printf("Service uninstalled. Delete binary manually: rm %s\n", m.BinaryPath)
@@ -81,7 +81,7 @@ func uninstall(m *Manager, configDir, dataDir, cacheDir, logDir, backupDir, pidF
 }
 
 func disable(name string) error {
-	exec.Command("launchctl", "unload", plistPath).Run()
+	_ = exec.Command("launchctl", "unload", plistPath).Run()
 	return nil
 }
 
@@ -94,7 +94,7 @@ func stopSvc(name string) error {
 }
 
 func restartSvc(name string) error {
-	exec.Command("launchctl", "unload", plistPath).Run()
+	_ = exec.Command("launchctl", "unload", plistPath).Run()
 	return exec.Command("launchctl", "load", plistPath).Run()
 }
 

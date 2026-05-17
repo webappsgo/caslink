@@ -54,23 +54,23 @@ func install(m *Manager) error {
 func uninstall(m *Manager, configDir, dataDir, cacheDir, logDir, backupDir, pidFile string) error {
 	fmt.Print("This will delete ALL data, configs, and the system service. Continue? [y/N] ")
 	var answer string
-	fmt.Scanln(&answer)
+	_, _ = fmt.Scanln(&answer)
 	if answer != "y" && answer != "Y" {
 		fmt.Println("Aborted.")
 		return nil
 	}
 
-	exec.Command("service", "caslink", "stop").Run()
-	exec.Command("service", "caslink", "disable").Run()
-	os.Remove(rcdPath)
+	_ = exec.Command("service", "caslink", "stop").Run()
+	_ = exec.Command("service", "caslink", "disable").Run()
+	_ = os.Remove(rcdPath)
 
 	for _, dir := range []string{configDir, dataDir, cacheDir, logDir, backupDir} {
 		if dir != "" {
-			os.RemoveAll(dir)
+			_ = os.RemoveAll(dir)
 		}
 	}
 	if pidFile != "" {
-		os.Remove(pidFile)
+		_ = os.Remove(pidFile)
 	}
 
 	fmt.Printf("Service uninstalled. Delete binary manually: rm %s\n", m.BinaryPath)
@@ -78,7 +78,7 @@ func uninstall(m *Manager, configDir, dataDir, cacheDir, logDir, backupDir, pidF
 }
 
 func disable(name string) error {
-	exec.Command("service", name, "stop").Run()
+	_ = exec.Command("service", name, "stop").Run()
 	return exec.Command("service", name, "disable").Run()
 }
 

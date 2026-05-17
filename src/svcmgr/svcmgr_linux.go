@@ -99,7 +99,7 @@ func install(m *Manager) error {
 func uninstall(m *Manager, configDir, dataDir, cacheDir, logDir, backupDir, pidFile string) error {
 	fmt.Print("This will delete ALL data, configs, and the system service. Continue? [y/N] ")
 	var answer string
-	fmt.Scanln(&answer)
+	_, _ = fmt.Scanln(&answer)
 	if answer != "y" && answer != "Y" {
 		fmt.Println("Aborted.")
 		return nil
@@ -110,17 +110,17 @@ func uninstall(m *Manager, configDir, dataDir, cacheDir, logDir, backupDir, pidF
 
 	switch detectInitSystem() {
 	case "systemd":
-		os.Remove("/etc/systemd/system/caslink.service")
-		exec.Command("systemctl", "daemon-reload").Run()
+		_ = os.Remove("/etc/systemd/system/caslink.service")
+		_ = exec.Command("systemctl", "daemon-reload").Run()
 	}
 
 	for _, dir := range []string{configDir, dataDir, cacheDir, logDir, backupDir} {
 		if dir != "" {
-			os.RemoveAll(dir)
+			_ = os.RemoveAll(dir)
 		}
 	}
 	if pidFile != "" {
-		os.Remove(pidFile)
+		_ = os.Remove(pidFile)
 	}
 
 	exe := m.BinaryPath
@@ -131,10 +131,10 @@ func uninstall(m *Manager, configDir, dataDir, cacheDir, logDir, backupDir, pidF
 func disable(name string) error {
 	switch detectInitSystem() {
 	case "systemd":
-		exec.Command("systemctl", "stop", name).Run()
+		_ = exec.Command("systemctl", "stop", name).Run()
 		return exec.Command("systemctl", "disable", name).Run()
 	case "openrc":
-		exec.Command("rc-service", name, "stop").Run()
+		_ = exec.Command("rc-service", name, "stop").Run()
 		return exec.Command("rc-update", "del", name, "default").Run()
 	case "runit":
 		return exec.Command("sv", "down", name).Run()
@@ -173,7 +173,7 @@ func restartSvc(name string) error {
 	case "openrc":
 		return exec.Command("rc-service", name, "restart").Run()
 	case "runit":
-		exec.Command("sv", "down", name).Run()
+		_ = exec.Command("sv", "down", name).Run()
 		return exec.Command("sv", "up", name).Run()
 	}
 	return fmt.Errorf("unsupported init system: %s", detectInitSystem())

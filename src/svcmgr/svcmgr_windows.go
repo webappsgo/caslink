@@ -39,23 +39,23 @@ func install(m *Manager) error {
 func uninstall(m *Manager, configDir, dataDir, cacheDir, logDir, backupDir, pidFile string) error {
 	fmt.Print("This will delete ALL data, configs, and the system service. Continue? [y/N] ")
 	var answer string
-	fmt.Scanln(&answer)
+	_, _ = fmt.Scanln(&answer)
 	if answer != "y" && answer != "Y" {
 		fmt.Println("Aborted.")
 		return nil
 	}
 
-	exec.Command("sc", "stop", m.ServiceName).Run()
+	_ = exec.Command("sc", "stop", m.ServiceName).Run()
 	time.Sleep(2 * time.Second)
-	exec.Command("sc", "delete", m.ServiceName).Run()
+	_ = exec.Command("sc", "delete", m.ServiceName).Run()
 
 	for _, dir := range []string{configDir, dataDir, cacheDir, logDir, backupDir} {
 		if dir != "" {
-			os.RemoveAll(dir)
+			_ = os.RemoveAll(dir)
 		}
 	}
 	if pidFile != "" {
-		os.Remove(pidFile)
+		_ = os.Remove(pidFile)
 	}
 
 	fmt.Printf("Service uninstalled. Delete binary manually: del %s\n", m.BinaryPath)
@@ -63,7 +63,7 @@ func uninstall(m *Manager, configDir, dataDir, cacheDir, logDir, backupDir, pidF
 }
 
 func disable(name string) error {
-	exec.Command("sc", "stop", name).Run()
+	_ = exec.Command("sc", "stop", name).Run()
 	time.Sleep(2 * time.Second)
 	return exec.Command("sc", "config", name, "start=", "disabled").Run()
 }
@@ -77,7 +77,7 @@ func stopSvc(name string) error {
 }
 
 func restartSvc(name string) error {
-	exec.Command("sc", "stop", name).Run()
+	_ = exec.Command("sc", "stop", name).Run()
 	time.Sleep(2 * time.Second)
 	return exec.Command("sc", "start", name).Run()
 }
