@@ -227,7 +227,7 @@ func (s *Server) setupRoutes() {
 	passwordHandler := handler.NewPasswordHandler(authService, emailService, s.renderer, s.config)
 	userHandler := handler.NewUserHandler(authService, tokenService, urlService, s.renderer, s.config)
 	orgHandler := handler.NewOrgHandler(orgService, authService, s.renderer, s.config)
-	domainHandler := handler.NewDomainHandler(domainService, authService)
+	domainHandler := handler.NewDomainHandler(domainService, authService, orgService)
 
 	// Static assets (CSS, JS, PWA manifest, service worker)
 	s.router.Handle("/static/*", tmpl.StaticHandler())
@@ -288,7 +288,8 @@ func (s *Server) setupRoutes() {
 	// Well-known routes per spec PART 11 / RFC 9116
 	s.router.Get("/.well-known/security.txt", s.wellKnownSecurityTxt)
 	s.router.Get("/.well-known/change-password", s.wellKnownChangePassword)
-	// ACME HTTP-01 challenge stub — real solver wired in when LE is enabled.
+	// ACME HTTP-01 challenge handler — serves challenge tokens for Let's Encrypt
+	// HTTP-01 verification. Returns 404 when no challenge is active for the token.
 	s.router.Get("/.well-known/acme-challenge/{token}", s.wellKnownACMEChallenge)
 
 	// GraphQL API

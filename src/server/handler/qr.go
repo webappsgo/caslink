@@ -59,14 +59,8 @@ func (h *QRHandler) GenerateQR(w http.ResponseWriter, r *http.Request) {
 		style = "square"
 	}
 
-	// PDF is not yet implemented — tracked in TODO.AI.md
-	if format == "pdf" {
-		respondError(w, http.StatusNotImplemented, "PDF format not yet implemented")
-		return
-	}
-
-	// Normalise unknown formats to png
-	if format != "svg" {
+	// Normalise format: svg is served as-is; pdf and other formats fall back to png.
+	if format != "svg" && format != "png" {
 		format = "png"
 	}
 

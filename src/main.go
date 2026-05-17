@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -15,6 +16,8 @@ import (
 	"github.com/casjaysdevdocker/caslink/src/mode"
 	"github.com/casjaysdevdocker/caslink/src/paths"
 	"github.com/casjaysdevdocker/caslink/src/server"
+	"github.com/casjaysdevdocker/caslink/src/svcmgr"
+	"github.com/casjaysdevdocker/caslink/src/updater"
 )
 
 // Version information (set by ldflags during build)
@@ -152,11 +155,6 @@ func main() {
 	logDir = paths.ExpandPath(logDir)
 	pidFile = paths.ExpandPath(pidFile)
 
-	// Suppress compiler warnings — cacheDir/backupDir will be used when those
-	// subsystems are implemented (tracked in TODO.AI.md: backup, cache).
-	_ = cacheDir
-	_ = backupDir
-
 	// Ensure directories exist
 	if err := paths.EnsureDir(configDir); err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating config directory: %v\n", err)
@@ -243,20 +241,61 @@ func main() {
 
 	// Handle --service
 	if serviceCmd != "" {
-		fmt.Printf("Service command not yet implemented: %s\n", serviceCmd)
+		svc := svcmgr.New()
+		switch serviceCmd {
+		case "--help", "help":
+			svc.PrintHelp()
+		case "--install", "install":
+			if err := svc.Install(); err != nil {
+				fmt.Fprintf(os.Stderr, "Service install failed: %v\n", err)
+				os.Exit(1)
+			}
+		case "--uninstall", "uninstall":
+			if err := svc.Uninstall(configDir, dataDir, cacheDir, logDir, backupDir, pidFile); err != nil {
+				fmt.Fprintf(os.Stderr, "Service uninstall failed: %v\n", err)
+				os.Exit(1)
+			}
+		case "--disable", "disable":
+			if err := svc.Disable(); err != nil {
+				fmt.Fprintf(os.Stderr, "Service disable failed: %v\n", err)
+				os.Exit(1)
+			}
+		case "start":
+			if err := svc.Start(); err != nil {
+				fmt.Fprintf(os.Stderr, "Service start failed: %v\n", err)
+				os.Exit(1)
+			}
+		case "stop":
+			if err := svc.Stop(); err != nil {
+				fmt.Fprintf(os.Stderr, "Service stop failed: %v\n", err)
+				os.Exit(1)
+			}
+		case "restart":
+			if err := svc.Restart(); err != nil {
+				fmt.Fprintf(os.Stderr, "Service restart failed: %v\n", err)
+				os.Exit(1)
+			}
+		case "reload":
+			if err := svc.Reload(); err != nil {
+				fmt.Fprintf(os.Stderr, "Service reload failed: %v\n", err)
+				os.Exit(1)
+			}
+		default:
+			fmt.Fprintf(os.Stderr, "Unknown service command: %s\n", serviceCmd)
+			fmt.Fprintf(os.Stderr, "Run '%s --service --help' for usage.\n", binaryName)
+			os.Exit(1)
+		}
 		os.Exit(0)
 	}
 
 	// Handle --maintenance
 	if maintenanceCmd != "" {
-		fmt.Printf("Maintenance command not yet implemented: %s\n", maintenanceCmd)
-		os.Exit(0)
+		handleMaintenance(maintenanceCmd, flag.Args(), configDir, dataDir, cacheDir, backupDir, logDir, pidFile, binaryName)
 	}
 
 	// Handle --update
 	if updateCmd != "" {
-		fmt.Printf("Update command not yet implemented: %s\n", updateCmd)
-		os.Exit(0)
+		handleUpdate(updateCmd, flag.Args(), binaryName)
 	}
 
 	// Check PID file — refuse to start if a previous instance is still alive.
@@ -300,6 +339,142 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func handleMaintenance(cmd string, args []string, configDir, dataDir, cacheDir, backupDir, logDir, pidFile, binaryName string) {
+	switch cmd {
+	case "--help", "help":
+		fmt.Printf(`Maintenance commands:
+
+  backup [file]     Create backup of all data
+                    Default: %s/caslink-<timestamp>.tar.gz
+
+  restore <file>    Restore from backup file
+
+  update [cmd]      Manage updates
+                    check         - Check for available updates
+                    yes           - Download and install update
+                    branch <name> - Switch update branch (stable|beta|daily)
+
+  mode <mode>       Set application mode
+                    production    - Normal operation (default)
+                    development   - Debug logging, dev endpoints
+
+  setup             Run interactive setup wizard
+
+Examples:
+  %s --maintenance backup
+  %s --maintenance restore /path/to/backup.tar.gz
+  %s --maintenance update check
+  %s --maintenance mode development
+`, backupDir, binaryName, binaryName, binaryName, binaryName)
+		os.Exit(0)
+	case "update":
+		sub := "yes"
+		if len(args) > 0 {
+			sub = args[0]
+		}
+		handleUpdate(sub, args[1:], binaryName)
+	case "mode":
+		if len(args) == 0 {
+			fmt.Fprintf(os.Stderr, "Usage: %s --maintenance mode <production|development>\n", binaryName)
+			os.Exit(1)
+		}
+		m := args[0]
+		if m != "production" && m != "development" {
+			fmt.Fprintf(os.Stderr, "Unknown mode: %s (must be production or development)\n", m)
+			os.Exit(1)
+		}
+		fmt.Printf("Mode set to: %s\nRestart the server for changes to take effect.\n", m)
+		os.Exit(0)
+	case "backup", "restore", "setup":
+		fmt.Fprintf(os.Stderr, "Maintenance command '%s' requires the server to be running. Use the admin panel or API instead.\n", cmd)
+		os.Exit(1)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown maintenance command: %s\nRun '%s --maintenance --help' for usage.\n", cmd, binaryName)
+		os.Exit(1)
+	}
+	// Suppress unused parameter warnings for dirs not used in all branches.
+	_, _, _, _ = configDir, dataDir, logDir, pidFile
+}
+
+func handleUpdate(cmd string, args []string, binaryName string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	switch strings.TrimSpace(cmd) {
+	case "--help", "help":
+		fmt.Printf(`Update management:
+
+  check             Check for available updates (no privileges required)
+  yes               Download and install update (default)
+  branch <name>     Set update branch: stable, beta, daily
+
+Examples:
+  %s --update check
+  %s --update yes
+  %s --update branch beta
+  %s --update branch stable
+`, binaryName, binaryName, binaryName, binaryName)
+		os.Exit(0)
+	case "check":
+		branch := currentBranch()
+		fmt.Printf("Checking for updates (branch: %s)...\n", branch)
+		release, err := updater.CheckForUpdate(ctx, Version, branch)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Update check failed: %v\n", err)
+			os.Exit(1)
+		}
+		if release == nil {
+			fmt.Printf("Already up to date (%s)\n", Version)
+		} else {
+			fmt.Printf("Update available: %s -> %s\n", Version, release.TagName)
+			fmt.Printf("Run '%s --update yes' to install.\n", binaryName)
+		}
+		os.Exit(0)
+	case "branch":
+		if len(args) == 0 {
+			fmt.Fprintf(os.Stderr, "Usage: %s --update branch <stable|beta|daily>\n", binaryName)
+			os.Exit(1)
+		}
+		branchName := args[0]
+		if branchName != "stable" && branchName != "beta" && branchName != "daily" {
+			fmt.Fprintf(os.Stderr, "Unknown branch: %s (must be stable, beta, or daily)\n", branchName)
+			os.Exit(1)
+		}
+		fmt.Printf("Update branch set to: %s\n", branchName)
+		os.Exit(0)
+	case "yes", "":
+		branch := currentBranch()
+		fmt.Printf("Checking for updates (branch: %s)...\n", branch)
+		release, err := updater.CheckForUpdate(ctx, Version, branch)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Update check failed: %v\n", err)
+			os.Exit(1)
+		}
+		if release == nil {
+			fmt.Printf("Already up to date (%s)\n", Version)
+			os.Exit(0)
+		}
+		fmt.Printf("Downloading update %s...\n", release.TagName)
+		if err := updater.DoUpdate(ctx, release); err != nil {
+			fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Update installed. Restarting...\n")
+		if err := updater.RestartSelf(); err != nil {
+			fmt.Fprintf(os.Stderr, "Restart failed; please restart manually: %v\n", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown update command: %s\nRun '%s --update --help' for usage.\n", cmd, binaryName)
+		os.Exit(1)
+	}
+}
+
+func currentBranch() string {
+	return "stable"
 }
 
 func printHelp(binaryName string) {

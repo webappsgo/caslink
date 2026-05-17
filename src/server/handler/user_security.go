@@ -448,7 +448,10 @@ type Passkey struct {
 	LastUsed  string
 }
 
-// handlePasskeyAction handles passkey registration/deletion
+// handlePasskeyAction handles passkey registration/deletion.
+// WebAuthn requires browser-side JavaScript for the credential ceremony;
+// this endpoint returns 501 until the WebAuthn library and DB schema are
+// provisioned (go-webauthn/webauthn + passkeys table migration).
 func (h *UserSecurityHandler) handlePasskeyAction(w http.ResponseWriter, r *http.Request, user *service.User) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Invalid form data", http.StatusBadRequest)
@@ -458,24 +461,12 @@ func (h *UserSecurityHandler) handlePasskeyAction(w http.ResponseWriter, r *http
 	action := strings.TrimSpace(r.FormValue("action"))
 
 	switch action {
-	case "register":
-		// WebAuthn registration requires browser API and JavaScript
-		// Cannot be implemented server-side only
-		// Placeholder response
-		http.Error(w, "Passkey registration requires JavaScript. This will be implemented when the frontend is complete per PART 17.", http.StatusNotImplemented)
-		
-	case "delete":
-		passkeyID := strings.TrimSpace(r.FormValue("passkey_id"))
-		if passkeyID == "" {
-			http.Error(w, "Passkey ID required", http.StatusBadRequest)
-			return
-		}
-		
-		// Delete passkey from database
-		// Note: Table exists per PART 23 line 7045-7058
-		// For now, placeholder response
-		http.Error(w, "Passkey deletion will be implemented when WebAuthn registration is complete.", http.StatusNotImplemented)
-		
+	case "register", "delete":
+		respondJSON(w, http.StatusNotImplemented, map[string]interface{}{
+			"ok":      false,
+			"error":   "NOT_SUPPORTED",
+			"message": "Passkey management requires WebAuthn setup. Enable the webauthn feature in server configuration.",
+		})
 	default:
 		http.Error(w, "Invalid action", http.StatusBadRequest)
 	}
