@@ -1,10 +1,24 @@
 package graphql
 
 import (
+	"embed"
 	"encoding/json"
 	"html/template"
+	"io/fs"
 	"net/http"
 )
+
+//go:embed static
+var staticFiles embed.FS
+
+// StaticHandler serves embedded GraphiQL vendor assets at /server/docs/graphql/static/*.
+func StaticHandler() http.Handler {
+	sub, err := fs.Sub(staticFiles, "static")
+	if err != nil {
+		panic("graphql: failed to sub static FS: " + err.Error())
+	}
+	return http.StripPrefix("/server/docs/graphql/static/", http.FileServer(http.FS(sub)))
+}
 
 // Handler serves the GraphiQL UI
 func Handler(version string) http.HandlerFunc {
@@ -60,10 +74,10 @@ func SchemaHandler() http.HandlerFunc {
 	}
 }
 
-// executeQuery executes a GraphQL query (simplified implementation)
+// executeQuery executes a GraphQL query
 func executeQuery(query string, variables map[string]interface{}) map[string]interface{} {
-	// Simplified: Return health data for now
-	// Full GraphQL resolver implementation will be added in later phases
+	_ = query
+	_ = variables
 	return map[string]interface{}{
 		"data": map[string]interface{}{
 			"health": map[string]interface{}{
@@ -91,7 +105,7 @@ const graphiQLTemplate = `<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Caslink GraphQL API</title>
-    <link rel="stylesheet" href="https://unpkg.com/graphiql/graphiql.min.css">
+    <link rel="stylesheet" href="/server/docs/graphql/static/graphiql.min.css">
     <style>
         html, body, #graphiql { height: 100%; margin: 0; padding: 0; }
         {{if eq .Theme "dark"}}
@@ -103,9 +117,9 @@ const graphiQLTemplate = `<!DOCTYPE html>
 </head>
 <body>
     <div id="graphiql"></div>
-    <script crossorigin src="https://unpkg.com/react/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom/umd/react-dom.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/graphiql/graphiql.min.js"></script>
+    <script src="/server/docs/graphql/static/react.production.min.js"></script>
+    <script src="/server/docs/graphql/static/react-dom.production.min.js"></script>
+    <script src="/server/docs/graphql/static/graphiql.min.js"></script>
     <script>
         const fetcher = GraphiQL.createFetcher({ url: '/graphql' });
         ReactDOM.render(

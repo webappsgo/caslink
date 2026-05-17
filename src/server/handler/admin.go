@@ -552,7 +552,7 @@ func (h *AdminHandler) UserDetail(w http.ResponseWriter, r *http.Request) {
 </html>`
 
 	t := template.Must(template.New("userdetail").Parse(userDetailTmpl))
-	t.Execute(w, map[string]interface{}{
+	_ = t.Execute(w, map[string]interface{}{
 		"User":     user,
 		"BasePath": h.basePath(),
 	})
@@ -620,7 +620,7 @@ func (h *AdminHandler) APIUserList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"users": users,
 		"total": total,
 		"page":  page,

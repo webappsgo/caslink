@@ -1,10 +1,24 @@
 package swagger
 
 import (
+	"embed"
 	"encoding/json"
 	"html/template"
+	"io/fs"
 	"net/http"
 )
+
+//go:embed static
+var staticFiles embed.FS
+
+// StaticHandler serves embedded Swagger UI vendor assets at /server/docs/swagger/static/*.
+func StaticHandler() http.Handler {
+	sub, err := fs.Sub(staticFiles, "static")
+	if err != nil {
+		panic("swagger: failed to sub static FS: " + err.Error())
+	}
+	return http.StripPrefix("/server/docs/swagger/static/", http.FileServer(http.FS(sub)))
+}
 
 // Handler serves the Swagger UI
 func Handler(version string) http.HandlerFunc {
@@ -161,7 +175,7 @@ const swaggerUITemplate = `<!DOCTYPE html>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Caslink API Documentation</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+    <link rel="stylesheet" href="/server/docs/swagger/static/swagger-ui.css">
     <style>
         html { box-sizing: border-box; overflow: -moz-scrollbars-vertical; overflow-y: scroll; }
         *, *:before, *:after { box-sizing: inherit; }
@@ -175,7 +189,7 @@ const swaggerUITemplate = `<!DOCTYPE html>
 </head>
 <body>
     <div id="swagger-ui"></div>
-    <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <script src="/server/docs/swagger/static/swagger-ui-bundle.js"></script>
     <script>
         window.onload = function() {
             SwaggerUIBundle({

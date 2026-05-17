@@ -13,11 +13,15 @@ VERSION ?= $(shell cat release.txt 2>/dev/null || echo "0.1.0")
 BUILD_DATE := $(shell date +"%a %b %d, %Y at %H:%M:%S %Z")
 COMMIT_ID := $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
+# Official site: file > env var > empty
+OFFICIALSITE := $(shell cat site.txt 2>/dev/null || echo "$(OFFICIALSITE)")
+
 # Linker flags to embed build info
 LDFLAGS := -s -w \
 	-X 'main.Version=$(VERSION)' \
 	-X 'main.CommitID=$(COMMIT_ID)' \
-	-X 'main.BuildDate=$(BUILD_DATE)'
+	-X 'main.BuildDate=$(BUILD_DATE)' \
+	-X 'main.OfficialSite=$(OFFICIALSITE)'
 
 # Directories
 BINDIR := binaries

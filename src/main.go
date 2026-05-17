@@ -19,9 +19,10 @@ import (
 
 // Version information (set by ldflags during build)
 var (
-	Version   = "dev"
-	CommitID  = "unknown"
-	BuildDate = "unknown"
+	Version      = "dev"
+	CommitID     = "unknown"
+	BuildDate    = "unknown"
+	OfficialSite = ""
 )
 
 func main() {

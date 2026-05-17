@@ -47,7 +47,6 @@ jobs:
   vuln-scan:
     name: Vulnerability Scan (govulncheck)
     runs-on: ubuntu-latest
-    if: hashFiles('go.sum') != ''
     container: golang:alpine
 
     steps:
@@ -65,7 +64,6 @@ jobs:
   image-scan:
     name: Image Scan (Trivy)
     runs-on: ubuntu-latest
-    if: hashFiles('docker/Dockerfile') != ''
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6

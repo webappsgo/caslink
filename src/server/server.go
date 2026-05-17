@@ -255,7 +255,9 @@ func (s *Server) setupRoutes() {
 
 	// Swagger/OpenAPI documentation per spec PART 14 + IDEA.md:
 	// web UI at /server/docs/swagger; JSON spec at canonical + alias paths.
+	// Vendor assets (swagger-ui-bundle.js, swagger-ui.css) are embedded in the binary.
 	s.router.Get("/server/docs/swagger", swagger.Handler(s.Version))
+	s.router.Handle("/server/docs/swagger/static/*", swagger.StaticHandler())
 	s.router.Get("/api/swagger", swagger.SpecHandler(s.Version))
 
 	// Prometheus metrics endpoint per AI.md PART 21.
@@ -290,7 +292,9 @@ func (s *Server) setupRoutes() {
 	s.router.Get("/.well-known/acme-challenge/{token}", s.wellKnownACMEChallenge)
 
 	// GraphQL API
+	// GraphiQL UI at /graphiql; vendor assets embedded in the binary.
 	s.router.Get("/graphiql", graphql.Handler(s.Version))
+	s.router.Handle("/server/docs/graphql/static/*", graphql.StaticHandler())
 	s.router.Get("/graphql/schema", graphql.SchemaHandler())
 	s.router.Post("/graphql", graphql.QueryHandler())
 
