@@ -13,9 +13,9 @@ import (
 	"github.com/casjaysdevdocker/caslink/src/templates"
 )
 
-// Embedded email templates (sourced from src/templates/email/*.txt).
-// go:embed cannot traverse parent directories, so the templates package
-// owns the embed and re-exports the strings.
+// Email templates are sourced from src/templates/email/*.txt.
+// The embed directive lives in the templates package (not here) because
+// embed paths cannot traverse parent directories.
 var (
 	passwordResetTemplate   = templates.PasswordResetEmail
 	passwordChangedTemplate = templates.PasswordChangedEmail

@@ -49,14 +49,6 @@ func NewPagination(page, limit, total int) *Pagination {
 	return &Pagination{Page: page, Limit: limit, Total: total, Pages: pages}
 }
 
-// respondJSONList sends a canonical success envelope for list endpoints:
-// {"ok":true,"data":[...],"pagination":{...}}.
-func respondJSONList(w http.ResponseWriter, status int, data interface{}, pg *Pagination) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(APIResponse{OK: true, Data: data, Pagination: pg})
-}
-
 // respondJSON sends a canonical success envelope: {"ok":true,"data":data}.
 // Pass http.StatusOK / StatusCreated etc.; the status is written before the
 // body. The shape never varies — callers MUST NOT pre-wrap data themselves.

@@ -448,13 +448,6 @@ type Passkey struct {
 	LastUsed  string
 }
 
-// getPasskeysForUser retrieves passkeys from database
-func (h *UserSecurityHandler) getPasskeysForUser(userID int64) ([]Passkey, error) {
-	// Note: Passkeys table exists in schema per PART 23 line 7045-7058
-	// For now, return empty list (actual WebAuthn implementation requires JavaScript)
-	return []Passkey{}, nil
-}
-
 // handlePasskeyAction handles passkey registration/deletion
 func (h *UserSecurityHandler) handlePasskeyAction(w http.ResponseWriter, r *http.Request, user *service.User) {
 	if err := r.ParseForm(); err != nil {

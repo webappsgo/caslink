@@ -78,11 +78,8 @@ func (s *AuthService) AuthenticateAdmin(ctx context.Context, username, password 
 
 	// Update last login
 	updateQuery := `UPDATE admins SET last_login = ? WHERE id = ?`
-	_, err = s.store.UsersDB.ExecContext(ctx, updateQuery, time.Now(), admin.ID)
-	if err != nil {
-		// Don't fail auth if update fails, just log
-		// (actual logging will be implemented later)
-	}
+	// Best-effort update — don't fail auth if last_login update fails
+	_, _ = s.store.UsersDB.ExecContext(ctx, updateQuery, time.Now(), admin.ID)
 
 	return &admin, nil
 }
@@ -289,10 +286,8 @@ func (s *AuthService) AuthenticateUser(ctx context.Context, identifier, password
 
 	// Update last login
 	updateQuery := `UPDATE users SET last_login = ? WHERE id = ?`
-	_, err = s.store.UsersDB.ExecContext(ctx, updateQuery, time.Now(), user.ID)
-	if err != nil {
-		// Don't fail auth if update fails
-	}
+	// Best-effort update — don't fail auth if last_login update fails
+	_, _ = s.store.UsersDB.ExecContext(ctx, updateQuery, time.Now(), user.ID)
 
 	return &user, nil
 }
@@ -448,10 +443,8 @@ func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword stri
 	// Mark token as used
 	tokenHash := hashToken(token)
 	markUsedQuery := `UPDATE password_resets SET used_at = ? WHERE token_hash = ?`
-	_, err = s.store.UsersDB.ExecContext(ctx, markUsedQuery, time.Now().Unix(), tokenHash)
-	if err != nil {
-		// Don't fail password reset if marking token fails
-	}
+	// Best-effort update — don't fail password reset if marking token fails
+	_, _ = s.store.UsersDB.ExecContext(ctx, markUsedQuery, time.Now().Unix(), tokenHash)
 
 	// Invalidate all existing sessions per PART 23 line 20534
 	deleteSessionsQuery := `DELETE FROM sessions WHERE user_id = ? AND user_type = ?`
