@@ -6,6 +6,10 @@ on:
       - 'v*'
       - '[0-9]*.[0-9]*.[0-9]*'
 
+concurrency:
+  group: release-${{ gitea.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -47,15 +51,15 @@ jobs:
 
       - name: Set build info
         run: |
-          TAG="${GITHUB_REF_NAME}"
+          TAG="${GITEA_REF_NAME}"
           VERSION="${TAG#v}"
-          echo "VERSION=${VERSION}" >> $GITHUB_ENV
-          echo "COMMIT_ID=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-          echo "BUILD_DATE=$(date +"%a %b %d, %Y at %H:%M:%S %Z")" >> $GITHUB_ENV
+          echo "VERSION=${VERSION}" >> $GITEA_ENV
+          echo "COMMIT_ID=$(git rev-parse --short HEAD)" >> $GITEA_ENV
+          echo "BUILD_DATE=$(date +"%a %b %d, %Y at %H:%M:%S %Z")" >> $GITEA_ENV
           if [ -f site.txt ]; then
-            echo "OFFICIALSITE=$(cat site.txt)" >> $GITHUB_ENV
+            echo "OFFICIALSITE=$(cat site.txt)" >> $GITEA_ENV
           else
-            echo "OFFICIALSITE=${{ secrets.OFFICIALSITE }}" >> $GITHUB_ENV
+            echo "OFFICIALSITE=${{ secrets.OFFICIALSITE }}" >> $GITEA_ENV
           fi
 
       - name: Build server
@@ -77,6 +81,16 @@ jobs:
           LDFLAGS="-s -w -X 'main.Version=${{ env.VERSION }}' -X 'main.CommitID=${{ env.COMMIT_ID }}' -X 'main.BuildDate=${{ env.BUILD_DATE }}' -X 'main.OfficialSite=${{ env.OFFICIALSITE }}'"
           go build -ldflags "${LDFLAGS}" -o ${{ env.PROJECTNAME }}-cli-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./src/client
 
+      - name: Build Agent
+        if: hashFiles('src/agent/') != ''
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          LDFLAGS="-s -w -X 'main.Version=${{ env.VERSION }}' -X 'main.CommitID=${{ env.COMMIT_ID }}' -X 'main.BuildDate=${{ env.BUILD_DATE }}' -X 'main.OfficialSite=${{ env.OFFICIALSITE }}'"
+          go build -ldflags "${LDFLAGS}" -o ${{ env.PROJECTNAME }}-agent-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }} ./src/agent
+
       - name: Upload server artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
@@ -89,6 +103,13 @@ jobs:
         with:
           name: ${{ env.PROJECTNAME }}-cli-${{ matrix.goos }}-${{ matrix.goarch }}
           path: ${{ env.PROJECTNAME }}-cli-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
+
+      - name: Upload Agent artifact
+        if: hashFiles('src/agent/') != ''
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: ${{ env.PROJECTNAME }}-agent-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ env.PROJECTNAME }}-agent-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
 
       - name: Generate SBOM (CycloneDX)
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
@@ -121,14 +142,14 @@ jobs:
 
       - name: Set version
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          echo "VERSION=${TAG#v}" >> $GITHUB_ENV
+          TAG="${GITEA_REF_NAME}"
+          echo "VERSION=${TAG#v}" >> $GITEA_ENV
           if [[ "$TAG" == v* ]]; then
-            echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
+            echo "RELEASE_TAG=$TAG" >> $GITEA_ENV
           elif [[ "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-            echo "RELEASE_TAG=v$TAG" >> $GITHUB_ENV
+            echo "RELEASE_TAG=v$TAG" >> $GITEA_ENV
           else
-            echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
+            echo "RELEASE_TAG=$TAG" >> $GITEA_ENV
           fi
 
       - name: Create version.txt

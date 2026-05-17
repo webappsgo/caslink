@@ -5,6 +5,10 @@ on:
     branches:
       - beta
 
+concurrency:
+  group: beta-${{ gitea.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -32,9 +36,18 @@ jobs:
 
       - name: Set build info
         run: |
-          echo "VERSION=$(date -u +"%Y%m%d%H%M%S")-beta" >> $GITHUB_ENV
-          echo "COMMIT_ID=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-          echo "BUILD_DATE=$(date +"%a %b %d, %Y at %H:%M:%S %Z")" >> $GITHUB_ENV
+          if [ -f release.txt ]; then
+            echo "VERSION=$(cat release.txt)" >> $GITEA_ENV
+          else
+            echo "VERSION=$(date -u +"%Y%m%d%H%M%S")-beta" >> $GITEA_ENV
+          fi
+          echo "COMMIT_ID=$(git rev-parse --short HEAD)" >> $GITEA_ENV
+          echo "BUILD_DATE=$(date +"%a %b %d, %Y at %H:%M:%S %Z")" >> $GITEA_ENV
+          if [ -f site.txt ]; then
+            echo "OFFICIALSITE=$(cat site.txt)" >> $GITEA_ENV
+          else
+            echo "OFFICIALSITE=${{ secrets.OFFICIALSITE }}" >> $GITEA_ENV
+          fi
 
       - name: Build server
         env:
@@ -42,7 +55,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
-          LDFLAGS="-s -w -X 'main.Version=${{ env.VERSION }}' -X 'main.CommitID=${{ env.COMMIT_ID }}' -X 'main.BuildDate=${{ env.BUILD_DATE }}'"
+          LDFLAGS="-s -w -X 'main.Version=${{ env.VERSION }}' -X 'main.CommitID=${{ env.COMMIT_ID }}' -X 'main.BuildDate=${{ env.BUILD_DATE }}' -X 'main.OfficialSite=${{ env.OFFICIALSITE }}'"
           go build -ldflags "${LDFLAGS}" -o ${{ env.PROJECTNAME }}-${{ matrix.goos }}-${{ matrix.goarch }} ./src
 
       - name: Build CLI
@@ -52,7 +65,7 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
         run: |
-          LDFLAGS="-s -w -X 'main.Version=${{ env.VERSION }}' -X 'main.CommitID=${{ env.COMMIT_ID }}' -X 'main.BuildDate=${{ env.BUILD_DATE }}'"
+          LDFLAGS="-s -w -X 'main.Version=${{ env.VERSION }}' -X 'main.CommitID=${{ env.COMMIT_ID }}' -X 'main.BuildDate=${{ env.BUILD_DATE }}' -X 'main.OfficialSite=${{ env.OFFICIALSITE }}'"
           go build -ldflags "${LDFLAGS}" -o ${{ env.PROJECTNAME }}-cli-${{ matrix.goos }}-${{ matrix.goarch }} ./src/client
 
       - name: Upload server artifact
@@ -85,7 +98,12 @@ jobs:
           merge-multiple: true
 
       - name: Set version
-        run: echo "VERSION=$(date -u +"%Y%m%d%H%M%S")-beta" >> $GITHUB_ENV
+        run: |
+          if [ -f release.txt ]; then
+            echo "VERSION=$(cat release.txt)" >> $GITEA_ENV
+          else
+            echo "VERSION=$(date -u +"%Y%m%d%H%M%S")-beta" >> $GITEA_ENV
+          fi
 
       - name: Create version.txt
         run: echo "${{ env.VERSION }}" > binaries/version.txt

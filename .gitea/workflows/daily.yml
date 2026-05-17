@@ -13,8 +13,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: daily-${{ github.ref }}
-  cancel-in-progress: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/devel' || github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/beta' }}
+  group: daily-${{ gitea.ref }}
+  cancel-in-progress: ${{ gitea.ref == 'refs/heads/main' || gitea.ref == 'refs/heads/master' || gitea.ref == 'refs/heads/devel' || gitea.ref == 'refs/heads/dev' || gitea.ref == 'refs/heads/beta' }}
 
 env:
   PROJECTNAME: caslink
@@ -55,16 +55,16 @@ jobs:
       - name: Set build info
         run: |
           if [ -f release.txt ]; then
-            echo "VERSION=$(cat release.txt)" >> $GITHUB_ENV
+            echo "VERSION=$(cat release.txt)" >> $GITEA_ENV
           else
-            echo "VERSION=$(date -u +"%Y%m%d%H%M%S")" >> $GITHUB_ENV
+            echo "VERSION=$(date -u +"%Y%m%d%H%M%S")" >> $GITEA_ENV
           fi
-          echo "COMMIT_ID=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-          echo "BUILD_DATE=$(date +"%a %b %d, %Y at %H:%M:%S %Z")" >> $GITHUB_ENV
+          echo "COMMIT_ID=$(git rev-parse --short HEAD)" >> $GITEA_ENV
+          echo "BUILD_DATE=$(date +"%a %b %d, %Y at %H:%M:%S %Z")" >> $GITEA_ENV
           if [ -f site.txt ]; then
-            echo "OFFICIALSITE=$(cat site.txt)" >> $GITHUB_ENV
+            echo "OFFICIALSITE=$(cat site.txt)" >> $GITEA_ENV
           else
-            echo "OFFICIALSITE=${{ secrets.OFFICIALSITE }}" >> $GITHUB_ENV
+            echo "OFFICIALSITE=${{ secrets.OFFICIALSITE }}" >> $GITEA_ENV
           fi
 
       - name: Build server
@@ -138,9 +138,9 @@ jobs:
       - name: Set version
         run: |
           if [ -f release.txt ]; then
-            echo "VERSION=$(cat release.txt)" >> $GITHUB_ENV
+            echo "VERSION=$(cat release.txt)" >> $GITEA_ENV
           else
-            echo "VERSION=$(date -u +"%Y%m%d%H%M%S")" >> $GITHUB_ENV
+            echo "VERSION=$(date -u +"%Y%m%d%H%M%S")" >> $GITEA_ENV
           fi
 
       - name: Create version.txt
@@ -148,10 +148,10 @@ jobs:
 
       - name: Delete previous daily release
         run: |
-          gh release delete daily --yes 2>/dev/null || true
+          curl -X DELETE \
+            -H "Authorization: token ${{ secrets.GITEA_TOKEN }}" \
+            "${{ gitea.server_url }}/api/v1/repos/${{ gitea.repository }}/releases/tags/daily" || true
           git push origin :refs/tags/daily 2>/dev/null || true
-        env:
-          GH_TOKEN: ${{ secrets.GITEA_TOKEN }}
 
       - name: Create Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2
