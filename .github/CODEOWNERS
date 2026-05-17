@@ -1,0 +1,34 @@
+# CODEOWNERS — automatic review assignment for caslink
+# Format: <pattern> <owner> [<owner> ...]
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Catch-all: casapps org owns everything
+* @casapps
+
+# CI/CD and release infrastructure — requires security review
+.github/workflows/ @casapps
+Jenkinsfile @casapps
+
+# Docker and release artifacts
+docker/ @casapps
+docker/Dockerfile @casapps
+docker/Dockerfile.aio @casapps
+release.txt @casapps
+
+# Authentication, cryptography, and security-sensitive code
+src/server/service/auth.go @casapps
+src/server/service/password.go @casapps
+src/server/service/token.go @casapps
+src/server/service/totp.go @casapps
+src/server/handler/setup.go @casapps
+src/server/middleware.go @casapps
+
+# Database schema and migrations
+src/server/store/ @casapps
+
+# Update and maintenance subsystem
+src/server/handler/admin.go @casapps
+src/scheduler/ @casapps
+
+# SSL/TLS handling
+src/ssl/ @casapps

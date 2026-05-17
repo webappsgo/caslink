@@ -1,0 +1,121 @@
+# All-in-One Dockerfile - includes app + postgresql + valkey + tor
+# Build: golang:alpine (static binary, CGO_ENABLED=0)
+# Runtime: debian:latest (stable, broad compatibility)
+# Image name: ghcr.io/casapps/caslink:latest-aio
+# PORTS: Only 80 exposed (db/cache are internal-only)
+
+# =============================================================================
+# Stage 1: Build Go binary
+# =============================================================================
+FROM golang:alpine AS builder
+
+ARG TARGETARCH
+ARG VERSION=dev
+ARG BUILD_DATE
+ARG COMMIT_ID
+
+RUN apk add --no-cache git
+
+WORKDIR /build
+
+# Copy go.mod/go.sum first for better layer caching
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source and build
+COPY . .
+
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
+    -ldflags "-s -w -X 'main.Version=${VERSION}' -X 'main.CommitID=${COMMIT_ID}' -X 'main.BuildDate=${BUILD_DATE}'" \
+    -o /build/binary/caslink ./src
+
+# =============================================================================
+# Stage 2: Runtime image with PostgreSQL + Valkey + Tor
+# =============================================================================
+FROM debian:latest
+
+ARG VERSION=dev
+ARG BUILD_DATE
+ARG COMMIT_ID
+ARG LICENSE=MIT
+
+LABEL maintainer="casapps <noreply@casapps.pro>" \
+      org.opencontainers.image.vendor="casapps" \
+      org.opencontainers.image.authors="casapps" \
+      org.opencontainers.image.title="caslink-aio" \
+      org.opencontainers.image.base.name="caslink" \
+      org.opencontainers.image.description="caslink - all-in-one (debian + postgresql + valkey + tor)" \
+      org.opencontainers.image.url="https://github.com/casapps/caslink" \
+      org.opencontainers.image.source="https://github.com/casapps/caslink" \
+      org.opencontainers.image.documentation="https://github.com/casapps/caslink" \
+      org.opencontainers.image.vcs-type="Git" \
+      com.github.containers.toolbox="false"
+
+LABEL org.opencontainers.image.licenses="${LICENSE}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.schema-version="${VERSION}" \
+      org.opencontainers.image.revision="${COMMIT_ID}"
+
+# Install dependencies (PostgreSQL + Valkey + Tor + Supervisor)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    bash \
+    postgresql \
+    postgresql-contrib \
+    valkey \
+    supervisor \
+    tor \
+    tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create directories for external services (PostgreSQL, Valkey)
+# NOTE: App directories (config, data, sqlite, logs, backups) are created by the server binary
+# External services need dirs pre-created with special ownership (postgres user)
+RUN mkdir -p /config/postgres /config/valkey \
+             /data/db/postgres /data/db/valkey \
+             /data/log/postgres \
+             /run/postgresql /run/valkey \
+    && chown -R postgres:postgres /data/db/postgres /data/log/postgres /run/postgresql
+
+# Copy base rootfs overlay (configs, scripts)
+COPY docker/rootfs/ /
+
+# Copy AIO-specific overlay (replaces standard entrypoint.sh with supervisord entrypoint)
+COPY docker/aio/ /
+
+# Copy application binary from builder stage
+COPY --from=builder /build/binary/caslink /usr/local/bin/caslink
+
+# Copy Dockerfile to image (for reference)
+COPY docker/Dockerfile.aio /root/Dockerfile.aio
+
+# Make all binaries/scripts executable
+RUN chmod 755 /usr/local/bin/*
+
+# Default environment
+# DATABASE_DIR: SQLite location (used if DB_HOST not set)
+ENV MODE=production \
+    PORT=80 \
+    DEBUG=false \
+    TZ=America/New_York \
+    DATABASE_DIR=/data/db/sqlite \
+    PGDATA=/data/db/postgres \
+    DB_HOST=/run/postgresql \
+    DB_NAME=caslink \
+    DB_USER=caslink \
+    VALKEY_SOCKET=/run/valkey/valkey.sock \
+    TOR_ENABLED=false
+
+# Only expose app port - db/cache are container-internal only
+EXPOSE 80
+
+# Stop signal for graceful shutdown
+STOPSIGNAL SIGRTMIN+3
+
+# Health check (90s start period for PostgreSQL + Valkey initialization)
+HEALTHCHECK --interval=10s --timeout=5s --start-period=90s --retries=3 \
+    CMD /usr/local/bin/caslink --status || exit 1
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

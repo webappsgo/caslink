@@ -1,0 +1,44 @@
+# caslink - All-in-One (app + embedded DB)
+# nginx proxy address - http://172.17.0.1:64580
+# Usage: docker compose -f all-in-one.yml up -d
+
+name: caslink
+
+x-logging: &default-logging
+  options:
+    max-size: '5m'
+    max-file: '1'
+  driver: json-file
+
+services:
+  caslink:
+    image: ghcr.io/casapps/caslink:latest-aio
+    container_name: caslink-app
+    hostname: ${BASE_HOST_NAME:-$HOSTNAME}
+    restart: always
+    pull_policy: always
+    logging: *default-logging
+    environment:
+      - MODE=production
+      - PORT=80
+      - DEBUG=false
+      - TZ=${TZ:-America/New_York}
+      - TOR_ENABLED=${TOR_ENABLED:-false}
+    volumes:
+      - './volumes/config:/config:z'
+      - './volumes/data:/data:z'
+    ports:
+      - '172.17.0.1:64580:80'
+    healthcheck:
+      test: /usr/local/bin/caslink --status
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    networks:
+      - caslink
+
+networks:
+  caslink:
+    name: caslink
+    external: false

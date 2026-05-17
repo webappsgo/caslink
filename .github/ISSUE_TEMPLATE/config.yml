@@ -1,0 +1,17 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: Documentation
+    url: https://github.com/casapps/caslink/wiki
+    about: Read the docs before opening an issue — your question may already be answered.
+
+  - name: Discussions / Support
+    url: https://github.com/casapps/caslink/discussions
+    about: General questions and community support belong in Discussions, not Issues.
+
+  - name: Report a Security Vulnerability
+    url: mailto:casjay@yahoo.com?subject=%5Bcaslink%5D%5BSECURITY%5D+%3Cdescription%3E
+    about: >
+      DO NOT open a public issue for security vulnerabilities.
+      Email casjay@yahoo.com with subject [caslink][SECURITY] <description>.
+      See .github/SECURITY.md for the full reporting policy.
