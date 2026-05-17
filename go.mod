@@ -1,6 +1,6 @@
 module github.com/casjaysdevdocker/caslink
 
-go 1.25.7
+go 1.26.3
 
 require (
 	github.com/go-chi/chi/v5 v5.0.11
@@ -9,7 +9,7 @@ require (
 	github.com/microsoft/go-mssqldb v1.10.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/robfig/cron/v3 v3.0.1
-	github.com/rs/cors v1.10.1
+	github.com/rs/cors v1.11.0
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	golang.org/x/crypto v0.51.0
 	gopkg.in/yaml.v3 v3.0.1
