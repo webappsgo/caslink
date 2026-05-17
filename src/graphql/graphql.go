@@ -23,7 +23,7 @@ func Handler(version string) http.HandlerFunc {
 			"Version": version,
 			"Theme":   theme,
 		}
-		tmpl.Execute(w, data)
+		_ = tmpl.Execute(w, data)
 	}
 }
 
@@ -46,7 +46,7 @@ func QueryHandler() http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(result)
+		_ = json.NewEncoder(w).Encode(result)
 	}
 }
 
@@ -56,7 +56,7 @@ func SchemaHandler() http.HandlerFunc {
 		schema := GetSchema()
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(schema))
+		_, _ = w.Write([]byte(schema))
 	}
 }
 
@@ -78,7 +78,7 @@ func executeQuery(query string, variables map[string]interface{}) map[string]int
 func respondError(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusBadRequest)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
 		"errors": []map[string]interface{}{
 			{"message": message},
 		},

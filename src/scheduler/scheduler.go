@@ -58,63 +58,83 @@ func (s *Scheduler) Stop() {
 // admin panel surfaces the task once UI lands.
 func (s *Scheduler) addTasks() {
 	// session_cleanup — every 15 minutes (PART 19).
-	s.cron.AddFunc("@every 15m", func() {
+	if _, err := s.cron.AddFunc("@every 15m", func() {
 		s.cleanupSessions()
-	})
+	}); err != nil {
+		log.Printf("[scheduler] addTasks: register session_cleanup: %v", err)
+	}
 
 	// token_cleanup — every 15 minutes (PART 19). Removes expired API
 	// tokens so revoked sessions can never be replayed.
-	s.cron.AddFunc("@every 15m", func() {
+	if _, err := s.cron.AddFunc("@every 15m", func() {
 		s.cleanupTokens()
-	})
+	}); err != nil {
+		log.Printf("[scheduler] addTasks: register token_cleanup: %v", err)
+	}
 
 	// healthcheck_self — every 5 minutes (PART 19). Pings both DBs so a
 	// degraded backend surfaces in logs without waiting for an external
 	// monitor to notice.
-	s.cron.AddFunc("@every 5m", func() {
+	if _, err := s.cron.AddFunc("@every 5m", func() {
 		s.selfHealthCheck()
-	})
+	}); err != nil {
+		log.Printf("[scheduler] addTasks: register healthcheck_self: %v", err)
+	}
 
 	// Expired-URL cleanup — daily at 02:30 (after backup window).
-	s.cron.AddFunc("30 2 * * *", func() {
+	if _, err := s.cron.AddFunc("30 2 * * *", func() {
 		s.expireURLs()
-	})
+	}); err != nil {
+		log.Printf("[scheduler] addTasks: register expire_urls: %v", err)
+	}
 
 	// ssl_renewal — daily at 03:00. Placeholder until Let's Encrypt
 	// integration lands (TODO.AI.md → Custom domains).
-	s.cron.AddFunc("0 3 * * *", func() {
+	if _, err := s.cron.AddFunc("0 3 * * *", func() {
 		log.Println("[scheduler] ssl_renewal: not yet implemented")
-	})
+	}); err != nil {
+		log.Printf("[scheduler] addTasks: register ssl_renewal: %v", err)
+	}
 
 	// geoip_update — weekly Sunday 03:00. Placeholder until GeoIP
 	// enrichment lands (TODO.AI.md → Analytics).
-	s.cron.AddFunc("0 3 * * 0", func() {
+	if _, err := s.cron.AddFunc("0 3 * * 0", func() {
 		log.Println("[scheduler] geoip_update: not yet implemented")
-	})
+	}); err != nil {
+		log.Printf("[scheduler] addTasks: register geoip_update: %v", err)
+	}
 
 	// backup_daily — daily at 02:00. Placeholder until backup subsystem
 	// lands (PART 22).
-	s.cron.AddFunc("0 2 * * *", func() {
+	if _, err := s.cron.AddFunc("0 2 * * *", func() {
 		log.Println("[scheduler] backup_daily: backup subsystem not yet implemented")
-	})
+	}); err != nil {
+		log.Printf("[scheduler] addTasks: register backup_daily: %v", err)
+	}
 
 	// log_rotation — daily at midnight (PART 19). Compresses log files older
 	// than 24 hours and removes files older than 30 days.
-	s.cron.AddFunc("0 0 * * *", func() {
+	if _, err := s.cron.AddFunc("0 0 * * *", func() {
 		s.rotateLogs()
-	})
+	}); err != nil {
+		log.Printf("[scheduler] addTasks: register log_rotation: %v", err)
+	}
 
 	// blocklist_update — daily at 04:00 (PART 19). Placeholder until the
 	// blocklist subsystem lands.
-	s.cron.AddFunc("0 4 * * *", func() {
+	if _, err := s.cron.AddFunc("0 4 * * *", func() {
 		log.Println("[scheduler] blocklist_update: blocklist subsystem not yet implemented")
-	})
+	}); err != nil {
+		log.Printf("[scheduler] addTasks: register blocklist_update: %v", err)
+	}
 
 	// cve_update — daily at 05:00 (PART 19). Placeholder until the CVE
 	// database integration lands.
-	s.cron.AddFunc("0 5 * * *", func() {
+	if _, err := s.cron.AddFunc("0 5 * * *", func() {
 		log.Println("[scheduler] cve_update: CVE database integration not yet implemented")
-	})
+	}); err != nil {
+		log.Printf("[scheduler] addTasks: register cve_update: %v", err)
+	}
 
 	// backup_hourly — disabled by default (PART 19). Registered so the admin
 	// panel can surface and enable it without a restart.

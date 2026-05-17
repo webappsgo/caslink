@@ -52,7 +52,9 @@ func verifyPasswordArgon2id(password, hash string) bool {
 	// Parse parameters
 	var memory, time uint32
 	var threads uint8
-	fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &memory, &time, &threads)
+	if _, err := fmt.Sscanf(parts[3], "m=%d,t=%d,p=%d", &memory, &time, &threads); err != nil {
+		return false
+	}
 
 	// Decode salt and hash
 	salt, err := base64.RawStdEncoding.DecodeString(parts[4])

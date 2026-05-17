@@ -23,7 +23,7 @@ func Handler(version string) http.HandlerFunc {
 			"Version": version,
 			"Theme":   theme,
 		}
-		tmpl.Execute(w, data)
+		_ = tmpl.Execute(w, data)
 	}
 }
 
@@ -33,7 +33,7 @@ func SpecHandler(version string) http.HandlerFunc {
 		spec := generateOpenAPISpec(version)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(spec)
+		_ = json.NewEncoder(w).Encode(spec)
 	}
 }
 

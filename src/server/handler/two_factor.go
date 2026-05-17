@@ -96,7 +96,7 @@ func (h *TwoFactorHandler) Verify(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	// Code is valid! Delete temp session and create full session
-	h.authService.DeleteSession(ctx, cookie.Value)
+	_ = h.authService.DeleteSession(ctx, cookie.Value)
 	
 	// Create full session (7 days default)
 	sessionID, err := h.authService.CreateUserSession(ctx, user.ID, false)

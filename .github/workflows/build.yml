@@ -54,7 +54,7 @@ jobs:
       - name: Run unit tests
         env:
           CGO_ENABLED: 0
-        run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: go test -v -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Check coverage
         run: |

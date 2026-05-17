@@ -87,8 +87,8 @@ func (s *QRService) GenerateQRCode(ctx context.Context, urlID int64, url string,
 		ct = "image/png"
 	}
 
-	// Cache the generated QR code
-	s.saveToCache(ctx, urlID, opts.Format, opts.Size, opts.Style, data)
+	// Cache the generated QR code — best-effort; caller still gets the data on failure.
+	_ = s.saveToCache(ctx, urlID, opts.Format, opts.Size, opts.Style, data)
 
 	return data, ct, nil
 }

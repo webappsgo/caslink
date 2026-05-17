@@ -292,7 +292,7 @@ func (h *AuthUserHandler) Logout(w http.ResponseWriter, r *http.Request) {
 
 	cookie, err := r.Cookie("user_session")
 	if err == nil && cookie.Value != "" {
-		h.authService.DeleteSession(ctx, cookie.Value)
+		_ = h.authService.DeleteSession(ctx, cookie.Value)
 	}
 
 	http.SetCookie(w, &http.Cookie{

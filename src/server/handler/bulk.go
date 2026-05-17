@@ -41,7 +41,7 @@ func (h *BulkHandler) Export(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", `attachment; filename="urls.csv"`)
 		w.WriteHeader(http.StatusOK)
-		w.Write(data)
+		_, _ = w.Write(data)
 
 	case "json":
 		data, err := h.bulkService.ExportJSON(r.Context(), userID)
@@ -51,7 +51,7 @@ func (h *BulkHandler) Export(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write(data)
+		_, _ = w.Write(data)
 
 	default:
 		respondError(w, http.StatusBadRequest, "Invalid format: use csv or json")

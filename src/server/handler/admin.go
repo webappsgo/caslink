@@ -111,7 +111,7 @@ func (h *AdminHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("admin_session")
 	if err == nil {
 		// Delete session from database
-		h.authService.DeleteSession(r.Context(), cookie.Value)
+		_ = h.authService.DeleteSession(r.Context(), cookie.Value)
 	}
 
 	// Delete cookie
@@ -256,7 +256,7 @@ func (h *AdminHandler) renderLogin(w http.ResponseWriter, username, errorMsg str
 		"Version":  h.version,
 		"BasePath": h.basePath(),
 	}
-	t.Execute(w, data)
+	_ = t.Execute(w, data)
 }
 
 // renderDashboard renders the admin dashboard
@@ -372,7 +372,7 @@ func (h *AdminHandler) renderDashboard(w http.ResponseWriter, admin *service.Adm
 		"Mode":     h.mode,
 		"BasePath": h.basePath(),
 	}
-	t.Execute(w, data)
+	_ = t.Execute(w, data)
 }
 
 // UserList handles GET /server/{adminPath}/config/users
@@ -467,7 +467,7 @@ func (h *AdminHandler) UserList(w http.ResponseWriter, r *http.Request) {
 </html>`
 
 	t := template.Must(template.New("userlist").Parse(userListTmpl))
-	t.Execute(w, map[string]interface{}{
+	_ = t.Execute(w, map[string]interface{}{
 		"Admin":    admin,
 		"Users":    users,
 		"Total":    total,
