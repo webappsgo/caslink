@@ -1,7 +1,9 @@
-// Package templates exposes embedded text/HTML templates so callers in
-// sibling packages can read them without violating the go:embed parent-
-// directory restriction.
-package templates
+// Package template exposes embedded email templates so callers in sibling
+// packages can read them without violating the go:embed parent-directory
+// restriction. Import with an alias to avoid shadowing html/template:
+//
+//	import emailtmpl "github.com/casjaysdevdocker/caslink/src/template"
+package template
 
 import _ "embed"
 

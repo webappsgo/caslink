@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/casjaysdevdocker/caslink/src/client/setup"
 	"github.com/casjaysdevdocker/caslink/src/client/tui"
 	"github.com/casjaysdevdocker/caslink/src/common/display"
+	"github.com/casjaysdevdocker/caslink/src/updater"
 )
 
 // Version information — populated by ldflags at build time.
@@ -312,11 +314,41 @@ func handleUpdate(args []string) {
 	if len(args) > 1 && !strings.HasPrefix(args[1], "--") {
 		sub = args[1]
 	}
+
+	ctx := context.Background()
+
 	switch sub {
 	case "check", "":
-		fmt.Println("Checking for updates... (not implemented in this build)")
+		fmt.Printf("caslink-cli %s — checking for updates...\n", Version)
+		release, err := updater.CheckForUpdate(ctx, Version, "stable")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Update check failed: %v\n", err)
+			os.Exit(1)
+		}
+		if release == nil {
+			fmt.Println("Already up to date.")
+		} else {
+			fmt.Printf("Update available: %s\n  Run: caslink-cli --update yes\n", release.TagName)
+		}
+
 	case "yes":
-		fmt.Println("Applying update... (not implemented in this build)")
+		fmt.Printf("caslink-cli %s — checking for updates...\n", Version)
+		release, err := updater.CheckForUpdate(ctx, Version, "stable")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Update check failed: %v\n", err)
+			os.Exit(1)
+		}
+		if release == nil {
+			fmt.Println("Already up to date.")
+			return
+		}
+		fmt.Printf("Updating to %s...\n", release.TagName)
+		if err := updater.DoUpdateFor(ctx, release, updater.GetClientBinaryName()); err != nil {
+			fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Updated to %s. Restart caslink-cli to use the new version.\n", release.TagName)
+
 	case "branch":
 		channel := "stable"
 		if len(args) > 2 {
@@ -324,11 +356,27 @@ func handleUpdate(args []string) {
 		}
 		switch channel {
 		case "stable", "beta", "daily":
-			fmt.Printf("Switching to %s channel... (not implemented in this build)\n", channel)
+			fmt.Printf("caslink-cli %s — checking for %s updates...\n", Version, channel)
+			release, err := updater.CheckForUpdate(ctx, Version, channel)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Update check failed: %v\n", err)
+				os.Exit(1)
+			}
+			if release == nil {
+				fmt.Printf("Already on the latest %s build.\n", channel)
+				return
+			}
+			fmt.Printf("Updating to %s (%s)...\n", release.TagName, channel)
+			if err := updater.DoUpdateFor(ctx, release, updater.GetClientBinaryName()); err != nil {
+				fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("Updated to %s. Restart caslink-cli to use the new version.\n", release.TagName)
 		default:
 			fmt.Fprintf(os.Stderr, "Unknown branch: %s (stable|beta|daily)\n", channel)
 			os.Exit(1)
 		}
+
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown --update subcommand: %s\n", sub)
 		os.Exit(1)

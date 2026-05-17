@@ -10,18 +10,18 @@ import (
 	"time"
 
 	"github.com/casjaysdevdocker/caslink/src/config"
-	"github.com/casjaysdevdocker/caslink/src/templates"
+	emailtmpl "github.com/casjaysdevdocker/caslink/src/template"
 )
 
-// Email templates are sourced from src/templates/email/*.txt.
-// The embed directive lives in the templates package (not here) because
+// Email templates are sourced from src/template/email/*.txt.
+// The embed directive lives in the template package (not here) because
 // embed paths cannot traverse parent directories.
 var (
-	passwordResetTemplate   = templates.PasswordResetEmail
-	passwordChangedTemplate = templates.PasswordChangedEmail
-	welcomeUserTemplate     = templates.WelcomeUserEmail
-	welcomeAdminTemplate    = templates.WelcomeAdminEmail
-	emailVerifyTemplate     = templates.EmailVerifyEmail
+	passwordResetTemplate   = emailtmpl.PasswordResetEmail
+	passwordChangedTemplate = emailtmpl.PasswordChangedEmail
+	welcomeUserTemplate     = emailtmpl.WelcomeUserEmail
+	welcomeAdminTemplate    = emailtmpl.WelcomeAdminEmail
+	emailVerifyTemplate     = emailtmpl.EmailVerifyEmail
 )
 
 // EmailService handles email sending

@@ -88,9 +88,13 @@ func CheckForUpdate(ctx context.Context, currentVersion, branch string) (*Releas
 	return nil, nil
 }
 
-// DoUpdate downloads and installs the update binary.
+// DoUpdate downloads and installs the update for the server binary.
 func DoUpdate(ctx context.Context, release *Release) error {
-	assetName := GetBinaryName()
+	return DoUpdateFor(ctx, release, GetBinaryName())
+}
+
+// DoUpdateFor downloads and installs the update for the named binary asset.
+func DoUpdateFor(ctx context.Context, release *Release, assetName string) error {
 	var downloadURL string
 	var checksumURL string
 	for _, asset := range release.Assets {
@@ -155,9 +159,19 @@ func DoUpdate(ctx context.Context, release *Release) error {
 	return replaceBinary(currentPath, tmpPath)
 }
 
-// GetBinaryName returns the expected release asset name for this platform.
+// GetBinaryName returns the expected release asset name for the server binary.
 func GetBinaryName() string {
-	name := fmt.Sprintf("caslink-%s-%s", runtime.GOOS, runtime.GOARCH)
+	return BinaryNameFor("caslink")
+}
+
+// GetClientBinaryName returns the expected release asset name for the CLI binary.
+func GetClientBinaryName() string {
+	return BinaryNameFor("caslink-cli")
+}
+
+// BinaryNameFor returns the platform-specific asset name for a given binary prefix.
+func BinaryNameFor(prefix string) string {
+	name := fmt.Sprintf("%s-%s-%s", prefix, runtime.GOOS, runtime.GOARCH)
 	if runtime.GOOS == "windows" {
 		name += ".exe"
 	}

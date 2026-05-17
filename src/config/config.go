@@ -374,8 +374,9 @@ func Load(configDir string) (*Config, error) {
 	return &cfg, nil
 }
 
-// applyEnvOverrides overlays environment variables on top of the loaded config
-// per AI.md PART 26 precedence rules. Env vars always win over server.yml.
+// applyEnvOverrides overlays environment variables on top of the loaded config.
+// Checks CASLINK_* prefix first (per AI.md PART 9 / {PROJECT_NAME}_* spec),
+// then falls back to bare names for backward compatibility.
 func applyEnvOverrides(cfg *Config) {
 	if v := envStr("MODE"); v != "" {
 		cfg.Server.Mode = v
@@ -400,7 +401,11 @@ func applyEnvOverrides(cfg *Config) {
 }
 
 // envStr returns the trimmed value of an environment variable, or "".
+// It checks CASLINK_{key} first, then falls back to {key}.
 func envStr(key string) string {
+	if v := os.Getenv("CASLINK_" + key); v != "" {
+		return strings.TrimSpace(v)
+	}
 	v := os.Getenv(key)
 	if v == "" {
 		return ""
