@@ -1,20 +1,68 @@
-name: Release
+name: Build
 
 on:
   push:
-    tags:
-      - 'v*'
-      - '[0-9]*.[0-9]*.[0-9]*'
+    branches:
+      - main
+      - master
+      - devel
+      - dev
+  pull_request:
+    branches:
+      - main
+      - master
 
 permissions:
   contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/devel' || github.ref == 'refs/heads/dev' }}
 
 env:
   PROJECTNAME: caslink
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    container: golang:alpine
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Install lint tools
+        run: |
+          apk add --no-cache git
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+      - name: Run golangci-lint
+        run: golangci-lint run ./...
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    container: golang:alpine
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+
+      - name: Install test dependencies
+        run: apk add --no-cache git
+
+      - name: Run unit tests
+        env:
+          CGO_ENABLED: 0
+        run: go test -v -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Check coverage
+        run: |
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | tr -d '%')
+          echo "Total coverage: ${COVERAGE}%"
+
   build:
     name: Build
+    needs: test
     runs-on: ubuntu-latest
     container: golang:alpine
     strategy:
@@ -47,9 +95,11 @@ jobs:
 
       - name: Set build info
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          VERSION="${TAG#v}"
-          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          if [ -f release.txt ]; then
+            echo "VERSION=$(cat release.txt)" >> $GITHUB_ENV
+          else
+            echo "VERSION=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          fi
           echo "COMMIT_ID=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
           echo "BUILD_DATE=$(date +"%a %b %d, %Y at %H:%M:%S %Z")" >> $GITHUB_ENV
           if [ -f site.txt ]; then
@@ -82,6 +132,7 @@ jobs:
         with:
           name: ${{ env.PROJECTNAME }}-${{ matrix.goos }}-${{ matrix.goarch }}
           path: ${{ env.PROJECTNAME }}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
+          retention-days: 7
 
       - name: Upload CLI artifact
         if: hashFiles('src/client/') != ''
@@ -89,48 +140,4 @@ jobs:
         with:
           name: ${{ env.PROJECTNAME }}-cli-${{ matrix.goos }}-${{ matrix.goarch }}
           path: ${{ env.PROJECTNAME }}-cli-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
-
-  release:
-    name: Release
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4
-        with:
-          path: binaries
-          merge-multiple: true
-
-      - name: Set version
-        run: |
-          TAG="${GITHUB_REF_NAME}"
-          echo "VERSION=${TAG#v}" >> $GITHUB_ENV
-          if [[ "$TAG" == v* ]]; then
-            echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
-          elif [[ "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-            echo "RELEASE_TAG=v$TAG" >> $GITHUB_ENV
-          else
-            echo "RELEASE_TAG=$TAG" >> $GITHUB_ENV
-          fi
-
-      - name: Create version.txt
-        run: echo "${{ env.VERSION }}" > binaries/version.txt
-
-      - name: Create source archive
-        run: |
-          tar --exclude='.git' --exclude='.github' --exclude='.gitea' \
-            --exclude='binaries' --exclude='releases' --exclude='*.tar.gz' \
-            -czf binaries/${{ env.PROJECTNAME }}-${{ env.VERSION }}-source.tar.gz .
-
-      - name: Create Release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          files: binaries/*
-          generate_release_notes: true
-          make_latest: true
+          retention-days: 7

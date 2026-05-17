@@ -8,7 +8,7 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/lib/pq"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/microsoft/go-mssqldb"
 	_ "modernc.org/sqlite"
 )
@@ -34,7 +34,7 @@ func OpenDB(driver, host string, port int, name, username, password, sslMode, fi
 	switch strings.ToLower(driver) {
 	case "postgres", "postgresql":
 		dsn := buildPostgresDSN(host, port, name, username, password, sslMode)
-		db, err := sql.Open("postgres", dsn)
+		db, err := sql.Open("pgx", dsn)
 		if err != nil {
 			return nil, fmt.Errorf("postgres: open failed: %w", err)
 		}
