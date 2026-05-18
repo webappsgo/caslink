@@ -184,6 +184,25 @@ Error, Message}`).
 
 ---
 
+## Pass 2026-05-17 (Audit Round)
+
+### [FIXED] Dockerfile missing `git` from required packages
+- File: `docker/Dockerfile:55`
+- Spec: AI.md PART 27 + docker-rules.md — required packages: `git`, `curl`, `bash`, `tini`, `tor`
+- Gap: `apk add` only installed curl, bash, tini, tor — `git` absent.
+- Fix: Added `git` to the package list.
+
+### [FIXED] `/healthz` only routed under `/api/v1/`
+- File: `src/server/server.go:253`
+- Spec: AI.md PART 13/api-rules — `/healthz` is a PUBLIC alias and must be a direct handler; never redirected to `/server/healthz`.
+- Gap: Only `/server/healthz` existed at the root; `/healthz` was only available at `/api/v1/healthz`. PART 13 explicitly requires the alias to be a direct top-level handler.
+- Fix: Registered `s.router.Get("/healthz", handler.HealthHandler(...))` next to `/server/healthz`.
+
+### Known remaining gaps (out of scope for this round)
+- **Tor hidden service (PART 32):** not implemented. Tor binary is installed in the image but no Go integration exists. Listed in TODO.AI.md for future work.
+- **GeoIP package (PART 20):** scheduler task is a no-op stub; no `src/geoip/` package; database directory `{data_dir}/security/geoip/` not created. Listed for future work.
+- **Tor outbound + cluster scheduler tasks (PART 19):** `tor_health` and `cluster_heartbeat` correctly absent because Tor/cluster not yet enabled.
+
 ## Completed
 
 - helpers.go: respondJSON/respondError now emit canonical `{"ok":true,"data":...}` / `{"ok":false,"error":...}` envelope per PART 9.

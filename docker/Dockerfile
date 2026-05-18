@@ -53,6 +53,7 @@ LABEL org.opencontainers.image.licenses="${LICENSE}" \
 
 # Install required packages including Tor
 RUN apk add --no-cache \
+    git \
     curl \
     bash \
     tini \

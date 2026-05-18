@@ -250,7 +250,9 @@ func (s *Server) setupRoutes() {
 	}
 
 	// Well-known / health — no auth, no CSRF
+	// /healthz is a direct handler (per PART 13: never redirect /healthz to /server/healthz)
 	s.router.Get("/server/healthz", handler.HealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String()))
+	s.router.Get("/healthz", handler.HealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String()))
 	s.router.Get("/version", handler.VersionHandler(s.Version, s.CommitID, s.BuildDate))
 
 	// Swagger/OpenAPI documentation per spec PART 14 + IDEA.md:
