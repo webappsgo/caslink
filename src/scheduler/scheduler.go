@@ -13,6 +13,7 @@ import (
 
 	"github.com/robfig/cron/v3"
 
+	"github.com/casjaysdevdocker/caslink/src/geoip"
 	"github.com/casjaysdevdocker/caslink/src/server/store"
 )
 
@@ -20,17 +21,20 @@ import (
 type Scheduler struct {
 	cron   *cron.Cron
 	store  *store.Store
-	logDir string // path to log directory for log_rotation; may be ""
+	logDir string         // path to log directory for log_rotation; may be ""
+	geoip  *geoip.Service // optional; nil → geoip_update is a no-op
 }
 
 // New creates a new scheduler bound to the given store.
 // logDir is the directory containing application log files; pass ""
-// to skip log rotation.
-func New(st *store.Store, logDir string) *Scheduler {
+// to skip log rotation. geoSvc is optional — when nil the geoip_update
+// task logs and skips.
+func New(st *store.Store, logDir string, geoSvc *geoip.Service) *Scheduler {
 	return &Scheduler{
 		cron:   cron.New(),
 		store:  st,
 		logDir: logDir,
+		geoip:  geoSvc,
 	}
 }
 
@@ -341,11 +345,18 @@ func (s *Scheduler) renewSSL() {
 	// When no certs are registered, this is a no-op.
 }
 
-// updateGeoIP downloads an updated GeoIP database.
-// Silently skips when GeoIP is not configured.
+// updateGeoIP downloads the configured GeoIP databases via the geoip
+// service. Skips silently when the service is not wired (e.g. GeoIP
+// disabled in config).
 func (s *Scheduler) updateGeoIP() {
-	// GeoIP updates are handled by the geoip package when a license key is
-	// configured. When not configured, this is a no-op.
+	if s.geoip == nil || !s.geoip.Enabled() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+	defer cancel()
+	if err := s.geoip.Update(ctx); err != nil {
+		log.Printf("[scheduler] geoip_update: %v", err)
+	}
 }
 
 // runDailyBackup creates a full backup of all application data.

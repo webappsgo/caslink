@@ -13,6 +13,7 @@ import (
 	"github.com/casjaysdevdocker/caslink/src/client/setup"
 	"github.com/casjaysdevdocker/caslink/src/client/tui"
 	"github.com/casjaysdevdocker/caslink/src/common/display"
+	"github.com/casjaysdevdocker/caslink/src/common/i18n"
 	"github.com/casjaysdevdocker/caslink/src/updater"
 )
 
@@ -146,6 +147,10 @@ func applyFlagOverrides(cfg *clientcfg.CLIConfig, args []string) {
 	}
 	if v := flagValue(args, "--color"); v != "" {
 		cfg.Color = v
+	}
+	// Apply --lang as the process-wide i18n default for the client too.
+	if cfg.Lang != "" {
+		i18n.SetDefaultLanguage(cfg.Lang)
 	}
 	// --server and --token are handled per-command via globalFlags.
 }

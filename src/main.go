@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/casjaysdevdocker/caslink/src/common/i18n"
 	"github.com/casjaysdevdocker/caslink/src/config"
 	"github.com/casjaysdevdocker/caslink/src/logger"
 	"github.com/casjaysdevdocker/caslink/src/mode"
@@ -104,7 +105,12 @@ func main() {
 	}
 	// Suppress compiler warning — colorMode is used for future color decisions.
 	_ = colorMode
-	_ = lang
+
+	// Apply --lang as the process-wide fallback language. Invalid codes are
+	// silently ignored by SetDefaultLanguage so a typo never breaks startup.
+	if lang != "" {
+		i18n.SetDefaultLanguage(lang)
+	}
 
 	// Handle --shell completions / init
 	if shellCmd != "" {
@@ -387,7 +393,30 @@ Examples:
 		}
 		fmt.Printf("Mode set to: %s\nRestart the server for changes to take effect.\n", m)
 		os.Exit(0)
-	case "backup", "restore", "setup":
+	case "backup":
+		// Offline backup: pack config + data into a tar.gz. The server may or
+		// may not be running — for SQLite, callers should stop the service
+		// first (warning printed). For external DBs (Postgres/MySQL/MSSQL)
+		// this only captures the filesystem state; DB dumps are out of scope
+		// for this offline path and remain the admin-panel job.
+		dst := ""
+		if len(args) > 0 {
+			dst = args[0]
+		}
+		if err := runOfflineBackup(configDir, dataDir, backupDir, dst); err != nil {
+			fmt.Fprintf(os.Stderr, "Backup failed: %v\n", err)
+			os.Exit(1)
+		}
+	case "restore":
+		if len(args) == 0 {
+			fmt.Fprintf(os.Stderr, "Usage: %s --maintenance restore <file>\n", binaryName)
+			os.Exit(1)
+		}
+		if err := runOfflineRestore(args[0], configDir, dataDir); err != nil {
+			fmt.Fprintf(os.Stderr, "Restore failed: %v\n", err)
+			os.Exit(1)
+		}
+	case "setup":
 		fmt.Fprintf(os.Stderr, "Maintenance command '%s' requires the server to be running. Use the admin panel or API instead.\n", cmd)
 		os.Exit(1)
 	default:

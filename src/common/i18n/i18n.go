@@ -25,6 +25,28 @@ var langKey = contextKey{}
 // supportedLanguages lists every language code embedded in the binary.
 var supportedLanguages = []string{"en", "es", "fr", "de", "zh", "ar", "ja"}
 
+// defaultLanguage is the fallback language used when no Accept-Language
+// header, cookie, or query parameter selects one. Set via SetDefaultLanguage.
+var defaultLanguage = "en"
+
+// SetDefaultLanguage sets the process-wide fallback language. Invalid codes
+// are silently ignored so a bogus --lang flag never breaks startup.
+func SetDefaultLanguage(lang string) {
+	lang = strings.ToLower(strings.TrimSpace(lang))
+	if isSupported(lang) {
+		mu.Lock()
+		defaultLanguage = lang
+		mu.Unlock()
+	}
+}
+
+// DefaultLanguage returns the currently-configured fallback language.
+func DefaultLanguage() string {
+	mu.RLock()
+	defer mu.RUnlock()
+	return defaultLanguage
+}
+
 // translations holds the parsed locale data, keyed by language code.
 var (
 	mu           sync.RWMutex
@@ -69,7 +91,7 @@ func parseAcceptLanguage(header string) string {
 			return base
 		}
 	}
-	return "en"
+	return DefaultLanguage()
 }
 
 // LanguageMiddleware selects the active language for each request using:
@@ -109,7 +131,7 @@ func LanguageMiddleware(next http.Handler) http.Handler {
 
 		// 4. Fallback default.
 		if lang == "" {
-			lang = "en"
+			lang = DefaultLanguage()
 		}
 
 		ctx := context.WithValue(r.Context(), langKey, lang)
@@ -122,7 +144,7 @@ func LangFromContext(ctx context.Context) string {
 	if v, ok := ctx.Value(langKey).(string); ok && v != "" {
 		return v
 	}
-	return "en"
+	return DefaultLanguage()
 }
 
 // T returns the translated string for key in lang. Keys use dot notation (e.g. "errors.not_found").

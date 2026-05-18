@@ -21,6 +21,7 @@ import (
 	"net/http/pprof"
 
 	"github.com/casjaysdevdocker/caslink/src/config"
+	"github.com/casjaysdevdocker/caslink/src/geoip"
 	"github.com/casjaysdevdocker/caslink/src/graphql"
 	"github.com/casjaysdevdocker/caslink/src/logger"
 	appmetrics "github.com/casjaysdevdocker/caslink/src/metrics"
@@ -72,7 +73,19 @@ func New(cfg *config.Config, appMode mode.Mode, dataDir, logDir, pidFile string,
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	sched := scheduler.New(db, logDir)
+	// Initialise the GeoIP service when enabled. Failures are non-fatal —
+	// country blocking and click enrichment gracefully degrade.
+	var geoSvc *geoip.Service
+	if cfg.Server.GeoIP.Enabled {
+		gs, gerr := geoip.New(cfg.Server.GeoIP, dataDir)
+		if gerr != nil {
+			log.Printf("[server] geoip init: %v (disabled)", gerr)
+		} else {
+			geoSvc = gs
+		}
+	}
+
+	sched := scheduler.New(db, logDir, geoSvc)
 
 	renderer, err := tmpl.New()
 	if err != nil {

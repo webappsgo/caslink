@@ -43,6 +43,47 @@ type ServerConfig struct {
 	Features       FeaturesConfig       `yaml:"features"`
 	Notifications  NotificationsConfig  `yaml:"notifications"`
 	Metrics        MetricsConfig        `yaml:"metrics"`
+	GeoIP          GeoIPConfig          `yaml:"geoip"`
+	Tor            TorConfig            `yaml:"tor"`
+}
+
+// GeoIPConfig holds GeoIP database configuration per AI.md PART 20.
+// Databases are sourced from sapics/ip-location-db (no API key required).
+type GeoIPConfig struct {
+	Enabled        bool                 `yaml:"enabled"`
+	Dir            string               `yaml:"dir"`             // {data_dir}/security/geoip when blank
+	DenyCountries  []string             `yaml:"deny_countries"`  // ISO 3166-1 alpha-2
+	AllowCountries []string             `yaml:"allow_countries"` // ISO 3166-1 alpha-2; wins if both set
+	Databases      GeoIPDatabasesConfig `yaml:"databases"`
+}
+
+// GeoIPDatabasesConfig selects which MMDB databases to download/use.
+type GeoIPDatabasesConfig struct {
+	ASN     bool `yaml:"asn"`
+	Country bool `yaml:"country"`
+	City    bool `yaml:"city"`
+	WHOIS   bool `yaml:"whois"`
+}
+
+// TorConfig holds Tor hidden service + outbound network configuration per
+// AI.md PART 32. Hidden service is auto-enabled when the tor binary is found
+// on PATH; this struct only controls outbound network behaviour, performance,
+// and bandwidth caps. Server.tor.binary is auto-detected when blank.
+type TorConfig struct {
+	Binary                    string `yaml:"binary"`
+	UseNetwork                bool   `yaml:"use_network"`
+	AllowUserPreference       bool   `yaml:"allow_user_preference"`
+	MaxCircuits               int    `yaml:"max_circuits"`
+	CircuitTimeout            string `yaml:"circuit_timeout"`
+	BootstrapTimeout          string `yaml:"bootstrap_timeout"`
+	SafeLogging               bool   `yaml:"safe_logging"`
+	MaxStreamsPerCircuit      int    `yaml:"max_streams_per_circuit"`
+	CloseCircuitOnStreamLimit bool   `yaml:"close_circuit_on_stream_limit"`
+	BandwidthRate             string `yaml:"bandwidth_rate"`
+	BandwidthBurst            string `yaml:"bandwidth_burst"`
+	MaxMonthlyBandwidth       string `yaml:"max_monthly_bandwidth"`
+	NumIntroPoints            int    `yaml:"num_intro_points"`
+	VirtualPort               int    `yaml:"virtual_port"`
 }
 
 // SecurityConfig holds security policy configuration per AI.md PART 17.
@@ -639,6 +680,34 @@ func DefaultConfig() *Config {
 						UseStartTLS: true,
 					},
 				},
+			},
+			GeoIP: GeoIPConfig{
+				Enabled:        true,
+				Dir:            "", // resolved to {data_dir}/security/geoip at runtime
+				DenyCountries:  []string{},
+				AllowCountries: []string{},
+				Databases: GeoIPDatabasesConfig{
+					ASN:     true,
+					Country: true,
+					City:    true,
+					WHOIS:   true,
+				},
+			},
+			Tor: TorConfig{
+				Binary:                    "",
+				UseNetwork:                false,
+				AllowUserPreference:       true,
+				MaxCircuits:               32,
+				CircuitTimeout:            "60s",
+				BootstrapTimeout:          "3m",
+				SafeLogging:               true,
+				MaxStreamsPerCircuit:      100,
+				CloseCircuitOnStreamLimit: true,
+				BandwidthRate:             "1 MB",
+				BandwidthBurst:            "2 MB",
+				MaxMonthlyBandwidth:       "100 GB",
+				NumIntroPoints:            3,
+				VirtualPort:               80,
 			},
 		},
 		Web: WebConfig{

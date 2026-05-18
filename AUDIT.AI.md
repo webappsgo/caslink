@@ -229,3 +229,44 @@ Error, Message}`).
 - paths/pid.go + pid_unix.go + pid_windows.go (new): Full PID file lifecycle — CheckPIDFile (reads, validates, removes stale, returns ErrAlreadyRunning if alive), WritePIDFile, RemovePIDFile. Linux: /proc/{pid}/exe readlink + binary name validation to prevent PID-reuse false positives. Other Unix: syscall.Kill(pid, 0). Windows: conservative FindProcess check.
 - server.go: WritePIDFile called in Start() after http.Server setup; PID file removed in signal handler before graceful shutdown. Server timeouts now resolved from config.Server.Limits (read/write/idle) with safe fallbacks. Accepted pidFile param in New().
 - main.go: CheckPIDFile called before server.New() — exits with error if previous instance is alive. --status now queries live /healthz endpoint (5s timeout) and exits 0/1 based on response; displays PID from file if available. Added "strings", "io", "net/http", "time" imports.
+
+## Pass 2026-05-18 (Round 3 — deep spec compliance)
+
+### [FIXED] `--lang` flag was parsed but discarded (`_ = lang`)
+- File: `src/main.go`, `src/client/main.go`, `src/common/i18n/i18n.go`
+- Spec: AI.md PART 31 — `--lang` MUST set the active language on all binaries.
+- Gap: Both server and client parsed `--lang` but dropped it. The i18n middleware always fell back to `"en"`, ignoring operator preference.
+- Fix: Added `SetDefaultLanguage()` / `DefaultLanguage()` to `common/i18n`; the literal `"en"` in `parseAcceptLanguage` and `LangFromContext` now reads from the configurable default. Both `main.go` files call `i18n.SetDefaultLanguage(lang)` after flag parse. Invalid codes are silently ignored so a typo never breaks startup. Language parity across en/es/fr/de/zh/ar/ja verified (29 keys each, identical key sets).
+
+### [FIXED] GeoIP package absent (PART 20)
+- Files: `src/geoip/geoip.go` (new), `src/config/config.go`, `src/scheduler/scheduler.go`, `src/server/server.go`
+- Spec: AI.md PART 20 — ALL projects MUST have built-in GeoIP via sapics/ip-location-db; downloaded on first run, refreshed weekly by scheduler; deny/allow country lists; stored at `{data_dir}/security/geoip/`.
+- Gap: No package, no config, scheduler `geoip_update` was a no-op stub.
+- Fix:
+  - `GeoIPConfig` + `GeoIPDatabasesConfig` added to ServerConfig (yaml `geoip:` block); defaults enable all four databases (asn/country/city/whois).
+  - `src/geoip/geoip.go` implements `Service.New()` (creates `{data_dir}/security/geoip/` with 0o750), `Update(ctx)` (atomic per-DB download from ip-location-db CDN with 5-min per-DB timeout + 200 MB size cap per file), `LastUpdate()`, `CountryAllowed()` (deny/allow with allowlist precedence, private/loopback bypass per spec), `LookupCountry()` (currently returns "" so country blocking gracefully degrades to allow-all per the spec's "if country.mmdb missing, skip with a warning" path).
+  - `scheduler.New()` now accepts a `*geoip.Service`; `updateGeoIP()` calls `Service.Update(ctx)` with a 20-min timeout.
+  - `server.New()` constructs the service when `geoip.enabled=true` and passes it into the scheduler. Construction failures log + degrade, never abort.
+- Remaining: Real MMDB parsing requires `github.com/oschwald/maxminddb-golang`; documented inline so the wiring point is obvious. Click analytics enrichment depends on this final integration.
+
+### [FIXED] Tor config section missing (PART 32)
+- File: `src/config/config.go`
+- Spec: AI.md PART 32 — `server.tor.{binary, use_network, allow_user_preference, max_circuits, circuit_timeout, bootstrap_timeout, safe_logging, max_streams_per_circuit, close_circuit_on_stream_limit, bandwidth_rate, bandwidth_burst, max_monthly_bandwidth, num_intro_points, virtual_port}`.
+- Gap: No `Server.Tor` field on Config; entire YAML surface absent.
+- Fix: Added `TorConfig` struct + `Server.Tor` field with all 14 spec fields; `DefaultConfig()` seeds spec-canonical defaults (3 intro points, 60s circuit timeout, 3m bootstrap, 1 MB / 2 MB bandwidth, 100 GB monthly cap, virtual_port=80, allow_user_preference=true, use_network=false).
+- Remaining: Full Tor process management via `github.com/cretz/bine` (start tor binary when detected on PATH, ADD_ONION hidden service, ControlPort auto, outbound HTTP client routing) tracked separately; config surface is now stable so admin panel and lifecycle code can read consistent values.
+
+### [FIXED] `--maintenance backup` / `--maintenance restore` rejected with "requires server running"
+- Files: `src/main.go`, `src/maintenance.go` (new)
+- Spec: AI.md PART 22 — `--maintenance backup` triggers a manual backup; restore reverses it.
+- Gap: Both commands printed "requires the server to be running" and exited 1.
+- Fix:
+  - `runOfflineBackup(configDir, dataDir, backupDir, dst)` creates a tar.gz of `config/` and `data/` under `caslink-YYYYMMDD-HHMMSS.tar.gz` (or an operator-specified path). Atomic per-file copy, regular files + dirs only (symlinks/specials skipped).
+  - `runOfflineRestore(src, configDir, dataDir)` extracts the archive back into the live config/data dirs; rejects entries containing `..` and entries that resolve outside the target prefix; 1 GiB per-file copy cap to bound malicious archives.
+  - SQLite databases live under the data directory and are included automatically. External DB dumps remain a separate admin-panel concern (no change here).
+
+### Known remaining gaps (acknowledged, not fixed this round)
+- Tor process management (PART 32 lifecycle): config in place; binary start, ADD_ONION, outbound HTTP client need `bine` integration.
+- GeoIP MMDB reader (PART 20): downloads + path management work; lookups return "" until `maxminddb-golang` is linked.
+- Passkeys/WebAuthn (PART 34): TOTP present; WebAuthn registration/login flows still TODO.
+- Federation (PART 37+): not started; tracked separately.
