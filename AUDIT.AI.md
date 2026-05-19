@@ -6,7 +6,25 @@ Audit pass over the spec (`AI.md`, 60829 lines, PARTs 0–37) and `IDEA.md` agai
 the current source under `src/`. Findings grouped by severity. Items marked
 `[FIXED]` were resolved in this audit; the remainder are tracked in
 `TODO.AI.md` (which already captures the larger feature gaps — federation,
-billing, passkeys, GeoIP enrichment, migration runner, etc.).
+billing, passkeys, migration runner, etc.).
+
+## Round 4 (2026-05-18)
+
+### [FIXED] CI Build failing: deprecated `tar.TypeRegA` in maintenance.go
+- File: `src/maintenance.go:164`
+- Gap: `tar.TypeRegA` deprecated since Go 1.11; staticcheck SA1019 blocked Build workflow.
+- Fix: Removed `tar.TypeRegA` from the case label (regular files already covered by `tar.TypeReg`).
+
+### [FIXED] GeoIP MMDB reader not wired — country/city lookups returned ""
+- Files: `src/geoip/geoip.go`, `src/server/service/url.go`, `src/server/server.go`, `go.mod`, `go.sum`
+- Spec: AI.md PART 20 (country/city lookup), PART 9 clicks schema (country, city columns)
+- Gap: `LookupCountry`/`LookupCity` returned empty; `RecordClick` never enriched country/city; the `country`/`city` columns on `clicks` were always NULL.
+- Fix:
+  - Added `github.com/oschwald/maxminddb-golang v1.13.1` (pure Go, CGO_ENABLED=0 safe).
+  - `geoip.Service` now opens country/city/ASN MMDB readers in `New()` and re-opens them after every `Update()` so freshly downloaded databases are picked up without a restart. Readers are RWMutex-guarded; `Close()` releases them.
+  - Implemented `LookupCountry(ip)` (ISO 3166-1 alpha-2) and `LookupCity(ip)` (CityResult{CountryCode, City}) using the maxminddb reader. Falls back gracefully (empty) when the database is absent.
+  - `URLService` gained `SetGeoIP(g)`; `RecordClick` now resolves country/city for public IPs and INSERTs them into `clicks(country, city, ...)`.
+  - `Server` struct holds the geoip service so `setupRoutes` can pass it into `urlService.SetGeoIP`.
 
 For routes, the canonical map is the existing one in `src/server/server.go`
 plus PART 14 + IDEA.md "API surface". For response shapes, the canonical

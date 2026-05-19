@@ -161,7 +161,7 @@ func runOfflineRestore(src, configDir, dataDir string) error {
 			if err := os.MkdirAll(dst, os.FileMode(hdr.Mode)&0o7777); err != nil {
 				return fmt.Errorf("mkdir %q: %w", dst, err)
 			}
-		case tar.TypeReg, tar.TypeRegA:
+		case tar.TypeReg:
 			if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
 				return fmt.Errorf("mkdir parent %q: %w", dst, err)
 			}

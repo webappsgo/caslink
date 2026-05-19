@@ -47,6 +47,7 @@ type Server struct {
 	log         *logger.Logger
 	pidFile     string // path to PID file; empty = no PID file
 	acmeManager *autocert.Manager // non-nil when LE HTTP-01 is active
+	geoip       *geoip.Service    // non-nil when GeoIP is enabled
 
 	// Version information
 	Version   string
@@ -135,6 +136,7 @@ func New(cfg *config.Config, appMode mode.Mode, dataDir, logDir, pidFile string,
 		log:         appLogger,
 		pidFile:     pidFile,
 		acmeManager: acmeMgr,
+		geoip:       geoSvc,
 		Version:     version,
 		CommitID:    commitID,
 		BuildDate:   buildDate,
@@ -216,6 +218,7 @@ func (s *Server) setupRoutes() {
 
 	// Create services
 	urlService := service.NewURLService(s.store)
+	urlService.SetGeoIP(s.geoip)
 	authService := service.NewAuthService(s.store)
 	totpService := service.NewTOTPService(s.store)
 	emailService := service.NewEmailService(s.config)

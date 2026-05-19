@@ -32,9 +32,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/casjaysdevdocker/caslink/src/config"
+	"github.com/oschwald/maxminddb-golang"
 )
 
 // downloadTimeout caps each individual database download.
@@ -53,6 +55,80 @@ var sources = map[string]string{
 type Service struct {
 	dir string
 	cfg config.GeoIPConfig
+
+	mu        sync.RWMutex
+	countryDB *maxminddb.Reader
+	cityDB    *maxminddb.Reader
+	asnDB     *maxminddb.Reader
+}
+
+// CityResult holds the subset of fields the application records for a click.
+type CityResult struct {
+	CountryCode string
+	City        string
+}
+
+// openReader opens an MMDB file if it exists. Returns (nil, nil) when the file
+// is absent so callers can treat geo lookup as best-effort.
+func openReader(path string) (*maxminddb.Reader, error) {
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	r, err := maxminddb.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+// loadReaders opens (or re-opens) the MMDB readers for country/city/ASN.
+// Safe to call repeatedly; closes any previously held readers first.
+func (s *Service) loadReaders() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, r := range []**maxminddb.Reader{&s.countryDB, &s.cityDB, &s.asnDB} {
+		if *r != nil {
+			_ = (*r).Close()
+			*r = nil
+		}
+	}
+	if rdr, err := openReader(filepath.Join(s.dir, "country.mmdb")); err == nil {
+		s.countryDB = rdr
+	} else {
+		log.Printf("[geoip] open country.mmdb: %v", err)
+	}
+	if rdr, err := openReader(filepath.Join(s.dir, "city.mmdb")); err == nil {
+		s.cityDB = rdr
+	} else {
+		log.Printf("[geoip] open city.mmdb: %v", err)
+	}
+	if rdr, err := openReader(filepath.Join(s.dir, "asn.mmdb")); err == nil {
+		s.asnDB = rdr
+	} else {
+		log.Printf("[geoip] open asn.mmdb: %v", err)
+	}
+}
+
+// Close releases all open MMDB readers.
+func (s *Service) Close() error {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, r := range []**maxminddb.Reader{&s.countryDB, &s.cityDB, &s.asnDB} {
+		if *r != nil {
+			_ = (*r).Close()
+			*r = nil
+		}
+	}
+	return nil
 }
 
 // New returns a Service backed by cfg. If cfg.Dir is empty, dataDir is used
@@ -65,7 +141,10 @@ func New(cfg config.GeoIPConfig, dataDir string) (*Service, error) {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, fmt.Errorf("geoip: create dir %q: %w", dir, err)
 	}
-	return &Service{dir: dir, cfg: cfg}, nil
+	s := &Service{dir: dir, cfg: cfg}
+	// Best-effort: if any databases already exist on disk, open them now.
+	s.loadReaders()
+	return s, nil
 }
 
 // Dir returns the resolved database directory.
@@ -115,6 +194,8 @@ func (s *Service) Update(ctx context.Context) error {
 			log.Printf("[geoip] update %s: OK", name)
 		}
 	}
+	// Re-open MMDB readers so subsequent lookups use the freshly downloaded files.
+	s.loadReaders()
 	return lastErr
 }
 
@@ -217,17 +298,74 @@ func (s *Service) CountryAllowed(ip net.IP) bool {
 }
 
 // LookupCountry returns the ISO 3166-1 alpha-2 country code for ip, or "" when
-// the database is absent or the IP is not present. The current build does not
-// link an MMDB reader (preserves CGO_ENABLED=0 + zero extra deps); this
-// returns "" so country blocking gracefully degrades to allow-all per spec.
-// When the project links github.com/oschwald/maxminddb-golang, replace this
-// body with a real lookup.
+// the database is absent or the IP is not present. Uses the
+// github.com/oschwald/maxminddb-golang pure-Go reader (CGO_ENABLED=0 safe).
 func (s *Service) LookupCountry(ip net.IP) string {
-	if s == nil {
+	if s == nil || ip == nil {
 		return ""
 	}
-	_ = filepath.Join(s.dir, "country.mmdb") // path retained for the future reader
-	return ""
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.countryDB == nil {
+		return ""
+	}
+	var rec struct {
+		Country struct {
+			ISOCode string `maxminddb:"iso_code"`
+		} `maxminddb:"country"`
+	}
+	if err := s.countryDB.Lookup(ip, &rec); err != nil {
+		return ""
+	}
+	return strings.ToUpper(rec.Country.ISOCode)
+}
+
+// LookupCity returns the country code and city name for ip. Both fields may be
+// empty when the database is absent, the IP is not present, or the record
+// lacks the field.
+func (s *Service) LookupCity(ip net.IP) CityResult {
+	if s == nil || ip == nil {
+		return CityResult{}
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.cityDB == nil {
+		// Fall back to country-only DB so callers still get a country code.
+		if s.countryDB == nil {
+			return CityResult{}
+		}
+		return CityResult{CountryCode: s.LookupCountryLocked(ip)}
+	}
+	var rec struct {
+		Country struct {
+			ISOCode string `maxminddb:"iso_code"`
+		} `maxminddb:"country"`
+		City struct {
+			Names map[string]string `maxminddb:"names"`
+		} `maxminddb:"city"`
+	}
+	if err := s.cityDB.Lookup(ip, &rec); err != nil {
+		return CityResult{}
+	}
+	city := rec.City.Names["en"]
+	return CityResult{CountryCode: strings.ToUpper(rec.Country.ISOCode), City: city}
+}
+
+// LookupCountryLocked is LookupCountry without taking the lock — callers must
+// already hold s.mu (read or write).
+func (s *Service) LookupCountryLocked(ip net.IP) string {
+	if s == nil || ip == nil || s.countryDB == nil {
+		return ""
+	}
+	var rec struct {
+		Country struct {
+			ISOCode string `maxminddb:"iso_code"`
+		} `maxminddb:"country"`
+	}
+	if err := s.countryDB.Lookup(ip, &rec); err != nil {
+		return ""
+	}
+	return strings.ToUpper(rec.Country.ISOCode)
 }
 
 // ErrDatabaseMissing is returned when a required MMDB file is absent.

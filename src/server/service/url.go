@@ -7,10 +7,12 @@ import (
 	"database/sql"
 	"fmt"
 	"math/big"
+	"net"
 	"net/url"
 	"strings"
 	"time"
 
+	"github.com/casjaysdevdocker/caslink/src/geoip"
 	"github.com/casjaysdevdocker/caslink/src/server/model"
 	"github.com/casjaysdevdocker/caslink/src/server/store"
 )
@@ -18,6 +20,7 @@ import (
 // URLService handles URL shortening operations
 type URLService struct {
 	store *store.Store
+	geo   *geoip.Service // optional; nil means click records leave country/city empty
 }
 
 // NewURLService creates a new URL service
@@ -25,6 +28,12 @@ func NewURLService(st *store.Store) *URLService {
 	return &URLService{
 		store: st,
 	}
+}
+
+// SetGeoIP attaches a GeoIP service so click analytics can be enriched with
+// country/city. Pass nil to disable enrichment.
+func (s *URLService) SetGeoIP(g *geoip.Service) {
+	s.geo = g
 }
 
 // CreateURL creates a new shortened URL
@@ -143,15 +152,27 @@ func (s *URLService) GetURLByCode(ctx context.Context, shortCode string) (*model
 	return &u, nil
 }
 
-// RecordClick records a click/visit to a URL
+// RecordClick records a click/visit to a URL. When the GeoIP service is
+// available and the IP is public, country/city are looked up and stored
+// alongside the hashed IP, user agent, and referrer (AI.md PART 20 + PART 9
+// clicks schema).
 func (s *URLService) RecordClick(ctx context.Context, urlID int64, ipAddress, userAgent, referrer string) error {
 	// Hash IP for privacy (per SPEC PART 36: anonymize_ips)
 	ipHash := hashIP(ipAddress)
 
-	query := `INSERT INTO clicks (url_id, ip_hash, user_agent, referrer)
-	          VALUES (?, ?, ?, ?)`
+	var country, city string
+	if s.geo != nil && s.geo.Enabled() {
+		if ip := net.ParseIP(ipAddress); ip != nil && !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast() {
+			res := s.geo.LookupCity(ip)
+			country = res.CountryCode
+			city = res.City
+		}
+	}
 
-	_, err := s.store.ServerDB.ExecContext(ctx, query, urlID, ipHash, userAgent, referrer)
+	query := `INSERT INTO clicks (url_id, ip_hash, country, city, user_agent, referrer)
+	          VALUES (?, ?, ?, ?, ?, ?)`
+
+	_, err := s.store.ServerDB.ExecContext(ctx, query, urlID, ipHash, country, city, userAgent, referrer)
 	if err != nil {
 		return fmt.Errorf("failed to record click: %w", err)
 	}
