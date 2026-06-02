@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"html/template"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -447,7 +448,7 @@ func (h *UserSecurityHandler) renderPasskeysPage(w http.ResponseWriter, r *http.
 	var creds []service.PasskeyCredential
 	if h.webauthnService != nil {
 		var err error
-		creds, err = h.webauthnService.GetCredentials(user.ID)
+		creds, err = h.webauthnService.GetCredentials(strconv.FormatInt(user.ID, 10))
 		if err != nil {
 			http.Error(w, "Failed to load passkey credentials", http.StatusInternalServerError)
 			return
@@ -489,7 +490,7 @@ func (h *UserSecurityHandler) handlePasskeyAction(w http.ResponseWriter, r *http
 			})
 			return
 		}
-		if err := h.webauthnService.DeleteCredential(user.ID, credID); err != nil {
+		if err := h.webauthnService.DeleteCredential(strconv.FormatInt(user.ID, 10), credID); err != nil {
 			respondJSON(w, http.StatusBadRequest, map[string]interface{}{
 				"ok": false, "error": "DELETE_FAILED", "message": err.Error(),
 			})
@@ -518,7 +519,8 @@ func (h *UserSecurityHandler) PasskeyBeginRegister(w http.ResponseWriter, r *htt
 		return
 	}
 
-	options, sessionData, err := h.webauthnService.BeginRegistration(user.ID, user.Username, user.Username)
+	userIDStr := strconv.FormatInt(user.ID, 10)
+	options, sessionData, err := h.webauthnService.BeginRegistration(userIDStr, user.Username, user.Username)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"ok": false, "error": "BEGIN_REGISTRATION_FAILED", "message": err.Error(),
@@ -526,7 +528,7 @@ func (h *UserSecurityHandler) PasskeyBeginRegister(w http.ResponseWriter, r *htt
 		return
 	}
 
-	sessID, err := h.webauthnService.StoreSession(user.ID, sessionData)
+	sessID, err := h.webauthnService.StoreSession(userIDStr, sessionData)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"ok": false, "error": "SESSION_STORE_FAILED",
@@ -579,7 +581,7 @@ func (h *UserSecurityHandler) PasskeyFinishRegister(w http.ResponseWriter, r *ht
 		return
 	}
 
-	if storedUserID != user.ID {
+	if storedUserID != strconv.FormatInt(user.ID, 10) {
 		respondJSON(w, http.StatusForbidden, map[string]interface{}{
 			"ok": false, "error": "SESSION_USER_MISMATCH",
 		})
@@ -592,7 +594,7 @@ func (h *UserSecurityHandler) PasskeyFinishRegister(w http.ResponseWriter, r *ht
 		credName = "Passkey"
 	}
 
-	if err := h.webauthnService.FinishRegistration(user.ID, credName, sessionData, r); err != nil {
+	if err := h.webauthnService.FinishRegistration(strconv.FormatInt(user.ID, 10), credName, sessionData, r); err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]interface{}{
 			"ok": false, "error": "REGISTRATION_FAILED", "message": err.Error(),
 		})
@@ -622,7 +624,8 @@ func (h *UserSecurityHandler) PasskeyBeginLogin(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	options, sessionData, err := h.webauthnService.BeginLogin(user.ID, user.Username)
+	userIDStr := strconv.FormatInt(user.ID, 10)
+	options, sessionData, err := h.webauthnService.BeginLogin(userIDStr, user.Username)
 	if err != nil {
 		respondJSON(w, http.StatusBadRequest, map[string]interface{}{
 			"ok": false, "error": "BEGIN_LOGIN_FAILED", "message": err.Error(),
@@ -630,7 +633,7 @@ func (h *UserSecurityHandler) PasskeyBeginLogin(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	sessID, err := h.webauthnService.StoreSession(user.ID, sessionData)
+	sessID, err := h.webauthnService.StoreSession(userIDStr, sessionData)
 	if err != nil {
 		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
 			"ok": false, "error": "SESSION_STORE_FAILED",
@@ -683,14 +686,14 @@ func (h *UserSecurityHandler) PasskeyFinishLogin(w http.ResponseWriter, r *http.
 		return
 	}
 
-	if storedUserID != user.ID {
+	if storedUserID != strconv.FormatInt(user.ID, 10) {
 		respondJSON(w, http.StatusForbidden, map[string]interface{}{
 			"ok": false, "error": "SESSION_USER_MISMATCH",
 		})
 		return
 	}
 
-	if err := h.webauthnService.FinishLogin(user.ID, sessionData, r); err != nil {
+	if err := h.webauthnService.FinishLogin(strconv.FormatInt(user.ID, 10), sessionData, r); err != nil {
 		respondJSON(w, http.StatusUnauthorized, map[string]interface{}{
 			"ok": false, "error": "LOGIN_FAILED", "message": err.Error(),
 		})
