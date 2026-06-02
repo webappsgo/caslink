@@ -32,6 +32,7 @@ import (
 	"github.com/casjaysdevdocker/caslink/src/server/store"
 	"github.com/casjaysdevdocker/caslink/src/server/tmpl"
 	"github.com/casjaysdevdocker/caslink/src/swagger"
+	apktor "github.com/casjaysdevdocker/caslink/src/tor"
 )
 
 // Server represents the HTTP server
@@ -45,9 +46,12 @@ type Server struct {
 	renderer    *tmpl.Renderer
 	metrics     *appmetrics.Metrics
 	log         *logger.Logger
-	pidFile     string // path to PID file; empty = no PID file
-	acmeManager *autocert.Manager // non-nil when LE HTTP-01 is active
-	geoip       *geoip.Service    // non-nil when GeoIP is enabled
+	pidFile     string                // path to PID file; empty = no PID file
+	acmeManager *autocert.Manager     // non-nil when LE HTTP-01 is active
+	geoip       *geoip.Service        // non-nil when GeoIP is enabled
+	torManager  *apktor.TorManager    // non-nil when Tor binary was found at startup
+	configDir   string                // kept for TorManager (port not known until Start)
+	dataDir     string                // kept for TorManager
 
 	// Version information
 	Version   string
@@ -56,7 +60,7 @@ type Server struct {
 }
 
 // New creates a new server instance
-func New(cfg *config.Config, appMode mode.Mode, dataDir, logDir, pidFile string, appLogger *logger.Logger, version, commitID, buildDate string) (*Server, error) {
+func New(cfg *config.Config, appMode mode.Mode, dataDir, logDir, pidFile string, appLogger *logger.Logger, version, commitID, buildDate string, configDir, backupDir string) (*Server, error) {
 	// Open database — use configured driver if set, otherwise default to SQLite
 	dbCfg := cfg.Server.Database
 	var db *store.Store
@@ -86,7 +90,7 @@ func New(cfg *config.Config, appMode mode.Mode, dataDir, logDir, pidFile string,
 		}
 	}
 
-	sched := scheduler.New(db, logDir, geoSvc)
+	sched := scheduler.New(db, logDir, configDir, dataDir, backupDir, geoSvc)
 
 	renderer, err := tmpl.New()
 	if err != nil {
@@ -137,6 +141,8 @@ func New(cfg *config.Config, appMode mode.Mode, dataDir, logDir, pidFile string,
 		pidFile:     pidFile,
 		acmeManager: acmeMgr,
 		geoip:       geoSvc,
+		configDir:   configDir,
+		dataDir:     dataDir,
 		Version:     version,
 		CommitID:    commitID,
 		BuildDate:   buildDate,
@@ -231,6 +237,23 @@ func (s *Server) setupRoutes() {
 
 	// Token service (needed by user handler and bearer middleware)
 	tokenService := service.NewTokenService(s.store)
+
+	// WebAuthn service — RPID and origin derived from configured FQDN.
+	// Failures are non-fatal; passkey endpoints will return 503 when nil.
+	var webauthnSvc *service.WebAuthnService
+	if fqdn := s.config.Server.FQDN; fqdn != "" {
+		scheme := "http"
+		if s.config.Server.SSL.Enabled {
+			scheme = "https"
+		}
+		origin := scheme + "://" + fqdn
+		var webauthnErr error
+		webauthnSvc, webauthnErr = service.NewWebAuthnService(s.store, fqdn, origin)
+		if webauthnErr != nil {
+			log.Printf("[webauthn] service init failed (passkeys disabled): %v", webauthnErr)
+			webauthnSvc = nil
+		}
+	}
 
 	// Create handlers
 	urlHandler := handler.NewURLHandler(urlService, analyticsService)
@@ -365,12 +388,19 @@ func (s *Server) setupRoutes() {
 		r.Get("/security", userHandler.Security)
 
 		// Security sub-routes per spec PART 23
-		userSecurityHandler := handler.NewUserSecurityHandler(authService, totpService, qrService, emailService, s.renderer, s.config)
+		userSecurityHandler := handler.NewUserSecurityHandler(authService, totpService, qrService, emailService, webauthnSvc, s.renderer, s.config)
 		r.HandleFunc("/security/password", userSecurityHandler.Password)
 		r.HandleFunc("/security/sessions", userSecurityHandler.Sessions)
 		r.HandleFunc("/security/2fa", userSecurityHandler.TwoFactor)
 		r.HandleFunc("/security/passkeys", userSecurityHandler.Passkeys)
 		r.HandleFunc("/security/recovery", userSecurityHandler.Recovery)
+
+		// WebAuthn ceremony API endpoints (passkey registration/login per PART 34).
+		// These are intentionally under /users/* (requires user session).
+		r.Post("/passkeys/begin-register", userSecurityHandler.PasskeyBeginRegister)
+		r.Post("/passkeys/finish-register", userSecurityHandler.PasskeyFinishRegister)
+		r.Post("/passkeys/begin-login", userSecurityHandler.PasskeyBeginLogin)
+		r.Post("/passkeys/finish-login", userSecurityHandler.PasskeyFinishLogin)
 
 		// Custom domain management per PART 35
 		r.Get("/domains", domainHandler.ListUserDomains)
@@ -614,6 +644,12 @@ func (s *Server) Start(address string, port int) error {
 		}
 	}
 
+	// Initialise Tor hidden service (PART 32). TorManager.Start() is a no-op
+	// when no Tor binary is found; it never returns an error in that case.
+	torMgr := apktor.NewTorManager(context.Background(), port, &s.config.Server.Tor, s.configDir, s.dataDir)
+	s.torManager = torMgr
+	s.scheduler.SetTorChecker(torMgr)
+
 	// Start scheduler
 	s.scheduler.Start()
 
@@ -625,6 +661,11 @@ func (s *Server) Start(address string, port int) error {
 		}
 	}()
 
+	// Start Tor hidden service after the HTTP listener is up.
+	if err := s.torManager.Start(); err != nil {
+		log.Printf("[tor] startup error: %v", err)
+	}
+
 	// Wait for interrupt signal
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
@@ -635,6 +676,13 @@ func (s *Server) Start(address string, port int) error {
 	// Remove PID file before stopping so monitoring knows we are shutting down.
 	if s.pidFile != "" {
 		_ = os.Remove(s.pidFile)
+	}
+
+	// Stop Tor hidden service before scheduler/HTTP so health checks stop first.
+	if s.torManager != nil {
+		if err := s.torManager.Stop(); err != nil {
+			log.Printf("[tor] stop error: %v", err)
+		}
 	}
 
 	// Stop scheduler

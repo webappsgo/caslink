@@ -16,23 +16,25 @@ import (
 
 // UserSecurityHandler handles user security-related routes.
 type UserSecurityHandler struct {
-	authService  *service.AuthService
-	totpService  *service.TOTPService
-	qrService    *service.QRService
-	emailService *service.EmailService
-	renderer     *tmpl.Renderer
-	config       *config.Config
+	authService    *service.AuthService
+	totpService    *service.TOTPService
+	qrService      *service.QRService
+	emailService   *service.EmailService
+	webauthnService *service.WebAuthnService
+	renderer       *tmpl.Renderer
+	config         *config.Config
 }
 
 // NewUserSecurityHandler creates a new user security handler.
-func NewUserSecurityHandler(authService *service.AuthService, totpService *service.TOTPService, qrService *service.QRService, emailService *service.EmailService, renderer *tmpl.Renderer, cfg *config.Config) *UserSecurityHandler {
+func NewUserSecurityHandler(authService *service.AuthService, totpService *service.TOTPService, qrService *service.QRService, emailService *service.EmailService, webauthnSvc *service.WebAuthnService, renderer *tmpl.Renderer, cfg *config.Config) *UserSecurityHandler {
 	return &UserSecurityHandler{
-		authService:  authService,
-		totpService:  totpService,
-		qrService:    qrService,
-		emailService: emailService,
-		renderer:     renderer,
-		config:       cfg,
+		authService:    authService,
+		totpService:    totpService,
+		qrService:      qrService,
+		emailService:   emailService,
+		webauthnService: webauthnSvc,
+		renderer:       renderer,
+		config:         cfg,
 	}
 }
 
@@ -434,25 +436,43 @@ func (h *UserSecurityHandler) Passkeys(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// passkeysPageData extends the base page data with credential list.
+type passkeysPageData struct {
+	tmpl.Data
+	Credentials []service.PasskeyCredential
+}
+
 // renderPasskeysPage renders the passkey management page.
 func (h *UserSecurityHandler) renderPasskeysPage(w http.ResponseWriter, r *http.Request, user *service.User) {
-	data := newPageData(h.config, r, "Passkeys", user)
+	var creds []service.PasskeyCredential
+	if h.webauthnService != nil {
+		var err error
+		creds, err = h.webauthnService.GetCredentials(user.ID)
+		if err != nil {
+			http.Error(w, "Failed to load passkey credentials", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	data := passkeysPageData{
+		Data:        newPageData(h.config, r, "Passkeys", user),
+		Credentials: creds,
+	}
 	h.renderer.Render(w, "template/page/users/security/passkeys.html", data)
 }
 
-// Passkey represents a WebAuthn credential
-type Passkey struct {
-	ID        string
-	Name      string
-	CreatedAt string
-	LastUsed  string
-}
-
-// handlePasskeyAction handles passkey registration/deletion.
-// WebAuthn requires browser-side JavaScript for the credential ceremony;
-// this endpoint returns 501 until the WebAuthn library and DB schema are
-// provisioned (go-webauthn/webauthn + passkeys table migration).
+// handlePasskeyAction handles passkey deletion from the management page.
+// Registration is handled by the dedicated API endpoints below.
 func (h *UserSecurityHandler) handlePasskeyAction(w http.ResponseWriter, r *http.Request, user *service.User) {
+	if h.webauthnService == nil {
+		respondJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
+			"ok":      false,
+			"error":   "WEBAUTHN_NOT_CONFIGURED",
+			"message": "WebAuthn is not configured on this server.",
+		})
+		return
+	}
+
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Invalid form data", http.StatusBadRequest)
 		return
@@ -461,15 +481,227 @@ func (h *UserSecurityHandler) handlePasskeyAction(w http.ResponseWriter, r *http
 	action := strings.TrimSpace(r.FormValue("action"))
 
 	switch action {
-	case "register", "delete":
-		respondJSON(w, http.StatusNotImplemented, map[string]interface{}{
-			"ok":      false,
-			"error":   "NOT_SUPPORTED",
-			"message": "Passkey management requires WebAuthn setup. Enable the webauthn feature in server configuration.",
-		})
+	case "delete":
+		credID := strings.TrimSpace(r.FormValue("credential_id"))
+		if credID == "" {
+			respondJSON(w, http.StatusBadRequest, map[string]interface{}{
+				"ok": false, "error": "MISSING_CREDENTIAL_ID",
+			})
+			return
+		}
+		if err := h.webauthnService.DeleteCredential(user.ID, credID); err != nil {
+			respondJSON(w, http.StatusBadRequest, map[string]interface{}{
+				"ok": false, "error": "DELETE_FAILED", "message": err.Error(),
+			})
+			return
+		}
+		http.Redirect(w, r, "/users/security/passkeys", http.StatusSeeOther)
 	default:
 		http.Error(w, "Invalid action", http.StatusBadRequest)
 	}
+}
+
+// PasskeyBeginRegister handles POST /api/v1/users/passkeys/begin-register.
+// Returns a WebAuthn PublicKeyCredentialCreationOptions JSON blob and sets
+// a short-lived ceremony cookie.
+func (h *UserSecurityHandler) PasskeyBeginRegister(w http.ResponseWriter, r *http.Request) {
+	if h.webauthnService == nil {
+		respondJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
+			"ok": false, "error": "WEBAUTHN_NOT_CONFIGURED",
+		})
+		return
+	}
+
+	user, ok := getUserFromRequest(r)
+	if !ok {
+		respondJSON(w, http.StatusUnauthorized, map[string]interface{}{"ok": false, "error": "UNAUTHORIZED"})
+		return
+	}
+
+	options, sessionData, err := h.webauthnService.BeginRegistration(user.ID, user.Username, user.Username)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": "BEGIN_REGISTRATION_FAILED", "message": err.Error(),
+		})
+		return
+	}
+
+	sessID, err := h.webauthnService.StoreSession(user.ID, sessionData)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": "SESSION_STORE_FAILED",
+		})
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "wa_reg_session",
+		Value:    sessID,
+		Path:     "/",
+		MaxAge:   service.WebAuthnSessionCookieAge,
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   r.TLS != nil,
+	})
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "data": options})
+}
+
+// PasskeyFinishRegister handles POST /api/v1/users/passkeys/finish-register.
+// Validates the authenticator response and stores the credential.
+func (h *UserSecurityHandler) PasskeyFinishRegister(w http.ResponseWriter, r *http.Request) {
+	if h.webauthnService == nil {
+		respondJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
+			"ok": false, "error": "WEBAUTHN_NOT_CONFIGURED",
+		})
+		return
+	}
+
+	user, ok := getUserFromRequest(r)
+	if !ok {
+		respondJSON(w, http.StatusUnauthorized, map[string]interface{}{"ok": false, "error": "UNAUTHORIZED"})
+		return
+	}
+
+	cookie, err := r.Cookie("wa_reg_session")
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": "MISSING_SESSION", "message": "No registration session found.",
+		})
+		return
+	}
+
+	sessionData, storedUserID, err := h.webauthnService.LoadSession(cookie.Value)
+	if err != nil || sessionData == nil {
+		respondJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": "INVALID_SESSION", "message": "Registration session expired or invalid.",
+		})
+		return
+	}
+
+	if storedUserID != user.ID {
+		respondJSON(w, http.StatusForbidden, map[string]interface{}{
+			"ok": false, "error": "SESSION_USER_MISMATCH",
+		})
+		return
+	}
+
+	// Parse optional credential name from query parameter or JSON body header.
+	credName := r.URL.Query().Get("name")
+	if credName == "" {
+		credName = "Passkey"
+	}
+
+	if err := h.webauthnService.FinishRegistration(user.ID, credName, sessionData, r); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": "REGISTRATION_FAILED", "message": err.Error(),
+		})
+		return
+	}
+
+	// Clear ceremony cookie.
+	http.SetCookie(w, &http.Cookie{
+		Name: "wa_reg_session", Value: "", Path: "/", MaxAge: -1,
+	})
+	respondJSON(w, http.StatusOK, map[string]interface{}{"ok": true})
+}
+
+// PasskeyBeginLogin handles POST /api/v1/users/passkeys/begin-login.
+// Returns a WebAuthn PublicKeyCredentialRequestOptions JSON blob.
+func (h *UserSecurityHandler) PasskeyBeginLogin(w http.ResponseWriter, r *http.Request) {
+	if h.webauthnService == nil {
+		respondJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
+			"ok": false, "error": "WEBAUTHN_NOT_CONFIGURED",
+		})
+		return
+	}
+
+	user, ok := getUserFromRequest(r)
+	if !ok {
+		respondJSON(w, http.StatusUnauthorized, map[string]interface{}{"ok": false, "error": "UNAUTHORIZED"})
+		return
+	}
+
+	options, sessionData, err := h.webauthnService.BeginLogin(user.ID, user.Username)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": "BEGIN_LOGIN_FAILED", "message": err.Error(),
+		})
+		return
+	}
+
+	sessID, err := h.webauthnService.StoreSession(user.ID, sessionData)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"ok": false, "error": "SESSION_STORE_FAILED",
+		})
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "wa_login_session",
+		Value:    sessID,
+		Path:     "/",
+		MaxAge:   service.WebAuthnSessionCookieAge,
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   r.TLS != nil,
+	})
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "data": options})
+}
+
+// PasskeyFinishLogin handles POST /api/v1/users/passkeys/finish-login.
+// Validates the assertion and updates the credential in the database.
+func (h *UserSecurityHandler) PasskeyFinishLogin(w http.ResponseWriter, r *http.Request) {
+	if h.webauthnService == nil {
+		respondJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
+			"ok": false, "error": "WEBAUTHN_NOT_CONFIGURED",
+		})
+		return
+	}
+
+	user, ok := getUserFromRequest(r)
+	if !ok {
+		respondJSON(w, http.StatusUnauthorized, map[string]interface{}{"ok": false, "error": "UNAUTHORIZED"})
+		return
+	}
+
+	cookie, err := r.Cookie("wa_login_session")
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": "MISSING_SESSION", "message": "No login session found.",
+		})
+		return
+	}
+
+	sessionData, storedUserID, err := h.webauthnService.LoadSession(cookie.Value)
+	if err != nil || sessionData == nil {
+		respondJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"ok": false, "error": "INVALID_SESSION", "message": "Login session expired or invalid.",
+		})
+		return
+	}
+
+	if storedUserID != user.ID {
+		respondJSON(w, http.StatusForbidden, map[string]interface{}{
+			"ok": false, "error": "SESSION_USER_MISMATCH",
+		})
+		return
+	}
+
+	if err := h.webauthnService.FinishLogin(user.ID, sessionData, r); err != nil {
+		respondJSON(w, http.StatusUnauthorized, map[string]interface{}{
+			"ok": false, "error": "LOGIN_FAILED", "message": err.Error(),
+		})
+		return
+	}
+
+	// Clear ceremony cookie.
+	http.SetCookie(w, &http.Cookie{
+		Name: "wa_login_session", Value: "", Path: "/", MaxAge: -1,
+	})
+	respondJSON(w, http.StatusOK, map[string]interface{}{"ok": true})
 }
 
 // Recovery renders the recovery keys management page

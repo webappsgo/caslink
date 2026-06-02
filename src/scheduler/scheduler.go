@@ -13,29 +13,52 @@ import (
 
 	"github.com/robfig/cron/v3"
 
+	"github.com/casjaysdevdocker/caslink/src/backup"
 	"github.com/casjaysdevdocker/caslink/src/geoip"
 	"github.com/casjaysdevdocker/caslink/src/server/store"
 )
 
+// torHealthChecker is a minimal interface for checking and restarting the Tor service.
+// Using an interface breaks the circular import between scheduler ↔ tor packages.
+type torHealthChecker interface {
+	IsRunning() bool
+	Restart() error
+}
+
 // Scheduler manages background tasks.
 type Scheduler struct {
-	cron   *cron.Cron
-	store  *store.Store
-	logDir string         // path to log directory for log_rotation; may be ""
-	geoip  *geoip.Service // optional; nil → geoip_update is a no-op
+	cron       *cron.Cron
+	store      *store.Store
+	logDir     string           // path to log directory for log_rotation; may be ""
+	geoip      *geoip.Service   // optional; nil → geoip_update is a no-op
+	configDir  string           // for daily backup; may be ""
+	dataDir    string           // for daily backup; may be ""
+	backupDir  string           // for daily backup; "" disables automatic backups
+	torChecker torHealthChecker // optional; nil → tor_health is a no-op
 }
 
 // New creates a new scheduler bound to the given store.
-// logDir is the directory containing application log files; pass ""
-// to skip log rotation. geoSvc is optional — when nil the geoip_update
-// task logs and skips.
-func New(st *store.Store, logDir string, geoSvc *geoip.Service) *Scheduler {
+// logDir is the directory containing application log files; pass "" to skip
+// log rotation. configDir, dataDir, and backupDir are used by the daily backup
+// task — pass "" for backupDir to disable automatic backups. geoSvc is
+// optional — when nil the geoip_update task logs and skips.
+func New(st *store.Store, logDir, configDir, dataDir, backupDir string, geoSvc *geoip.Service) *Scheduler {
 	return &Scheduler{
-		cron:   cron.New(),
-		store:  st,
-		logDir: logDir,
-		geoip:  geoSvc,
+		cron:      cron.New(),
+		store:     st,
+		logDir:    logDir,
+		geoip:     geoSvc,
+		configDir: configDir,
+		dataDir:   dataDir,
+		backupDir: backupDir,
 	}
+}
+
+// SetTorChecker wires an optional Tor health-checker after the scheduler has
+// been created but before it is started. Safe to call from any goroutine
+// as long as Start() has not yet been called.
+func (s *Scheduler) SetTorChecker(tc torHealthChecker) {
+	s.torChecker = tc
 }
 
 // Start starts the scheduler.
@@ -138,6 +161,14 @@ func (s *Scheduler) addTasks() {
 		s.updateCVE()
 	}); err != nil {
 		log.Printf("[scheduler] addTasks: register cve_update: %v", err)
+	}
+
+	// tor_health — every 5 minutes (PART 19/32). Checks the Tor hidden-service
+	// process and restarts it if it has stopped. Skips when Tor is not wired.
+	if _, err := s.cron.AddFunc("@every 5m", func() {
+		s.checkTorHealth()
+	}); err != nil {
+		log.Printf("[scheduler] addTasks: register tor_health: %v", err)
 	}
 
 	// backup_hourly — disabled by default (PART 19). Registered so the admin
@@ -360,10 +391,16 @@ func (s *Scheduler) updateGeoIP() {
 }
 
 // runDailyBackup creates a full backup of all application data.
-// Silently skips when backup is not configured.
+// Silently skips when backupDir is not configured.
 func (s *Scheduler) runDailyBackup() {
-	// Daily backups are handled by the maintenance/backup package when a
-	// backup directory is configured. When not configured, this is a no-op.
+	if s.backupDir == "" {
+		return
+	}
+	if err := backup.RunBackup(s.configDir, s.dataDir, s.backupDir, ""); err != nil {
+		log.Printf("[scheduler] backup_daily: %v", err)
+		return
+	}
+	log.Printf("[scheduler] backup_daily: backup complete")
 }
 
 // updateBlocklist downloads updated IP/domain blocklists.
@@ -378,4 +415,24 @@ func (s *Scheduler) updateBlocklist() {
 func (s *Scheduler) updateCVE() {
 	// CVE database updates are handled when CVE sources are configured.
 	// When not configured, this is a no-op.
+}
+
+// checkTorHealth verifies the Tor hidden-service process is running.
+// If it is not running, a restart is attempted. Silently skips when no
+// Tor checker has been registered (i.e. Tor binary was not found at startup).
+func (s *Scheduler) checkTorHealth() {
+	if s.torChecker == nil {
+		return
+	}
+
+	if s.torChecker.IsRunning() {
+		return
+	}
+
+	log.Printf("[scheduler] tor_health: Tor process is not running — attempting restart")
+	if err := s.torChecker.Restart(); err != nil {
+		log.Printf("[scheduler] tor_health: restart failed: %v", err)
+		return
+	}
+	log.Printf("[scheduler] tor_health: Tor restarted successfully")
 }

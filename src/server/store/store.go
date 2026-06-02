@@ -348,6 +348,35 @@ func (s *Store) initUsersSchema() error {
 			last_used INTEGER,
 			UNIQUE(user_type, user_id)
 		)`,
+
+		// Passkey credentials (WebAuthn v3 per PART 34)
+		`CREATE TABLE IF NOT EXISTS passkey_credentials (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			credential_id TEXT NOT NULL UNIQUE,
+			public_key BLOB NOT NULL,
+			attestation_type TEXT NOT NULL DEFAULT '',
+			aaguid TEXT NOT NULL DEFAULT '',
+			sign_count INTEGER NOT NULL DEFAULT 0,
+			user_verified INTEGER NOT NULL DEFAULT 0,
+			backup_eligible INTEGER NOT NULL DEFAULT 0,
+			backup_state INTEGER NOT NULL DEFAULT 0,
+			name TEXT NOT NULL DEFAULT '',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			last_used DATETIME,
+			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		)`,
+
+		// Recovery keys for 2FA/passkey recovery (hashed, single-use, per PART 34)
+		`CREATE TABLE IF NOT EXISTS recovery_keys (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			key_hash TEXT NOT NULL,
+			used INTEGER NOT NULL DEFAULT 0,
+			used_at DATETIME,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		)`,
 	}
 
 	for _, query := range queries {
@@ -373,6 +402,10 @@ func (s *Store) initUsersSchema() error {
 		`CREATE INDEX IF NOT EXISTS idx_org_members_user_id ON org_members(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_password_resets_token_hash ON password_resets(token_hash)`,
 		`CREATE INDEX IF NOT EXISTS idx_email_verifications_token_hash ON email_verifications(token_hash)`,
+		`CREATE INDEX IF NOT EXISTS idx_passkey_credentials_user_id ON passkey_credentials(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_passkey_credentials_credential_id ON passkey_credentials(credential_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_recovery_keys_user_id ON recovery_keys(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_recovery_keys_hash ON recovery_keys(key_hash) WHERE used = 0`,
 	}
 	for _, query := range usersUpdates {
 		ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)

@@ -321,7 +321,7 @@ func main() {
 	defer appLogger.Close()
 
 	// Create and start server
-	srv, err := server.New(cfg, detectedMode, dataDir, logDir, pidFile, appLogger, Version, CommitID, BuildDate)
+	srv, err := server.New(cfg, detectedMode, dataDir, logDir, pidFile, appLogger, Version, CommitID, BuildDate, configDir, backupDir)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Server initialization failed: %v\n", err)
 		os.Exit(1)

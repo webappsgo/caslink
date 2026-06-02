@@ -4,12 +4,145 @@
   <div class="mb-4">
     <a href="/users/security" class="text-muted text-sm">&larr; Back to Security</a>
   </div>
-  <div class="card">
+
+  <div class="card mb-4">
     <h1 class="mb-2">Passkeys</h1>
-    <p class="text-muted text-sm mb-4">Use Face ID, Touch ID, or a hardware security key to sign in without a password.</p>
-    <div class="alert alert-warn">
-      Passkey support is coming soon. WebAuthn registration requires browser-side JavaScript that is not yet implemented.
+    <p class="text-muted text-sm mb-4">
+      Use Face ID, Touch ID, Windows Hello, or a hardware security key to sign in without a password.
+    </p>
+
+    {{if .Credentials}}
+    <div class="mb-4">
+      <h2 class="card-title">Registered Passkeys</h2>
+      <ul class="list-group mb-3" id="passkey-list">
+        {{range .Credentials}}
+        <li class="list-group-item flex justify-between align-center gap-2">
+          <div>
+            <span class="font-medium">{{.Name}}</span>
+            <span class="text-muted text-sm ml-2">Added {{.CreatedAt.Format "2006-01-02"}}</span>
+            {{if .LastUsed}}
+            <span class="text-muted text-sm ml-2">· Last used {{.LastUsed.Format "2006-01-02"}}</span>
+            {{end}}
+          </div>
+          <form method="POST" action="/users/security/passkeys" onsubmit="return confirm('Remove this passkey?')">
+            <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="credential_id" value="{{.ID}}">
+            <button type="submit" class="btn btn-sm btn-danger">Remove</button>
+          </form>
+        </li>
+        {{end}}
+      </ul>
+    </div>
+    {{end}}
+
+    <div id="register-section">
+      <h2 class="card-title">Add a New Passkey</h2>
+      <p class="text-muted text-sm mb-3">
+        Give your passkey a name so you can identify it later (e.g. "MacBook Touch ID" or "YubiKey 5C").
+      </p>
+      <div class="form-group mb-3">
+        <label for="passkey-name" class="form-label">Passkey name</label>
+        <input type="text" id="passkey-name" class="form-control" placeholder="My Passkey" maxlength="64" value="Passkey">
+      </div>
+      <button type="button" id="register-btn" class="btn btn-primary">
+        Register Passkey
+      </button>
+      <div id="register-status" class="mt-3 hidden"></div>
     </div>
   </div>
+
+  <div class="card">
+    <h2 class="card-title">About Passkeys</h2>
+    <ul class="text-sm text-muted list-disc pl-4 mt-2 space-y-1">
+      <li>Passkeys are stored on your device or in your password manager, not on this server.</li>
+      <li>They are phishing-resistant — they only work on this site.</li>
+      <li>Each device or authenticator must be registered separately.</li>
+      <li>If you lose all your passkeys, use your password or a recovery key to regain access.</li>
+    </ul>
+  </div>
 </div>
+
+<script>
+(function () {
+  if (!window.PublicKeyCredential) {
+    document.getElementById("register-btn").disabled = true;
+    showStatus("error", "Your browser does not support passkeys. Try Chrome, Safari 16+, Firefox 119+, or Edge.");
+    return;
+  }
+
+  function showStatus(type, msg) {
+    var el = document.getElementById("register-status");
+    el.className = "mt-3 alert alert-" + (type === "error" ? "danger" : "success");
+    el.textContent = msg;
+    el.classList.remove("hidden");
+  }
+
+  function bufferDecode(value) {
+    return Uint8Array.from(atob(value.replace(/-/g, "+").replace(/_/g, "/")), function (c) { return c.charCodeAt(0); });
+  }
+
+  function bufferEncode(value) {
+    return btoa(String.fromCharCode.apply(null, new Uint8Array(value)))
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+  }
+
+  document.getElementById("register-btn").addEventListener("click", function () {
+    var name = document.getElementById("passkey-name").value.trim() || "Passkey";
+    var btn = this;
+    btn.disabled = true;
+    btn.textContent = "Waiting for authenticator…";
+
+    fetch("/users/passkeys/begin-register", {
+      method: "POST",
+      headers: { "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]') ? document.querySelector('meta[name="csrf-token"]').content : "" },
+      credentials: "same-origin"
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (body) {
+      if (!body.ok) throw new Error(body.message || body.error);
+      var opts = body.data;
+      opts.publicKey.challenge = bufferDecode(opts.publicKey.challenge);
+      opts.publicKey.user.id = bufferDecode(opts.publicKey.user.id);
+      if (opts.publicKey.excludeCredentials) {
+        opts.publicKey.excludeCredentials = opts.publicKey.excludeCredentials.map(function (c) {
+          return { id: bufferDecode(c.id), type: c.type, transports: c.transports };
+        });
+      }
+      return navigator.credentials.create(opts);
+    })
+    .then(function (cred) {
+      var body = {
+        id: cred.id,
+        rawId: bufferEncode(cred.rawId),
+        type: cred.type,
+        response: {
+          attestationObject: bufferEncode(cred.response.attestationObject),
+          clientDataJSON: bufferEncode(cred.response.clientDataJSON)
+        }
+      };
+      return fetch("/users/passkeys/finish-register?name=" + encodeURIComponent(name), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]') ? document.querySelector('meta[name="csrf-token"]').content : ""
+        },
+        credentials: "same-origin",
+        body: JSON.stringify(body)
+      });
+    })
+    .then(function (r) { return r.json(); })
+    .then(function (body) {
+      if (!body.ok) throw new Error(body.message || body.error);
+      showStatus("success", "Passkey registered successfully. Refreshing…");
+      setTimeout(function () { window.location.reload(); }, 1200);
+    })
+    .catch(function (err) {
+      showStatus("error", err.message || "Registration failed. Please try again.");
+      btn.disabled = false;
+      btn.textContent = "Register Passkey";
+    });
+  });
+}());
+</script>
 {{end}}
