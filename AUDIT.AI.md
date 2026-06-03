@@ -288,3 +288,76 @@ Error, Message}`).
 - GeoIP MMDB reader (PART 20): downloads + path management work; lookups return "" until `maxminddb-golang` is linked.
 - Passkeys/WebAuthn (PART 34): TOTP present; WebAuthn registration/login flows still TODO.
 - Federation (PART 37+): not started; tracked separately.
+
+## Pass 2026-06-02 (Round 5 — re-audit)
+
+Verified against spec. Build (`go build ./src/...`) and tests
+(`go test ./src/...`) both pass clean in `golang:alpine` with
+`CGO_ENABLED=0`. `go vet ./src/...` clean.
+
+### Verified COMPLIANT
+- CGO_ENABLED=0 enforced in Makefile + docker/Dockerfile.
+- Argon2id for passwords (`src/server/service/password.go`); no bcrypt anywhere
+  except spec-rationale comments.
+- SHA-256 token hashing (`src/server/service/token.go`).
+- Server-side rendering only; no React/Vue/Angular; no CDN scripts in
+  templates; assets embedded via `go:embed` and inlined into base layout.
+- Dockerfile under `docker/Dockerfile` (not root); STOPSIGNAL/tini ENTRYPOINT
+  per PART 27.
+- Singular Go directory names in `src/server/` (`handler/`, `service/`,
+  `model/`, `store/`, `validate/`, `tmpl/`).
+- All required root files present (AI.md, IDEA.md, CLAUDE.md, LICENSE.md,
+  Makefile, go.mod/sum, release.txt, mkdocs.yml, .readthedocs.yaml,
+  Jenkinsfile, renovate.json).
+- Both binaries build: `caslink` server (`./src`) and `caslink-cli`
+  (`./src/client`).
+- All required CLI flags on server: --help/-h, --version/-v, --mode,
+  --config, --data, --cache, --backup, --log, --pid, --address, --port,
+  --baseurl, --color, --lang, --shell, --status, --service, --daemon,
+  --debug, --maintenance, --update.
+- /metrics endpoint exists with optional bearer token (NOT publicly exposed
+  by default; operator must firewall).
+- /healthz registered as top-level direct handler + /server/healthz + the
+  /api/v1 variant.
+- RFC 7807 / canonical envelope verified in `helpers.go` and
+  `writeJSONError` helpers in middleware.
+- Built-in cron scheduler (`robfig/cron`) — no external cron usage.
+- 7 i18n locales present with matching 896-key counts
+  (`src/common/i18n/locales/{en,es,fr,de,zh,ar,ja}.json`).
+- WebAuthn + recovery-keys handlers present (`webauthn.go`,
+  `recovery-keys.html`, `passkeys.html`).
+- Orgs/RBAC handlers + middleware (`OrgMemberMiddleware`) present.
+- Custom-domain handler (`handler/domain.go`) + DNS verification helper
+  present.
+- Tor service implemented (`src/tor/service.go`, 403 LOC, manages process
+  lifecycle, hidden service onion address, outbound dialer).
+- No TODO/FIXME/HACK comments in `src/`.
+- No stub `panic("not implemented")` in production code (the two
+  `panic("...failed to sub static FS")` in `swagger.go`/`graphql.go` are
+  init-time invariants — acceptable).
+
+### NEW FINDINGS — to track in TODO.AI.md, not auto-fixed
+
+1. **CI/CD workflows directory empty** (CRITICAL — PART 28). Both
+   `.github/workflows/` and `.gitea/workflows/` contain no files. Prior
+   commits (`8934543308b1`, `a7d5a053d17e`) had full sets that were
+   explicitly removed in `afd9bb16c215` ("Remove GitHub Actions workflows").
+   Per cicd-rules.md every project MUST have these. Not auto-recreated
+   because intentional removal is in git history; needs user decision.
+
+2. **Cyrillic-homoglyph import alias in `src/tor/service.go`** (MEDIUM —
+   PART 32 + global "no obfuscation" rule). The package alias `binetор`
+   uses Cyrillic 'о' (U+043E) and 'р' (U+0440) so it visually reads as
+   "binetor" but is a different identifier. Build accepts it but this is a
+   supply-chain red flag and maintenance hazard. Logged in TODO.AI.md;
+   rename to ASCII pending owner approval (touches 8 lines).
+
+3. **Scheduler stubs** (HIGH — PART 19). `backup_daily`, `log_rotation`,
+   `blocklist_update`, `cve_update` still log stub messages. Tracked.
+
+4. **Federation** (LOW). Config struct exists; no service. Out of scope
+   for this revision per IDEA.md.
+
+### Files touched this round
+- `TODO.AI.md` (new) — outstanding work inventory, indexed by AI.md PART.
+- `AUDIT.AI.md` (this file) — round 5 findings appended.

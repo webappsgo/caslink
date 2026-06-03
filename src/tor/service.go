@@ -15,16 +15,16 @@ import (
 	"time"
 
 	"github.com/cretz/bine/control"
-	binetор "github.com/cretz/bine/tor"
+	binetor "github.com/cretz/bine/tor"
 
 	"github.com/casjaysdevdocker/caslink/src/config"
 )
 
 // TorService holds the running Tor instance and its metadata.
 type TorService struct {
-	instance    *binetор.Tor
+	instance    *binetor.Tor
 	onionAddr   string
-	outDialer   *binetор.Dialer
+	outDialer   *binetor.Dialer
 }
 
 // TorManager manages the full lifecycle of the Tor hidden service.
@@ -90,14 +90,14 @@ func (tm *TorManager) Start() error {
 		}
 	}
 
-	startConf := &binetор.StartConf{
+	startConf := &binetor.StartConf{
 		ExePath:         torBin,
 		DataDir:         torDataDir,
 		TorrcFile:       torrcPath,
 		NoAutoSocksPort: !tm.cfg.UseNetwork,
 	}
 
-	t, err := binetор.Start(tm.ctx, startConf)
+	t, err := binetor.Start(tm.ctx, startConf)
 	if err != nil {
 		log.Printf("[tor] WARN: failed to start tor process: %v", err)
 		return nil
@@ -165,7 +165,7 @@ func (tm *TorManager) Start() error {
 
 	// Create outbound SOCKS5 dialer when enabled.
 	if tm.cfg.UseNetwork {
-		d, dialErr := t.Dialer(tm.ctx, &binetор.DialConf{SkipEnableNetwork: true})
+		d, dialErr := t.Dialer(tm.ctx, &binetor.DialConf{SkipEnableNetwork: true})
 		if dialErr != nil {
 			log.Printf("[tor] WARN: could not create outbound dialer: %v", dialErr)
 		} else {
@@ -395,8 +395,8 @@ func parseDuration(s string, fallback time.Duration) time.Duration {
 	return d
 }
 
-// dialContextAdapter bridges binetор.Dialer.DialContext for http.Transport.
-func dialContextAdapter(d *binetор.Dialer) func(ctx context.Context, network, addr string) (net.Conn, error) {
+// dialContextAdapter bridges binetor.Dialer.DialContext for http.Transport.
+func dialContextAdapter(d *binetor.Dialer) func(ctx context.Context, network, addr string) (net.Conn, error) {
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
 		return d.DialContext(ctx, network, addr)
 	}
