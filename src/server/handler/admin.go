@@ -682,3 +682,55 @@ func (h *AdminHandler) APIActivateUser(w http.ResponseWriter, r *http.Request) {
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "active"})
 }
+
+// RegenerateRecoveryKeys handles POST /server/{adminPath}/config/users/{id}/recovery-keys
+// Admin-override: force-regenerate all recovery keys for a user regardless of 2FA state.
+func (h *AdminHandler) RegenerateRecoveryKeys(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid user ID", http.StatusBadRequest)
+		return
+	}
+
+	keys, err := h.userAdminService.ForceRegenerateRecoveryKeys(r.Context(), id)
+	if err != nil {
+		http.Error(w, "Failed to regenerate recovery keys", http.StatusInternalServerError)
+		return
+	}
+
+	// Render a simple admin confirmation page showing the new keys once.
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	t := template.Must(template.New("rk").Parse(`<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Recovery Keys Regenerated</title></head>
+<body>
+<h1>Recovery Keys Regenerated</h1>
+<p><strong>User ID {{.UserID}}</strong> — new recovery keys (shown once only):</p>
+<ol>{{range .Keys}}<li><code>{{.}}</code></li>{{end}}</ol>
+<p><a href="{{.BackURL}}">Back to user</a></p>
+</body></html>`))
+	_ = t.Execute(w, map[string]interface{}{
+		"UserID":  id,
+		"Keys":    keys,
+		"BackURL": fmt.Sprintf("%s/config/users/%d", h.basePath(), id),
+	})
+}
+
+// APIRegenerateRecoveryKeys handles POST /api/v1/server/{adminPath}/config/users/{id}/recovery-keys
+func (h *AdminHandler) APIRegenerateRecoveryKeys(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid user ID")
+		return
+	}
+
+	keys, err := h.userAdminService.ForceRegenerateRecoveryKeys(r.Context(), id)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to regenerate recovery keys")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"ok":            true,
+		"recovery_keys": keys,
+	})
+}

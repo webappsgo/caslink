@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 	"regexp"
 	"strings"
@@ -228,6 +231,189 @@ func (s *OrgService) IsMember(ctx context.Context, orgID, userID int64) (bool, s
 	}
 
 	return true, role, nil
+}
+
+// OrgToken represents an API token scoped to an organisation.
+type OrgToken struct {
+	ID          int64      `json:"id"`
+	OrgID       int64      `json:"org_id"`
+	CreatedBy   int64      `json:"created_by"`
+	Name        string     `json:"name"`
+	Permissions []string   `json:"permissions"`
+	CreatedAt   time.Time  `json:"created_at"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
+	LastUsedAt  *time.Time `json:"last_used_at,omitempty"`
+	Active      bool       `json:"active"`
+}
+
+// CreateOrgToken creates a new API token scoped to the given org.
+// Only org owners and admins may create tokens (caller must enforce this).
+// Returns the saved OrgToken and the single-use plain-text token.
+// The plain token is NOT stored — only its SHA-256 hex digest is persisted.
+func (s *OrgService) CreateOrgToken(ctx context.Context, orgID, createdBy int64, name string, permissions []string) (*OrgToken, string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return nil, "", fmt.Errorf("failed to generate token bytes: %w", err)
+	}
+	plainToken := hex.EncodeToString(raw)
+
+	sum := sha256.Sum256([]byte(plainToken))
+	tokenHash := hex.EncodeToString(sum[:])
+
+	permsJSON := "[" + strings.Join(func() []string {
+		out := make([]string, len(permissions))
+		for i, p := range permissions {
+			out[i] = `"` + strings.ReplaceAll(p, `"`, `\"`) + `"`
+		}
+		return out
+	}(), ",") + "]"
+
+	now := time.Now()
+	res, err := s.store.UsersDB.ExecContext(ctx,
+		`INSERT INTO org_tokens (org_id, created_by, name, token_hash, permissions, created_at, active)
+		 VALUES (?, ?, ?, ?, ?, ?, 1)`,
+		orgID, createdBy, name, tokenHash, permsJSON, now,
+	)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to insert org token: %w", err)
+	}
+
+	id, _ := res.LastInsertId()
+	tok := &OrgToken{
+		ID:          id,
+		OrgID:       orgID,
+		CreatedBy:   createdBy,
+		Name:        name,
+		Permissions: permissions,
+		CreatedAt:   now,
+		Active:      true,
+	}
+	return tok, plainToken, nil
+}
+
+// ListOrgTokens returns all active tokens for the given org.
+func (s *OrgService) ListOrgTokens(ctx context.Context, orgID int64) ([]*OrgToken, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	rows, err := s.store.UsersDB.QueryContext(ctx,
+		`SELECT id, org_id, created_by, name, permissions, created_at, expires_at, last_used_at, active
+		 FROM org_tokens WHERE org_id = ? AND active = 1 ORDER BY created_at DESC`,
+		orgID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query org tokens: %w", err)
+	}
+	defer rows.Close()
+
+	var tokens []*OrgToken
+	for rows.Next() {
+		var t OrgToken
+		var expiresAt, lastUsedAt sql.NullTime
+		var permsJSON string
+		if err := rows.Scan(&t.ID, &t.OrgID, &t.CreatedBy, &t.Name, &permsJSON,
+			&t.CreatedAt, &expiresAt, &lastUsedAt, &t.Active); err != nil {
+			return nil, fmt.Errorf("failed to scan org token: %w", err)
+		}
+		if expiresAt.Valid {
+			t.ExpiresAt = &expiresAt.Time
+		}
+		if lastUsedAt.Valid {
+			t.LastUsedAt = &lastUsedAt.Time
+		}
+		tokens = append(tokens, &t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("org token row error: %w", err)
+	}
+	return tokens, nil
+}
+
+// RevokeOrgToken marks an org token as inactive (soft delete).
+// tokenID must belong to orgID — callers must ensure this to prevent IDOR.
+func (s *OrgService) RevokeOrgToken(ctx context.Context, tokenID, orgID int64) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	res, err := s.store.UsersDB.ExecContext(ctx,
+		`UPDATE org_tokens SET active = 0 WHERE id = ? AND org_id = ?`,
+		tokenID, orgID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to revoke org token: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("token not found")
+	}
+	return nil
+}
+
+// TransferOwnership transfers organisation ownership from currentOwnerID to
+// newOwnerID. Both users must already be members. The old owner's role is
+// downgraded to 'admin' to preserve their membership. All role changes are
+// performed atomically inside a transaction.
+func (s *OrgService) TransferOwnership(ctx context.Context, orgID, currentOwnerID, newOwnerID int64) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	tx, err := s.store.UsersDB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Confirm the org exists and currentOwnerID is the owner.
+	var ownerID int64
+	if err := tx.QueryRowContext(ctx,
+		`SELECT owner_id FROM organizations WHERE id = ?`, orgID,
+	).Scan(&ownerID); err == sql.ErrNoRows {
+		return fmt.Errorf("organization not found")
+	} else if err != nil {
+		return fmt.Errorf("failed to load organization: %w", err)
+	}
+	if ownerID != currentOwnerID {
+		return fmt.Errorf("caller is not the organization owner")
+	}
+
+	// New owner must already be a member.
+	var newRole string
+	if err := tx.QueryRowContext(ctx,
+		`SELECT role FROM org_members WHERE org_id = ? AND user_id = ?`, orgID, newOwnerID,
+	).Scan(&newRole); err == sql.ErrNoRows {
+		return fmt.Errorf("new owner must already be an organization member")
+	} else if err != nil {
+		return fmt.Errorf("failed to check new owner membership: %w", err)
+	}
+
+	// Demote the current owner to admin.
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE org_members SET role = 'admin' WHERE org_id = ? AND user_id = ?`,
+		orgID, currentOwnerID,
+	); err != nil {
+		return fmt.Errorf("failed to demote current owner: %w", err)
+	}
+
+	// Promote the new owner.
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE org_members SET role = 'owner' WHERE org_id = ? AND user_id = ?`,
+		orgID, newOwnerID,
+	); err != nil {
+		return fmt.Errorf("failed to promote new owner: %w", err)
+	}
+
+	// Update the organizations.owner_id column.
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE organizations SET owner_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		newOwnerID, orgID,
+	); err != nil {
+		return fmt.Errorf("failed to update organization owner: %w", err)
+	}
+
+	return tx.Commit()
 }
 
 // generateSlug generates a URL-friendly slug from a name

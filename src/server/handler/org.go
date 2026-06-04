@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -424,4 +425,164 @@ func (h *OrgHandler) APIGetMembers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{"members": members})
+}
+
+// APICreateOrgToken handles POST /api/v1/orgs/{slug}/tokens
+// Only org owners and admins may create tokens.
+func (h *OrgHandler) APICreateOrgToken(w http.ResponseWriter, r *http.Request) {
+	user, ok := getUserFromRequest(r)
+	if !ok {
+		respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "Authentication required"})
+		return
+	}
+
+	slug := chi.URLParam(r, "slug")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	org, err := h.orgService.GetOrganizationBySlug(ctx, slug)
+	if err != nil {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Organization not found"})
+		return
+	}
+
+	isMember, role, err := h.orgService.IsMember(ctx, org.ID, user.ID)
+	if err != nil || !isMember || (role != "owner" && role != "admin") {
+		respondJSON(w, http.StatusForbidden, map[string]string{"error": "Only org owners and admins can create tokens"})
+		return
+	}
+
+	var req struct {
+		Name        string   `json:"name"`
+		Permissions []string `json:"permissions"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
+		return
+	}
+	if req.Permissions == nil {
+		req.Permissions = []string{}
+	}
+
+	tok, plainToken, err := h.orgService.CreateOrgToken(ctx, org.ID, user.ID, req.Name, req.Permissions)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create token"})
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, map[string]interface{}{
+		"ok":    true,
+		"token": plainToken,
+		"data":  tok,
+	})
+}
+
+// APIListOrgTokens handles GET /api/v1/orgs/{slug}/tokens
+// Returns all active tokens for the org. Only members can list tokens.
+func (h *OrgHandler) APIListOrgTokens(w http.ResponseWriter, r *http.Request) {
+	user, ok := getUserFromRequest(r)
+	if !ok {
+		respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "Authentication required"})
+		return
+	}
+
+	slug := chi.URLParam(r, "slug")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	org, err := h.orgService.GetOrganizationBySlug(ctx, slug)
+	if err != nil {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Organization not found"})
+		return
+	}
+
+	isMember, _, err := h.orgService.IsMember(ctx, org.ID, user.ID)
+	if err != nil || !isMember {
+		respondJSON(w, http.StatusForbidden, map[string]string{"error": "Access denied"})
+		return
+	}
+
+	tokens, err := h.orgService.ListOrgTokens(ctx, org.ID)
+	if err != nil {
+		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to list tokens"})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "data": tokens})
+}
+
+// APIRevokeOrgToken handles DELETE /api/v1/orgs/{slug}/tokens/{tokenID}
+// Only org owners and admins may revoke tokens.
+func (h *OrgHandler) APIRevokeOrgToken(w http.ResponseWriter, r *http.Request) {
+	user, ok := getUserFromRequest(r)
+	if !ok {
+		respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "Authentication required"})
+		return
+	}
+
+	slug := chi.URLParam(r, "slug")
+	tokenIDStr := chi.URLParam(r, "tokenID")
+	tokenID, err := strconv.ParseInt(tokenIDStr, 10, 64)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid token ID"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	org, err := h.orgService.GetOrganizationBySlug(ctx, slug)
+	if err != nil {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Organization not found"})
+		return
+	}
+
+	isMember, role, err := h.orgService.IsMember(ctx, org.ID, user.ID)
+	if err != nil || !isMember || (role != "owner" && role != "admin") {
+		respondJSON(w, http.StatusForbidden, map[string]string{"error": "Only org owners and admins can revoke tokens"})
+		return
+	}
+
+	if err := h.orgService.RevokeOrgToken(ctx, tokenID, org.ID); err != nil {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Token not found"})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{"ok": true})
+}
+
+// APITransferOrgOwnership handles POST /api/v1/orgs/{slug}/transfer
+// Only the current owner may transfer ownership. The new owner must already be a member.
+func (h *OrgHandler) APITransferOrgOwnership(w http.ResponseWriter, r *http.Request) {
+	user, ok := getUserFromRequest(r)
+	if !ok {
+		respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "Authentication required"})
+		return
+	}
+
+	slug := chi.URLParam(r, "slug")
+
+	var req struct {
+		NewOwnerID int64 `json:"new_owner_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.NewOwnerID == 0 {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "new_owner_id is required"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	org, err := h.orgService.GetOrganizationBySlug(ctx, slug)
+	if err != nil {
+		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Organization not found"})
+		return
+	}
+
+	if err := h.orgService.TransferOwnership(ctx, org.ID, user.ID, req.NewOwnerID); err != nil {
+		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "message": "Ownership transferred"})
 }

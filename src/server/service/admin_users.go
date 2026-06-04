@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/casjaysdevdocker/caslink/src/server/store"
 )
 
@@ -160,6 +162,55 @@ func (s *UserAdminService) ActivateUser(ctx context.Context, id int64) error {
 		return fmt.Errorf("user not found")
 	}
 	return nil
+}
+
+// ForceRegenerateRecoveryKeys replaces all unused recovery keys for the given
+// user with a fresh set. This is the admin-override path described in PART 17/34.
+// The plain-text keys are returned exactly once; subsequent calls produce a new set.
+func (s *UserAdminService) ForceRegenerateRecoveryKeys(ctx context.Context, userID int64) ([]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	plainKeys := make([]string, recoveryKeyCount)
+	for i := range plainKeys {
+		key, err := generateRecoveryKey()
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate recovery key %d: %w", i+1, err)
+		}
+		plainKeys[i] = key
+	}
+
+	userIDStr := fmt.Sprintf("%d", userID)
+
+	tx, err := s.store.UsersDB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Remove existing unused keys for this user.
+	if _, err = tx.ExecContext(ctx,
+		`DELETE FROM recovery_keys WHERE user_id = ? AND used = 0`,
+		userIDStr,
+	); err != nil {
+		return nil, fmt.Errorf("failed to clear recovery keys: %w", err)
+	}
+
+	for _, key := range plainKeys {
+		hash := hashRecoveryKey(key)
+		if _, err = tx.ExecContext(ctx,
+			`INSERT INTO recovery_keys (id, user_id, key_hash, used, created_at) VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)`,
+			uuid.New().String(), userIDStr, hash,
+		); err != nil {
+			return nil, fmt.Errorf("failed to insert recovery key: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit recovery keys: %w", err)
+	}
+
+	return plainKeys, nil
 }
 
 // scanAdminUser scans one row from a users query into an AdminUser.

@@ -452,6 +452,8 @@ func (s *Server) setupRoutes() {
 			ar.Get("/config/users/{id}", adminHandler.UserDetail)
 			ar.Post("/config/users/{id}/suspend", adminHandler.SuspendUser)
 			ar.Post("/config/users/{id}/activate", adminHandler.ActivateUser)
+			// Admin force-regenerate recovery keys (PART 17/34)
+			ar.Post("/config/users/{id}/recovery-keys", adminHandler.RegenerateRecoveryKeys)
 		})
 	})
 
@@ -490,6 +492,8 @@ func (s *Server) setupRoutes() {
 			ar.Get("/config/users/{id}", adminHandler.APIUserDetail)
 			ar.Post("/config/users/{id}/suspend", adminHandler.APISuspendUser)
 			ar.Post("/config/users/{id}/activate", adminHandler.APIActivateUser)
+			// Admin force-regenerate recovery keys (PART 17/34)
+			ar.Post("/config/users/{id}/recovery-keys", adminHandler.APIRegenerateRecoveryKeys)
 		})
 
 		// URL management endpoints (require Bearer auth per spec)
@@ -519,6 +523,12 @@ func (s *Server) setupRoutes() {
 			ar.Post("/", orgHandler.APICreateOrg)
 			ar.Get("/{slug}", orgHandler.APIGetOrg)
 			ar.Get("/{slug}/members", orgHandler.APIGetMembers)
+			// Org-scoped API tokens (PART 35)
+			ar.Get("/{slug}/tokens", orgHandler.APIListOrgTokens)
+			ar.Post("/{slug}/tokens", orgHandler.APICreateOrgToken)
+			ar.Delete("/{slug}/tokens/{tokenID}", orgHandler.APIRevokeOrgToken)
+			// Org ownership transfer (PART 35)
+			ar.Post("/{slug}/transfer", orgHandler.APITransferOrgOwnership)
 		})
 	})
 
