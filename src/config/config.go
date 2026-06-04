@@ -166,12 +166,14 @@ type TrustedProxiesConfig struct {
 
 // SessionConfig holds admin and user session cookie settings per AI.md PART 12.
 type SessionConfig struct {
-	Admin            SessionCookieConfig `yaml:"admin"`
-	User             SessionCookieConfig `yaml:"user"`
-	ExtendOnActivity bool                `yaml:"extend_on_activity"`
-	Secure           string              `yaml:"secure"`    // auto|true|false
-	HTTPOnly         bool                `yaml:"http_only"`
-	SameSite         string              `yaml:"same_site"` // strict|lax|none
+	Admin              SessionCookieConfig `yaml:"admin"`
+	User               SessionCookieConfig `yaml:"user"`
+	ExtendOnActivity   bool                `yaml:"extend_on_activity"`
+	Secure             string              `yaml:"secure"`             // auto|true|false
+	HTTPOnly           bool                `yaml:"http_only"`
+	SameSite           string              `yaml:"same_site"`          // strict|lax|none
+	Timeout            string              `yaml:"timeout"`            // e.g. "24h"
+	RememberMeTimeout  string              `yaml:"remember_me_timeout"` // e.g. "720h"
 }
 
 // SessionCookieConfig holds per-role session cookie settings.
@@ -230,6 +232,7 @@ type NotificationsConfig struct {
 // per PART 26 "No SMTP = No emails".
 type EmailConfig struct {
 	Enabled  bool       `yaml:"enabled"`
+	Provider string     `yaml:"provider"` // smtp|sendgrid|ses
 	From     string     `yaml:"from"`
 	FromName string     `yaml:"from_name"`
 	ReplyTo  string     `yaml:"reply_to"`
@@ -250,9 +253,13 @@ type SMTPConfig struct {
 
 // BrandingConfig holds branding settings
 type BrandingConfig struct {
-	Title       string `yaml:"title"`
-	Tagline     string `yaml:"tagline"`
-	Description string `yaml:"description"`
+	Title        string `yaml:"title"`
+	Tagline      string `yaml:"tagline"`
+	Description  string `yaml:"description"`
+	LogoURL      string `yaml:"logo_url"`
+	FaviconURL   string `yaml:"favicon_url"`
+	DefaultTheme string `yaml:"default_theme"`
+	PrimaryColor string `yaml:"primary_color"`
 }
 
 // SEOConfig holds SEO settings
@@ -277,10 +284,11 @@ type SSLConfig struct {
 
 // LetsEncryptConfig holds Let's Encrypt settings
 type LetsEncryptConfig struct {
-	Enabled   bool   `yaml:"enabled"`
-	Email     string `yaml:"email"`
-	Challenge string `yaml:"challenge"`
-	Staging   bool   `yaml:"staging"`
+	Enabled   bool     `yaml:"enabled"`
+	Email     string   `yaml:"email"`
+	Challenge string   `yaml:"challenge"`
+	Staging   bool     `yaml:"staging"`
+	Domains   []string `yaml:"domains"`
 }
 
 // DatabaseConfig holds database settings
@@ -297,14 +305,53 @@ type DatabaseConfig struct {
 
 // RateLimitConfig holds rate limiting settings
 type RateLimitConfig struct {
-	Enabled  bool `yaml:"enabled"`
-	Requests int  `yaml:"requests"`
-	Window   int  `yaml:"window"`
+	Enabled                  bool `yaml:"enabled"`
+	Requests                 int  `yaml:"requests"`
+	Window                   int  `yaml:"window"`
+	Burst                    int  `yaml:"burst"`
+	LoginMaxAttempts         int  `yaml:"login_max_attempts"`
+	PasswordResetMaxAttempts int  `yaml:"password_reset_max_attempts"`
 }
 
-// SchedulerConfig holds scheduler settings
+// SchedulerConfig holds scheduler settings.
+// Per-task cron expressions mirror the hardcoded defaults in scheduler.go;
+// the scheduler currently uses its built-in schedules, but storing them here
+// allows future runtime override via the admin panel.
 type SchedulerConfig struct {
 	Enabled bool `yaml:"enabled"`
+
+	SessionCleanupCron string `yaml:"session_cleanup_cron"`
+	SessionCleanupEnabled bool `yaml:"session_cleanup_enabled"`
+
+	TokenCleanupCron string `yaml:"token_cleanup_cron"`
+	TokenCleanupEnabled bool `yaml:"token_cleanup_enabled"`
+
+	ExpireURLsCron string `yaml:"expire_urls_cron"`
+	ExpireURLsEnabled bool `yaml:"expire_urls_enabled"`
+
+	LogRotationCron string `yaml:"log_rotation_cron"`
+	LogRotationEnabled bool `yaml:"log_rotation_enabled"`
+
+	BackupCron string `yaml:"backup_cron"`
+	BackupEnabled bool `yaml:"backup_enabled"`
+
+	SSLRenewalCron string `yaml:"ssl_renewal_cron"`
+	SSLRenewalEnabled bool `yaml:"ssl_renewal_enabled"`
+
+	GeoIPUpdateCron string `yaml:"geoip_update_cron"`
+	GeoIPUpdateEnabled bool `yaml:"geoip_update_enabled"`
+
+	BlocklistUpdateCron string `yaml:"blocklist_update_cron"`
+	BlocklistUpdateEnabled bool `yaml:"blocklist_update_enabled"`
+
+	CVEUpdateCron string `yaml:"cve_update_cron"`
+	CVEUpdateEnabled bool `yaml:"cve_update_enabled"`
+
+	HealthcheckCron string `yaml:"healthcheck_cron"`
+	HealthcheckEnabled bool `yaml:"healthcheck_enabled"`
+
+	TorHealthCron string `yaml:"tor_health_cron"`
+	TorHealthEnabled bool `yaml:"tor_health_enabled"`
 }
 
 // WebConfig holds web frontend settings
@@ -320,11 +367,13 @@ type UIConfig struct {
 
 // FeaturesConfig holds feature flags and settings
 type FeaturesConfig struct {
-	Users         UsersConfig          `yaml:"users"`
-	Organizations OrganizationsConfig  `yaml:"organizations"`
-	CustomDomains CustomDomainsConfig  `yaml:"custom_domains"`
-	Billing       BillingConfig        `yaml:"billing"`
-	Federation    FederationConfig     `yaml:"federation"`
+	Users          UsersConfig          `yaml:"users"`
+	Organizations  OrganizationsConfig  `yaml:"organizations"`
+	CustomDomains  CustomDomainsConfig  `yaml:"custom_domains"`
+	Billing        BillingConfig        `yaml:"billing"`
+	Federation     FederationConfig     `yaml:"federation"`
+	TOTPIssuer     string               `yaml:"totp_issuer"`      // issuer name shown in authenticator apps
+	WebAuthnDisplay string              `yaml:"webauthn_display"` // display name for WebAuthn/FIDO2
 }
 
 // UsersConfig holds user management settings
@@ -547,9 +596,13 @@ func DefaultConfig() *Config {
 			Daemonize: false,
 			PIDFile:   true,
 			Branding: BrandingConfig{
-				Title:       "caslink",
-				Tagline:     "",
-				Description: "",
+				Title:        "caslink",
+				Tagline:      "",
+				Description:  "",
+				LogoURL:      "",
+				FaviconURL:   "",
+				DefaultTheme: "dark",
+				PrimaryColor: "",
 			},
 			SEO: SEOConfig{
 				Keywords: []string{},
@@ -593,18 +646,20 @@ func DefaultConfig() *Config {
 			Session: SessionConfig{
 				Admin: SessionCookieConfig{
 					CookieName:  "caslink_admin_session",
-					MaxAge:      86400,    // 24 hours
-					IdleTimeout: 3600,     // 1 hour
+					MaxAge:      86400,   // 24 hours
+					IdleTimeout: 3600,    // 1 hour
 				},
 				User: SessionCookieConfig{
 					CookieName:  "caslink_session",
-					MaxAge:      2592000,  // 30 days
-					IdleTimeout: 86400,    // 24 hours
+					MaxAge:      2592000, // 30 days
+					IdleTimeout: 86400,   // 24 hours
 				},
-				ExtendOnActivity: true,
-				Secure:           "auto",
-				HTTPOnly:         true,
-				SameSite:         "lax",
+				ExtendOnActivity:  true,
+				Secure:            "auto",
+				HTTPOnly:          true,
+				SameSite:          "lax",
+				Timeout:           "24h",
+				RememberMeTimeout: "720h",
 			},
 			I18n: I18nConfig{
 				DefaultLanguage: "en",
@@ -632,12 +687,37 @@ func DefaultConfig() *Config {
 				Path:   "{datadir}/db",
 			},
 			RateLimit: RateLimitConfig{
-				Enabled:  true,
-				Requests: 120,
-				Window:   60,
+				Enabled:                  true,
+				Requests:                 120,
+				Window:                   60,
+				Burst:                    10,
+				LoginMaxAttempts:         5,
+				PasswordResetMaxAttempts: 3,
 			},
 			Scheduler: SchedulerConfig{
-				Enabled: true,
+				Enabled:                true,
+				SessionCleanupCron:     "@every 15m",
+				SessionCleanupEnabled:  true,
+				TokenCleanupCron:       "@every 15m",
+				TokenCleanupEnabled:    true,
+				ExpireURLsCron:         "30 2 * * *",
+				ExpireURLsEnabled:      true,
+				LogRotationCron:        "0 0 * * *",
+				LogRotationEnabled:     true,
+				BackupCron:             "0 1 * * *",
+				BackupEnabled:          true,
+				SSLRenewalCron:         "0 3 * * *",
+				SSLRenewalEnabled:      true,
+				GeoIPUpdateCron:        "0 3 * * 0",
+				GeoIPUpdateEnabled:     true,
+				BlocklistUpdateCron:    "0 4 * * *",
+				BlocklistUpdateEnabled: true,
+				CVEUpdateCron:          "0 5 * * 0",
+				CVEUpdateEnabled:       true,
+				HealthcheckCron:        "@every 5m",
+				HealthcheckEnabled:     true,
+				TorHealthCron:          "@every 10m",
+				TorHealthEnabled:       true,
 			},
 			Features: FeaturesConfig{
 				Users: UsersConfig{
@@ -690,6 +770,8 @@ func DefaultConfig() *Config {
 					Enabled:   false,
 					Instances: []string{},
 				},
+				TOTPIssuer:      "Caslink",
+				WebAuthnDisplay: "Caslink",
 			},
 			Security: SecurityConfig{
 				Password: PasswordPolicyConfig{

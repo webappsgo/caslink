@@ -259,7 +259,7 @@ func (s *Server) setupRoutes() {
 	urlHandler := handler.NewURLHandler(urlService, analyticsService)
 	qrHandler := handler.NewQRHandler(qrService, urlService)
 	bulkHandler := handler.NewBulkHandler(bulkService)
-	adminHandler := handler.NewAdminHandler(authService, userAdminService, s.Version, s.mode.String(), adminPath)
+	adminHandler := handler.NewAdminHandler(authService, userAdminService, s.Version, s.mode.String(), adminPath, s.config, s.store, func() *apktor.TorManager { return s.torManager })
 	setupHandler := handler.NewSetupHandler(authService, s.config, s.Version)
 	authUserHandler := handler.NewAuthUserHandler(authService, s.renderer, s.config)
 	twoFactorHandler := handler.NewTwoFactorHandler(authService, totpService)
@@ -463,6 +463,75 @@ func (s *Server) setupRoutes() {
 			ar.Use(CSRFMiddleware())
 			ar.Get("/dashboard", adminHandler.Dashboard)
 
+			// Server settings
+			ar.Get("/config/settings", adminHandler.ConfigSettings)
+			ar.Post("/config/settings", adminHandler.ConfigSettingsSave)
+
+			// Branding
+			ar.Get("/config/branding", adminHandler.ConfigBranding)
+			ar.Post("/config/branding", adminHandler.ConfigBrandingSave)
+
+			// SSL/TLS
+			ar.Get("/config/ssl", adminHandler.ConfigSSL)
+			ar.Post("/config/ssl", adminHandler.ConfigSSLSave)
+
+			// Scheduler
+			ar.Get("/config/scheduler", adminHandler.ConfigScheduler)
+
+			// Email
+			ar.Get("/config/email", adminHandler.ConfigEmail)
+			ar.Post("/config/email", adminHandler.ConfigEmailSave)
+
+			// Logs
+			ar.Get("/config/logs", adminHandler.ConfigLogs)
+			ar.Get("/config/logs/audit", adminHandler.ConfigLogsAudit)
+
+			// Backup/restore
+			ar.Get("/config/backup", adminHandler.ConfigBackup)
+			ar.Post("/config/backup", adminHandler.ConfigBackupAction)
+
+			// Maintenance
+			ar.Get("/config/maintenance", adminHandler.ConfigMaintenance)
+			ar.Post("/config/maintenance", adminHandler.ConfigMaintenanceSave)
+
+			// Updates
+			ar.Get("/config/updates", adminHandler.ConfigUpdates)
+			ar.Post("/config/updates", adminHandler.ConfigUpdatesAction)
+
+			// Server info
+			ar.Get("/config/info", adminHandler.ConfigInfo)
+
+			// Security — auth
+			ar.Get("/config/security/auth", adminHandler.ConfigSecurityAuth)
+			ar.Post("/config/security/auth", adminHandler.ConfigSecurityAuthSave)
+
+			// Security — API tokens
+			ar.Get("/config/security/tokens", adminHandler.ConfigSecurityTokens)
+			ar.Post("/config/security/tokens", adminHandler.ConfigSecurityTokensAction)
+
+			// Security — rate limiting
+			ar.Get("/config/security/ratelimit", adminHandler.ConfigSecurityRateLimit)
+			ar.Post("/config/security/ratelimit", adminHandler.ConfigSecurityRateLimitSave)
+
+			// Security — firewall
+			ar.Get("/config/security/firewall", adminHandler.ConfigSecurityFirewall)
+			ar.Post("/config/security/firewall", adminHandler.ConfigSecurityFirewallSave)
+
+			// Security — allowlist
+			ar.Get("/config/security/allowlist", adminHandler.ConfigSecurityAllowlist)
+			ar.Post("/config/security/allowlist", adminHandler.ConfigSecurityAllowlistSave)
+
+			// Network — Tor
+			ar.Get("/config/network/tor", adminHandler.ConfigNetworkTor)
+
+			// Network — GeoIP
+			ar.Get("/config/network/geoip", adminHandler.ConfigNetworkGeoIP)
+			ar.Post("/config/network/geoip", adminHandler.ConfigNetworkGeoIPSave)
+
+			// Network — blocklists
+			ar.Get("/config/network/blocklists", adminHandler.ConfigNetworkBlocklists)
+			ar.Post("/config/network/blocklists", adminHandler.ConfigNetworkBlocklistsSave)
+
 			// User moderation
 			ar.Get("/config/users", adminHandler.UserList)
 			ar.Get("/config/users/{id}", adminHandler.UserDetail)
@@ -470,6 +539,21 @@ func (s *Server) setupRoutes() {
 			ar.Post("/config/users/{id}/activate", adminHandler.ActivateUser)
 			// Admin force-regenerate recovery keys (PART 17/34)
 			ar.Post("/config/users/{id}/recovery-keys", adminHandler.RegenerateRecoveryKeys)
+
+			// User invites
+			ar.Get("/config/users/invites", adminHandler.ConfigUsersInvites)
+			ar.Post("/config/users/invites", adminHandler.ConfigUsersInvitesAction)
+
+			// Moderation queue
+			ar.Get("/config/moderation/users", adminHandler.ConfigModerationUsers)
+
+			// Cluster
+			ar.Get("/config/cluster/nodes", adminHandler.ConfigClusterNodes)
+			ar.Get("/config/cluster/add", adminHandler.ConfigClusterAdd)
+			ar.Post("/config/cluster/add", adminHandler.ConfigClusterAddAction)
+
+			// Help
+			ar.Get("/help", adminHandler.AdminHelp)
 		})
 	})
 
@@ -517,6 +601,21 @@ func (s *Server) setupRoutes() {
 			ar.Post("/config/users/{id}/activate", adminHandler.APIActivateUser)
 			// Admin force-regenerate recovery keys (PART 17/34)
 			ar.Post("/config/users/{id}/recovery-keys", adminHandler.APIRegenerateRecoveryKeys)
+			// Server settings API
+			ar.Get("/config/settings", adminHandler.APIConfigSettings)
+			ar.Patch("/config/settings", adminHandler.APIConfigSettingsSave)
+			// Branding API
+			ar.Get("/config/branding", adminHandler.APIConfigBranding)
+			ar.Patch("/config/branding", adminHandler.APIConfigBrandingSave)
+			// Info API
+			ar.Get("/config/info", adminHandler.APIConfigInfo)
+			// Scheduler API
+			ar.Get("/config/scheduler", adminHandler.APIConfigScheduler)
+			// Maintenance API
+			ar.Get("/config/maintenance", adminHandler.APIConfigMaintenance)
+			ar.Patch("/config/maintenance", adminHandler.APIConfigMaintenanceSave)
+			// Network/Tor API
+			ar.Get("/config/network/tor", adminHandler.APIConfigNetworkTor)
 		})
 
 		// URL management endpoints (require Bearer auth per spec)

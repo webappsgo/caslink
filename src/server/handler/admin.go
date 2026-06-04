@@ -10,29 +10,45 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/casjaysdevdocker/caslink/src/config"
 	"github.com/casjaysdevdocker/caslink/src/server/service"
+	"github.com/casjaysdevdocker/caslink/src/server/store"
+	apktor "github.com/casjaysdevdocker/caslink/src/tor"
 )
 
 // AdminHandler handles admin panel endpoints
 type AdminHandler struct {
-	authService     *service.AuthService
+	authService      *service.AuthService
 	userAdminService *service.UserAdminService
-	version         string
-	mode            string
-	adminPath       string // configurable admin path segment, default "admin"
+	version          string
+	mode             string
+	adminPath        string // configurable admin path segment, default "admin"
+	cfg              *config.Config
+	store            *store.Store
+	getTorManager    func() *apktor.TorManager
 }
 
 // NewAdminHandler creates a new admin handler
-func NewAdminHandler(authService *service.AuthService, userAdminService *service.UserAdminService, version, mode, adminPath string) *AdminHandler {
+func NewAdminHandler(
+	authService *service.AuthService,
+	userAdminService *service.UserAdminService,
+	version, mode, adminPath string,
+	cfg *config.Config,
+	st *store.Store,
+	getTorManager func() *apktor.TorManager,
+) *AdminHandler {
 	if adminPath == "" {
 		adminPath = "admin"
 	}
 	return &AdminHandler{
-		authService:     authService,
+		authService:      authService,
 		userAdminService: userAdminService,
-		version:         version,
-		mode:            mode,
-		adminPath:       adminPath,
+		version:          version,
+		mode:             mode,
+		adminPath:        adminPath,
+		cfg:              cfg,
+		store:            st,
+		getTorManager:    getTorManager,
 	}
 }
 
