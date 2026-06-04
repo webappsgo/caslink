@@ -61,4 +61,10 @@ Items are removed once fully implemented and committed.
 
 ---
 
+## PART 17 — Admin Panel Config Pages
+
+All 24+ admin config pages are now implemented and committed (6afdf87b).
+Routes, handlers, KV-store persistence, and API endpoints are all live.
+No remaining PART 17 items.
+
 Last refreshed: 2026-06-04
