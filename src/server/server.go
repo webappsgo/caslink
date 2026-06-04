@@ -90,7 +90,7 @@ func New(cfg *config.Config, appMode mode.Mode, dataDir, logDir, pidFile string,
 		}
 	}
 
-	sched := scheduler.New(db, logDir, configDir, dataDir, backupDir, geoSvc)
+	sched := scheduler.New(db, logDir, configDir, dataDir, backupDir, geoSvc, cfg.Server.Security)
 
 	renderer, err := tmpl.New()
 	if err != nil {
@@ -267,6 +267,7 @@ func (s *Server) setupRoutes() {
 	userHandler := handler.NewUserHandler(authService, tokenService, urlService, s.renderer, s.config)
 	orgHandler := handler.NewOrgHandler(orgService, authService, s.renderer, s.config)
 	domainHandler := handler.NewDomainHandler(domainService, authService, orgService)
+	pagesHandler := handler.NewPagesHandler(s.config, s.renderer, s.Version, s.BuildDate, func() *apktor.TorManager { return s.torManager })
 
 	// Static assets (CSS, JS, PWA manifest, service worker)
 	s.router.Handle("/static/*", tmpl.StaticHandler())
@@ -432,6 +433,21 @@ func (s *Server) setupRoutes() {
 		})
 	})
 
+	// Public server information pages — /server/* per PART 16.
+	// These routes are unauthenticated and serve About, Help, Privacy, Contact, Terms.
+	s.router.Get("/server", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/server/about", http.StatusMovedPermanently)
+	})
+	s.router.Get("/server/about", pagesHandler.About)
+	s.router.Get("/server/help", pagesHandler.Help)
+	s.router.Get("/server/privacy", pagesHandler.Privacy)
+	s.router.Get("/server/terms", pagesHandler.Terms)
+	s.router.Route("/server/contact", func(r chi.Router) {
+		r.Use(CSRFMiddleware())
+		r.Get("/", pagesHandler.Contact)
+		r.Post("/", pagesHandler.ContactSubmit)
+	})
+
 	// Admin panel routes — /server/{adminPath}/* per spec PART 17
 	s.router.Route("/server/"+adminPath, func(r chi.Router) {
 		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled, s.mode.IsDevelopment()))
@@ -477,6 +493,13 @@ func (s *Server) setupRoutes() {
 			// Full processing (log + alert) is a future enhancement.
 			w.WriteHeader(http.StatusNoContent)
 		})
+
+		// Public server information API endpoints per PART 16.
+		r.Get("/server/about", pagesHandler.APIAbout)
+		r.Get("/server/help", pagesHandler.APIHelp)
+		r.Get("/server/privacy", pagesHandler.APIPrivacy)
+		r.Get("/server/terms", pagesHandler.APITerms)
+		r.Post("/server/contact", pagesHandler.APIContact)
 
 		// Auth API — /api/v1/server/auth/*
 		r.Route("/server/auth", func(ar chi.Router) {

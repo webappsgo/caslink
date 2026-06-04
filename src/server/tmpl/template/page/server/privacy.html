@@ -1,0 +1,60 @@
+{{template "base" .}}
+{{define "content"}}
+<div class="container">
+  <article class="privacy-page">
+    <header class="page-header mb-4">
+      <h1>Privacy Policy</h1>
+      <p class="text-muted text-sm">Last reviewed: 2026-01-01</p>
+    </header>
+
+    <section class="card mb-4">
+      <h2 class="card-title">Overview</h2>
+      <p>{{.AppName}} is a self-hosted URL shortener. Your data belongs to you and to the operator of this instance. We do not sell, rent, or trade personal information to third parties — ever.</p>
+    </section>
+
+    <section class="card mb-4">
+      <h2 class="card-title">Data We Collect</h2>
+      <h3>Account information</h3>
+      <p>When you register, we store your chosen username, an optional email address, and a salted Argon2id hash of your password. We never store your password in plaintext.</p>
+      <h3>Link analytics</h3>
+      <p>Each redirect records the timestamp, country and city (derived from a GeoIP database — not real-time geolocation), browser family, operating system, device type, referrer domain, and a salted SHA-256 hash of the visitor IP address for unique-visitor counting. When IP anonymization is enabled, the raw IP address is discarded immediately after hashing and is never stored.</p>
+      <h3>Session data</h3>
+      <p>Authenticated sessions are stored server-side and identified by a secure, random cookie. Session records include the user ID, creation time, and last-used timestamp.</p>
+    </section>
+
+    <section class="card mb-4">
+      <h2 class="card-title">Cookies</h2>
+      <ul>
+        <li><strong>Essential cookies</strong> — required for login and CSRF protection. Cannot be disabled.</li>
+        <li><strong>Preference cookies</strong> — store your chosen theme (dark/light). No personal data.</li>
+        <li><strong>Analytics cookies</strong> — if enabled by the operator, help count unique visitors per link using a hashed identifier.</li>
+      </ul>
+      <p>We do not use third-party advertising or tracking cookies.</p>
+    </section>
+
+    <section class="card mb-4">
+      <h2 class="card-title">Data Retention</h2>
+      <p>Account data is deleted within 30 days of account deletion. Analytics records associated with your links are deleted at the same time. You may request deletion at any time via the settings page or by contacting the instance operator.</p>
+    </section>
+
+    <section class="card mb-4">
+      <h2 class="card-title">Your Rights</h2>
+      <ul>
+        <li><strong>Export</strong> — download all your links and analytics data in JSON or CSV from the dashboard.</li>
+        <li><strong>Deletion</strong> — delete individual links, or your entire account, at any time from the settings page.</li>
+        <li><strong>Correction</strong> — update your email address or username from your profile page.</li>
+      </ul>
+    </section>
+
+    <section class="card mb-4">
+      <h2 class="card-title">Security</h2>
+      <p>All passwords are hashed using Argon2id. API tokens are stored as SHA-256 hashes. Sessions are protected with CSRF tokens and secure, HttpOnly cookies. The application enforces HTTPS and HSTS when SSL is enabled.</p>
+    </section>
+
+    <section class="card">
+      <h2 class="card-title">Contact</h2>
+      <p>For privacy inquiries, data export requests, or deletion requests, please use the <a href="{{.ContactURL}}">contact form</a>.</p>
+    </section>
+  </article>
+</div>
+{{end}}

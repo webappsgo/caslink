@@ -1,0 +1,50 @@
+{{template "base" .}}
+{{define "content"}}
+<div class="container">
+  <article class="about-page">
+    <header class="page-header mb-4">
+      <h1>About {{.AppName}}</h1>
+      <p class="tagline text-lg">{{.Tagline}}</p>
+    </header>
+
+    <section class="card mb-4">
+      <h2 class="card-title">What is {{.AppName}}?</h2>
+      <p>{{.Description}}</p>
+      <div class="about-meta mt-3">
+        <span class="badge">v{{.AppVersion}}</span>
+        {{if .BuildDate}}<span class="text-muted text-sm ml-2">Built {{.BuildDate}}</span>{{end}}
+      </div>
+    </section>
+
+    <section class="card mb-4">
+      <h2 class="card-title">Features</h2>
+      <ul class="feature-list">
+        {{range .Features}}
+        <li>{{.}}</li>
+        {{end}}
+      </ul>
+    </section>
+
+    <section class="card mb-4">
+      <h2 class="card-title">Resources</h2>
+      <div class="resource-links">
+        <a href="{{.OfficialSite}}" class="btn btn-outline" target="_blank" rel="noopener noreferrer">Official Site</a>
+        <a href="{{.GitHubURL}}" class="btn btn-outline" target="_blank" rel="noopener noreferrer">Source Code</a>
+        <a href="/server/docs/swagger" class="btn btn-outline">API Docs</a>
+        <a href="/server/help" class="btn btn-outline">Help</a>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2 class="card-title">Legal</h2>
+      <div class="legal-links">
+        <a href="/server/privacy">Privacy Policy</a>
+        &mdash;
+        <a href="/server/terms">Terms of Service</a>
+        &mdash;
+        <a href="/server/contact">Contact</a>
+      </div>
+    </section>
+  </article>
+</div>
+{{end}}

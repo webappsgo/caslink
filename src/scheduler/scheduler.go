@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/robfig/cron/v3"
 
 	"github.com/casjaysdevdocker/caslink/src/backup"
+	"github.com/casjaysdevdocker/caslink/src/config"
 	"github.com/casjaysdevdocker/caslink/src/geoip"
 	"github.com/casjaysdevdocker/caslink/src/server/store"
 )
@@ -27,14 +29,16 @@ type torHealthChecker interface {
 
 // Scheduler manages background tasks.
 type Scheduler struct {
-	cron       *cron.Cron
-	store      *store.Store
-	logDir     string           // path to log directory for log_rotation; may be ""
-	geoip      *geoip.Service   // optional; nil → geoip_update is a no-op
-	configDir  string           // for daily backup; may be ""
-	dataDir    string           // for daily backup; may be ""
-	backupDir  string           // for daily backup; "" disables automatic backups
-	torChecker torHealthChecker // optional; nil → tor_health is a no-op
+	cron             *cron.Cron
+	store            *store.Store
+	logDir           string                 // path to log directory for log_rotation; may be ""
+	geoip            *geoip.Service         // optional; nil → geoip_update is a no-op
+	configDir        string                 // for daily backup; may be ""
+	dataDir          string                 // for daily backup; may be ""
+	backupDir        string                 // for daily backup; "" disables automatic backups
+	torChecker       torHealthChecker       // optional; nil → tor_health is a no-op
+	blocklistSources []config.BlocklistSource // empty → blocklist_update is a no-op
+	cveSources       []config.CVESource       // empty → cve_update is a no-op
 }
 
 // New creates a new scheduler bound to the given store.
@@ -42,15 +46,19 @@ type Scheduler struct {
 // log rotation. configDir, dataDir, and backupDir are used by the daily backup
 // task — pass "" for backupDir to disable automatic backups. geoSvc is
 // optional — when nil the geoip_update task logs and skips.
-func New(st *store.Store, logDir, configDir, dataDir, backupDir string, geoSvc *geoip.Service) *Scheduler {
+// sec carries blocklist and CVE source configuration; pass a zero value to
+// leave both update tasks as no-ops.
+func New(st *store.Store, logDir, configDir, dataDir, backupDir string, geoSvc *geoip.Service, sec config.SecurityConfig) *Scheduler {
 	return &Scheduler{
-		cron:      cron.New(),
-		store:     st,
-		logDir:    logDir,
-		geoip:     geoSvc,
-		configDir: configDir,
-		dataDir:   dataDir,
-		backupDir: backupDir,
+		cron:             cron.New(),
+		store:            st,
+		logDir:           logDir,
+		geoip:            geoSvc,
+		configDir:        configDir,
+		dataDir:          dataDir,
+		backupDir:        backupDir,
+		blocklistSources: sec.Blocklist.Sources,
+		cveSources:       sec.CVE.Sources,
 	}
 }
 
@@ -403,18 +411,111 @@ func (s *Scheduler) runDailyBackup() {
 	log.Printf("[scheduler] backup_daily: backup complete")
 }
 
-// updateBlocklist downloads updated IP/domain blocklists.
-// Silently skips when blocklist sources are not configured.
+// updateBlocklist downloads updated IP/domain blocklists from configured
+// sources and stores them under {data_dir}/security/blocklists/.
+// Silently skips when no sources are configured.
 func (s *Scheduler) updateBlocklist() {
-	// Blocklist updates are handled when blocklist sources are configured.
-	// When no sources are configured, this is a no-op.
+	if len(s.blocklistSources) == 0 {
+		return
+	}
+
+	dir := filepath.Join(s.dataDir, "security", "blocklists")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		log.Printf("[scheduler] blocklist_update: mkdir %s: %v", dir, err)
+		return
+	}
+
+	for _, src := range s.blocklistSources {
+		if !src.Enabled {
+			continue
+		}
+		if err := s.downloadToFile(src.URL, filepath.Join(dir, sanitizeFilename(src.Name)+".txt")); err != nil {
+			log.Printf("[scheduler] blocklist_update: download %s (%s): %v", src.Name, src.URL, err)
+		} else {
+			log.Printf("[scheduler] blocklist_update: updated %s", src.Name)
+		}
+	}
 }
 
-// updateCVE downloads updated CVE/security databases.
-// Silently skips when CVE sources are not configured.
+// updateCVE downloads updated CVE/security database feeds from configured
+// sources and stores them under {data_dir}/security/cve/.
+// Silently skips when no sources are configured.
 func (s *Scheduler) updateCVE() {
-	// CVE database updates are handled when CVE sources are configured.
-	// When not configured, this is a no-op.
+	if len(s.cveSources) == 0 {
+		return
+	}
+
+	dir := filepath.Join(s.dataDir, "security", "cve")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		log.Printf("[scheduler] cve_update: mkdir %s: %v", dir, err)
+		return
+	}
+
+	for _, src := range s.cveSources {
+		if !src.Enabled {
+			continue
+		}
+		if err := s.downloadToFile(src.URL, filepath.Join(dir, sanitizeFilename(src.Name)+".json")); err != nil {
+			log.Printf("[scheduler] cve_update: download %s (%s): %v", src.Name, src.URL, err)
+		} else {
+			log.Printf("[scheduler] cve_update: updated %s", src.Name)
+		}
+	}
+}
+
+// downloadToFile fetches url and writes the body to dest atomically (write to
+// a temp file then rename). Follows up to 5 redirects; times out after 60 s.
+func (s *Scheduler) downloadToFile(url, dest string) error {
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return fmt.Errorf("GET %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("GET %s: unexpected status %d", url, resp.StatusCode)
+	}
+
+	tmp := dest + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o640)
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+
+	if _, err = io.Copy(f, resp.Body); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return fmt.Errorf("write to temp file: %w", err)
+	}
+	if err = f.Close(); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("close temp file: %w", err)
+	}
+
+	if err = os.Rename(tmp, dest); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("rename %s → %s: %w", tmp, dest, err)
+	}
+	return nil
+}
+
+// sanitizeFilename replaces characters that are unsafe in file names with
+// underscores so that source names can be used as file name stems.
+func sanitizeFilename(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('_')
+		}
+	}
+	s := b.String()
+	if s == "" {
+		return "source"
+	}
+	return s
 }
 
 // checkTorHealth verifies the Tor hidden-service process is running.

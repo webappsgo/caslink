@@ -88,7 +88,49 @@ type TorConfig struct {
 
 // SecurityConfig holds security policy configuration per AI.md PART 17.
 type SecurityConfig struct {
-	Password PasswordPolicyConfig `yaml:"password"`
+	Password  PasswordPolicyConfig `yaml:"password"`
+	Blocklist BlocklistConfig      `yaml:"blocklist"`
+	CVE       CVEConfig            `yaml:"cve"`
+}
+
+// BlocklistConfig holds IP/domain blocklist source configuration per AI.md PART 19.
+// When Sources is empty the blocklist_update scheduler task silently skips.
+type BlocklistConfig struct {
+	// Sources lists remote blocklist files to download and cache locally.
+	Sources []BlocklistSource `yaml:"sources"`
+	// Dir overrides the default storage path ({data_dir}/security/blocklists).
+	Dir string `yaml:"dir"`
+}
+
+// BlocklistSource describes a single remote blocklist feed.
+type BlocklistSource struct {
+	// Name is a human-readable label used in logs and the admin panel.
+	Name string `yaml:"name"`
+	// URL is the HTTP(S) address of the blocklist file (one entry per line).
+	URL string `yaml:"url"`
+	// Type is "ip", "domain", or "mixed".
+	Type string `yaml:"type"`
+	// Enabled controls whether this source is downloaded. Defaults to true.
+	Enabled bool `yaml:"enabled"`
+}
+
+// CVEConfig holds CVE/security database source configuration per AI.md PART 19.
+// When Sources is empty the cve_update scheduler task silently skips.
+type CVEConfig struct {
+	// Sources lists remote CVE database feeds to download and cache locally.
+	Sources []CVESource `yaml:"sources"`
+	// Dir overrides the default storage path ({data_dir}/security/cve).
+	Dir string `yaml:"dir"`
+}
+
+// CVESource describes a single remote CVE/security database feed.
+type CVESource struct {
+	// Name is a human-readable label used in logs and the admin panel.
+	Name string `yaml:"name"`
+	// URL is the HTTP(S) address of the CVE feed (JSON or plain-text).
+	URL string `yaml:"url"`
+	// Enabled controls whether this source is downloaded. Defaults to true.
+	Enabled bool `yaml:"enabled"`
 }
 
 // PasswordPolicyConfig holds password complexity requirements per AI.md PART 17.

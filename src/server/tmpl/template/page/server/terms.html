@@ -1,0 +1,67 @@
+{{template "base" .}}
+{{define "content"}}
+<div class="container">
+  <article class="terms-page">
+    <header class="page-header mb-4">
+      <h1>Terms of Service</h1>
+      <p class="text-muted text-sm">Last reviewed: 2026-01-01</p>
+    </header>
+
+    <section class="card mb-4">
+      <h2 class="card-title">1. Acceptance</h2>
+      <p>By accessing or using {{.AppName}}, you agree to be bound by these Terms of Service. If you do not agree to all of these terms, do not use this service. The operator reserves the right to update these terms at any time; continued use after changes constitutes acceptance.</p>
+    </section>
+
+    <section class="card mb-4">
+      <h2 class="card-title">2. Account Terms</h2>
+      <ul>
+        <li>You must be at least 13 years of age to create an account.</li>
+        <li>You are responsible for maintaining the security of your account credentials.</li>
+        <li>You are responsible for all activity that occurs under your account.</li>
+        <li>You may not share your account or API tokens with others.</li>
+        <li>You must provide accurate information when registering.</li>
+      </ul>
+    </section>
+
+    <section class="card mb-4">
+      <h2 class="card-title">3. Acceptable Use</h2>
+      <p>You agree not to use {{.AppName}} to:</p>
+      <ul>
+        <li>Distribute malware, phishing pages, or other malicious content.</li>
+        <li>Circumvent access controls or link to content that does so.</li>
+        <li>Spam, harass, or harm other users or third parties.</li>
+        <li>Violate any applicable law or regulation.</li>
+        <li>Attempt to reverse-engineer, scrape, or overload the service.</li>
+        <li>Create short links that redirect to illegal content.</li>
+      </ul>
+      <p>The operator may suspend or terminate accounts that violate these rules without prior notice.</p>
+    </section>
+
+    <section class="card mb-4">
+      <h2 class="card-title">4. Content</h2>
+      <p>You retain ownership of the URLs and content you submit. By using the service you grant the operator a limited licence to store and serve that content as necessary to operate {{.AppName}}. The operator does not claim ownership of your links or data.</p>
+    </section>
+
+    <section class="card mb-4">
+      <h2 class="card-title">5. Termination</h2>
+      <p>Either party may terminate the relationship at any time. You may delete your account from the settings page. The operator may suspend or delete accounts that violate these terms. Upon termination, your data will be deleted within 30 days.</p>
+    </section>
+
+    <section class="card mb-4">
+      <h2 class="card-title">6. Limitation of Liability</h2>
+      <p>{{.AppName}} is provided "as is" without warranty of any kind. To the maximum extent permitted by law, the operator shall not be liable for any indirect, incidental, special, or consequential damages arising from your use of the service, including but not limited to loss of data, revenue, or business opportunities.</p>
+    </section>
+
+    <section class="card mb-4">
+      <h2 class="card-title">7. Changes to These Terms</h2>
+      <p>The operator may revise these Terms of Service at any time. Material changes will be communicated via the service or email where possible. Your continued use of the service after any change constitutes your acceptance of the new terms.</p>
+    </section>
+
+    <section class="card">
+      <h2 class="card-title">8. Governing Law</h2>
+      <p>These terms are governed by the laws of the jurisdiction in which the operator resides or is incorporated, without regard to conflict-of-law principles. Disputes shall be resolved in the courts of that jurisdiction.</p>
+      <p class="mt-3">Questions? <a href="/server/contact">Contact us</a> or review our <a href="/server/privacy">Privacy Policy</a>.</p>
+    </section>
+  </article>
+</div>
+{{end}}

@@ -7,9 +7,9 @@ Items are removed once fully implemented and committed.
 
 ## PART 19 — Scheduler
 
-- [ ] `blocklist_update` task: download updated IP/domain blocklists used by URL
+- [x] `blocklist_update` task: download updated IP/domain blocklists used by URL
       validation when blocklist sources are configured in `server.yml`.
-- [ ] `cve_update` task: download updated CVE/security databases used by the
+- [x] `cve_update` task: download updated CVE/security databases used by the
       admin security panel when CVE sources are configured in `server.yml`.
 
 **Already implemented:** `backup_daily` (calls `backup.RunBackup`),

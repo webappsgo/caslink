@@ -1,0 +1,41 @@
+{{template "base" .}}
+{{define "content"}}
+<div class="container">
+  <article class="help-page">
+    <header class="page-header mb-4">
+      <h1>Help &amp; Documentation</h1>
+      <p class="text-muted">Everything you need to get the most out of {{.AppName}}.</p>
+    </header>
+
+    {{range .Sections}}
+    <section class="card mb-4">
+      <h2 class="card-title">{{.Title}}</h2>
+      {{range .Items}}
+      <div class="help-item mb-3">
+        <h3 class="help-label">{{.Label}}</h3>
+        {{if .IsCode}}
+        <pre class="code-block break-all"><code>{{.Content}}</code></pre>
+        {{else}}
+        <p>{{.Content}}</p>
+        {{end}}
+      </div>
+      {{end}}
+    </section>
+    {{end}}
+
+    {{if .TorEnabled}}
+    <section class="card mb-4">
+      <h2 class="card-title">Tor / Onion Access</h2>
+      <p>This instance is reachable over the Tor network at:</p>
+      <pre class="code-block break-all onion-address"><code>http://{{.TorAddress}}</code></pre>
+      <p class="text-muted text-sm">Use the <a href="https://www.torproject.org/download/" target="_blank" rel="noopener noreferrer">Tor Browser</a> or configure your HTTP client to use a local SOCKS5 proxy on port 9050.</p>
+    </section>
+    {{end}}
+
+    <section class="card">
+      <h2 class="card-title">Still stuck?</h2>
+      <p>Check the <a href="/server/docs/swagger">interactive API docs</a>, browse the <a href="{{.APIBase}}/graphiql">GraphiQL explorer</a>, or <a href="/server/contact">contact us</a>.</p>
+    </section>
+  </article>
+</div>
+{{end}}
