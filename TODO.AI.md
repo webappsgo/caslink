@@ -39,16 +39,18 @@ Items are removed once fully implemented and committed.
 
 ## PART 34 — Multi-User / WebAuthn
 
-- [ ] Admin panel: "force regenerate recovery keys for user" action
-      (PART 17 admin user-management panel). The user-side flow is complete;
-      the admin-side override is not yet exposed at `/server/{adminPath}/users/{id}/recovery-keys`.
+- [x] Admin panel: "force regenerate recovery keys for user" action implemented
+      at `POST /server/{adminPath}/config/users/{id}/recovery-keys` (HTML) and
+      `POST /api/v1/server/{adminPath}/config/users/{id}/recovery-keys` (JSON API).
 
 ---
 
 ## PART 35/36 — Organisations / Custom Domains
 
-- [ ] Org-scoped API tokens: `POST /api/v1/orgs/{slug}/tokens` — not yet routed.
-- [ ] Org ownership transfer endpoint — not yet implemented.
+- [x] Org-scoped API tokens: `GET /api/v1/orgs/{slug}/tokens`,
+      `POST /api/v1/orgs/{slug}/tokens`,
+      `DELETE /api/v1/orgs/{slug}/tokens/{tokenID}` — routed and implemented.
+- [x] Org ownership transfer: `POST /api/v1/orgs/{slug}/transfer` — implemented.
 
 ---
 
@@ -59,4 +61,4 @@ Items are removed once fully implemented and committed.
 
 ---
 
-Last refreshed: 2026-06-02
+Last refreshed: 2026-06-04
