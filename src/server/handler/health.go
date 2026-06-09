@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/casjaysdevdocker/caslink/src/server/store"
+	apktor "github.com/casjaysdevdocker/caslink/src/tor"
 )
 
 var startTime = time.Now()
@@ -42,17 +43,30 @@ type BuildInfo struct {
 
 // ClusterInfo describes cluster/HA state.
 type ClusterInfo struct {
-	Enabled bool `json:"enabled"`
+	Enabled bool     `json:"enabled"`
+	Status  string   `json:"status,omitempty"`
+	Primary string   `json:"primary,omitempty"`
+	Nodes   []string `json:"nodes"`
+	Role    string   `json:"role,omitempty"`
+}
+
+// TorInfo describes the Tor hidden service status per AI.md PART 13 + PART 32.
+type TorInfo struct {
+	Enabled  bool   `json:"enabled"`
+	Running  bool   `json:"running"`
+	Status   string `json:"status"`
+	Hostname string `json:"hostname"`
 }
 
 // FeaturesInfo lists optional feature toggles.
 type FeaturesInfo struct {
-	GeoIP         bool `json:"geoip"`
-	CustomSlugs   bool `json:"custom_slugs"`
-	Analytics     bool `json:"analytics"`
-	MultiUser     bool `json:"multi_user"`
-	Organizations bool `json:"organizations"`
-	CustomDomains bool `json:"custom_domains"`
+	GeoIP         bool    `json:"geoip"`
+	CustomSlugs   bool    `json:"custom_slugs"`
+	Analytics     bool    `json:"analytics"`
+	MultiUser     bool    `json:"multi_user"`
+	Organizations bool    `json:"organizations"`
+	CustomDomains bool    `json:"custom_domains"`
+	Tor           TorInfo `json:"tor"`
 }
 
 // ChecksInfo holds sub-system liveness results.
@@ -60,6 +74,7 @@ type ChecksInfo struct {
 	Database  string `json:"database"`
 	Scheduler string `json:"scheduler"`
 	Disk      string `json:"disk"`
+	Tor       string `json:"tor,omitempty"`
 }
 
 // CaslinkStatsInfo extends StatsInfo with URL-shortener specific fields.
@@ -113,7 +128,8 @@ func HealthHandler(version, commitID, buildDate, mode string) http.HandlerFunc {
 
 // APIHealthHandler handles /api/v1/server/healthz endpoint (JSON).
 // The store parameter is used to probe the DB; pass nil for testing.
-func APIHealthHandler(version, commitID, buildDate, mode string, st *store.Store) http.HandlerFunc {
+// getTorManager may be nil when Tor is not available.
+func APIHealthHandler(version, commitID, buildDate, mode string, st *store.Store, getTorManager func() *apktor.TorManager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		checks := ChecksInfo{
 			Scheduler: "ok",
@@ -124,6 +140,20 @@ func APIHealthHandler(version, commitID, buildDate, mode string, st *store.Store
 			checks.Database = "ok"
 		} else {
 			checks.Database = "error"
+		}
+
+		// Tor health check
+		torInfo := TorInfo{}
+		if getTorManager != nil {
+			if tm := getTorManager(); tm != nil {
+				torInfo.Enabled = true
+				torInfo.Running = true
+				torInfo.Status = "healthy"
+				torInfo.Hostname = tm.OnionAddress()
+				checks.Tor = "ok"
+			} else {
+				torInfo.Status = ""
+			}
 		}
 
 		status := "healthy"
@@ -157,7 +187,10 @@ func APIHealthHandler(version, commitID, buildDate, mode string, st *store.Store
 			Uptime:    formatUptime(time.Since(startTime)),
 			Mode:      mode,
 			Timestamp: time.Now().UTC(),
-			Cluster:   ClusterInfo{Enabled: false},
+			Cluster: ClusterInfo{
+				Enabled: false,
+				Nodes:   []string{},
+			},
 			Features: FeaturesInfo{
 				GeoIP:         false,
 				CustomSlugs:   true,
@@ -165,6 +198,7 @@ func APIHealthHandler(version, commitID, buildDate, mode string, st *store.Store
 				MultiUser:     true,
 				Organizations: true,
 				CustomDomains: true,
+				Tor:           torInfo,
 			},
 			Checks: checks,
 			Stats: StatsInfo{

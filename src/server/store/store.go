@@ -215,12 +215,13 @@ func (s *Store) initUsersSchema() error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 
-		// API tokens
+		// API tokens — token_prefix stores first 8 chars for display (AI.md PART 11)
 		`CREATE TABLE IF NOT EXISTS api_tokens (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			user_id INTEGER NOT NULL,
 			user_type TEXT NOT NULL,
 			token_hash TEXT NOT NULL UNIQUE,
+			token_prefix TEXT,
 			name TEXT,
 			permissions TEXT,
 			last_used DATETIME,
@@ -431,6 +432,17 @@ func (s *Store) initUsersSchema() error {
 		if err != nil {
 			return fmt.Errorf("failed to apply schema update: %w", err)
 		}
+	}
+
+	// Column additions — SQLite has no IF NOT EXISTS for ADD COLUMN.
+	// These are silently ignored when the column already exists (duplicate column error).
+	addColumnQueries := []string{
+		`ALTER TABLE api_tokens ADD COLUMN token_prefix TEXT`,
+	}
+	for _, q := range addColumnQueries {
+		ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
+		_, _ = s.UsersDB.ExecContext(ctx, q)
+		cancel()
 	}
 
 	return nil

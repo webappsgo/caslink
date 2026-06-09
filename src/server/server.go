@@ -560,13 +560,16 @@ func (s *Server) setupRoutes() {
 	// Bearer token middleware factory for API routes
 	bearerMiddleware := BearerAuthMiddleware(tokenService)
 
+	// /api/autodiscover — NOT versioned; clients call this before knowing the API version (AI.md PART 14).
+	s.router.Get("/api/autodiscover", handler.AutodiscoverHandler(s.Version, s.config, func() *apktor.TorManager { return s.torManager }))
+
 	// API v1
 	s.router.Route("/api/v1", func(r chi.Router) {
 		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled, s.mode.IsDevelopment()))
 
 		// Public endpoints (no auth)
-		r.Get("/server/healthz", handler.APIHealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String(), s.store))
-		r.Get("/healthz", handler.APIHealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String(), s.store))
+		r.Get("/server/healthz", handler.APIHealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String(), s.store, func() *apktor.TorManager { return s.torManager }))
+		r.Get("/healthz", handler.APIHealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String(), s.store, func() *apktor.TorManager { return s.torManager }))
 		r.Get("/version", handler.VersionHandler(s.Version, s.CommitID, s.BuildDate))
 		// OpenAPI JSON spec — canonical per spec PART 14 + IDEA.md
 		r.Get("/server/swagger", swagger.SpecHandler(s.Version))
