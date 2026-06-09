@@ -165,6 +165,74 @@ func (h *UserHandler) Security(w http.ResponseWriter, r *http.Request) {
 	h.renderer.Render(w, "template/page/users/security.html", data)
 }
 
+// APIProfile returns the current user's profile as JSON for GET /api/v1/users.
+func (h *UserHandler) APIProfile(w http.ResponseWriter, r *http.Request) {
+	user, ok := getUserFromRequest(r)
+	if !ok {
+		respondError(w, 401, "authentication required")
+		return
+	}
+	type profileData struct {
+		ID          int64   `json:"id"`
+		Username    string  `json:"username"`
+		Email       string  `json:"email"`
+		DisplayName *string `json:"display_name"`
+	}
+	respondJSON(w, 200, profileData{
+		ID:          user.ID,
+		Username:    user.Username,
+		Email:       user.Email,
+		DisplayName: user.DisplayName,
+	})
+}
+
+// APITokens returns the current user's API tokens as JSON for GET /api/v1/users/tokens.
+func (h *UserHandler) APITokens(w http.ResponseWriter, r *http.Request) {
+	user, ok := getUserFromRequest(r)
+	if !ok {
+		respondError(w, 401, "authentication required")
+		return
+	}
+	tokens, err := h.tokenService.ListTokens(r.Context(), user.ID)
+	if err != nil {
+		respondError(w, 500, "failed to list tokens")
+		return
+	}
+	respondJSON(w, 200, tokens)
+}
+
+// APISettings returns the current user's settings as JSON for GET /api/v1/users/settings.
+func (h *UserHandler) APISettings(w http.ResponseWriter, r *http.Request) {
+	user, ok := getUserFromRequest(r)
+	if !ok {
+		respondError(w, 401, "authentication required")
+		return
+	}
+	type settingsData struct {
+		Username string `json:"username"`
+		Email    string `json:"email"`
+	}
+	respondJSON(w, 200, settingsData{
+		Username: user.Username,
+		Email:    user.Email,
+	})
+}
+
+// APISecurity returns the current user's security settings as JSON for GET /api/v1/users/security.
+func (h *UserHandler) APISecurity(w http.ResponseWriter, r *http.Request) {
+	user, ok := getUserFromRequest(r)
+	if !ok {
+		respondError(w, 401, "authentication required")
+		return
+	}
+	type securityData struct {
+		TOTPEnabled bool `json:"totp_enabled"`
+	}
+	respondJSON(w, 200, securityData{
+		TOTPEnabled: user.TOTPEnabled,
+	})
+}
+
 // Dashboard renders the user dashboard with their URLs
 func (h *UserHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	user, ok := getUserFromRequest(r)

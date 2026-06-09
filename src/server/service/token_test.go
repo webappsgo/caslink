@@ -30,6 +30,7 @@ func newTestStore(t *testing.T) *store.Store {
 			user_id INTEGER NOT NULL,
 			user_type TEXT NOT NULL,
 			token_hash TEXT NOT NULL UNIQUE,
+			token_prefix TEXT,
 			name TEXT,
 			permissions TEXT,
 			last_used DATETIME,

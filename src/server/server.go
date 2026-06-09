@@ -637,6 +637,12 @@ func (s *Server) setupRoutes() {
 		// Users API — /api/v1/users/*
 		r.Route("/users", func(ar chi.Router) {
 			ar.Use(bearerMiddleware)
+			// Current user profile, tokens, settings, and security per PART 14.
+			ar.Get("/", userHandler.APIProfile)
+			ar.Get("/tokens", userHandler.APITokens)
+			ar.Get("/settings", userHandler.APISettings)
+			ar.Get("/security", userHandler.APISecurity)
+			// Bulk URL operations
 			ar.Get("/urls/export", bulkHandler.Export)
 			ar.Post("/urls/import", bulkHandler.Import)
 		})
@@ -659,6 +665,11 @@ func (s *Server) setupRoutes() {
 
 	// Root handler
 	s.router.Get("/", s.handleRoot)
+
+	// SEO endpoints — registered before the short-URL catch-all so they are
+	// served directly and never treated as short codes.
+	s.router.Get("/robots.txt", s.robotsTxt)
+	s.router.Get("/sitemap.xml", s.sitemapXML)
 
 	// Short URL redirect (must be last to not catch other routes)
 	s.router.Get("/{code}", urlHandler.RedirectURL)
@@ -714,6 +725,50 @@ func (s *Server) wellKnownACMEChallenge(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	http.NotFound(w, r)
+}
+
+// baseURL returns the scheme + host base URL for the current request, honouring
+// X-Forwarded-Proto and X-Forwarded-Host headers set by trusted reverse proxies.
+func (s *Server) baseURL(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	host := r.Host
+	if h := r.Header.Get("X-Forwarded-Host"); h != "" {
+		host = h
+	}
+	return scheme + "://" + host
+}
+
+// robotsTxt generates and serves /robots.txt dynamically.
+// The admin path is kept private; the API and all other public pages are allowed.
+func (s *Server) robotsTxt(w http.ResponseWriter, r *http.Request) {
+	adminPath := s.config.Server.Admin.Path
+	if adminPath == "" {
+		adminPath = "admin"
+	}
+	baseURL := s.baseURL(r)
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	fmt.Fprintf(w, "User-agent: *\nAllow: /\nAllow: /api\nDisallow: /server/%s\nSitemap: %s/sitemap.xml\n", adminPath, baseURL)
+}
+
+// sitemapXML generates and serves /sitemap.xml with the static public pages.
+func (s *Server) sitemapXML(w http.ResponseWriter, r *http.Request) {
+	baseURL := s.baseURL(r)
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	now := time.Now().UTC().Format("2006-01-02")
+	fmt.Fprintf(w, `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>%s/</loc><lastmod>%s</lastmod><changefreq>daily</changefreq><priority>1.0</priority></url>
+  <url><loc>%s/server/about</loc><lastmod>%s</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>%s/server/help</loc><lastmod>%s</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>%s/server/privacy</loc><lastmod>%s</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
+  <url><loc>%s/server/terms</loc><lastmod>%s</lastmod><changefreq>monthly</changefreq><priority>0.5</priority></url>
+  <url><loc>%s/server/docs/swagger</loc><lastmod>%s</lastmod><changefreq>weekly</changefreq><priority>0.7</priority></url>
+</urlset>`, baseURL, now, baseURL, now, baseURL, now, baseURL, now, baseURL, now, baseURL, now)
 }
 
 // handleRoot handles the root endpoint — redirects to dashboard if logged in,
