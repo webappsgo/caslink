@@ -215,7 +215,23 @@ func (s *Store) initUsersSchema() error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 
-		// API tokens — token_prefix stores first 8 chars for display (AI.md PART 11)
+		// Unified API tokens table per AI.md PART 11.
+		// All token types (adm_, usr_, org_) live here; owner_type distinguishes them.
+		`CREATE TABLE IF NOT EXISTS tokens (
+			id           INTEGER PRIMARY KEY AUTOINCREMENT,
+			owner_type   TEXT NOT NULL,
+			owner_id     INTEGER NOT NULL,
+			name         TEXT NOT NULL DEFAULT 'default',
+			token_hash   TEXT NOT NULL UNIQUE,
+			token_prefix TEXT NOT NULL DEFAULT '',
+			scope        TEXT NOT NULL DEFAULT 'global',
+			expires_at   TIMESTAMP,
+			last_used_at TIMESTAMP,
+			created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(owner_type, owner_id, name)
+		)`,
+
+		// api_tokens kept for backward compatibility — no longer written by token service.
 		`CREATE TABLE IF NOT EXISTS api_tokens (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			user_id INTEGER NOT NULL,
@@ -391,6 +407,9 @@ func (s *Store) initUsersSchema() error {
 
 	// Idempotent schema updates — safe to run on every startup.
 	usersUpdates := []string{
+		// tokens table indexes (AI.md PART 11)
+		`CREATE INDEX IF NOT EXISTS idx_tokens_hash ON tokens(token_hash)`,
+		`CREATE INDEX IF NOT EXISTS idx_tokens_owner ON tokens(owner_type, owner_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_api_tokens_user_id ON api_tokens(user_id)`,

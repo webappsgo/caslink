@@ -59,7 +59,7 @@
           <tr>
             <td>{{.Name}}</td>
             <td class="text-muted text-sm">{{.CreatedAt}}</td>
-            <td class="text-muted text-sm">{{if .LastUsed}}{{.LastUsed}}{{else}}Never{{end}}</td>
+            <td class="text-muted text-sm">{{if .LastUsedAt}}{{.LastUsedAt}}{{else}}Never{{end}}</td>
             <td class="text-muted text-sm">{{if .ExpiresAt}}{{.ExpiresAt}}{{else}}Never{{end}}</td>
             <td>
               <form method="POST" action="/users/tokens" style="display:inline">

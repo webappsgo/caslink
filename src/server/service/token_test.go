@@ -25,17 +25,19 @@ func newTestStore(t *testing.T) *store.Store {
 	t.Cleanup(func() { db.Close() })
 
 	schema := []string{
-		`CREATE TABLE IF NOT EXISTS api_tokens (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user_id INTEGER NOT NULL,
-			user_type TEXT NOT NULL,
-			token_hash TEXT NOT NULL UNIQUE,
-			token_prefix TEXT,
-			name TEXT,
-			permissions TEXT,
-			last_used DATETIME,
-			expires_at DATETIME,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		// Unified tokens table per AI.md PART 11.
+		`CREATE TABLE IF NOT EXISTS tokens (
+			id           INTEGER PRIMARY KEY AUTOINCREMENT,
+			owner_type   TEXT NOT NULL,
+			owner_id     INTEGER NOT NULL,
+			name         TEXT NOT NULL DEFAULT 'default',
+			token_hash   TEXT NOT NULL UNIQUE,
+			token_prefix TEXT NOT NULL DEFAULT '',
+			scope        TEXT NOT NULL DEFAULT 'global',
+			expires_at   TIMESTAMP,
+			last_used_at TIMESTAMP,
+			created_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(owner_type, owner_id, name)
 		)`,
 	}
 
@@ -66,8 +68,8 @@ func TestCreateAndValidateToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ValidateToken failed for correct plaintext: %v", err)
 	}
-	if rec.UserID != 1 {
-		t.Errorf("expected UserID 1, got %d", rec.UserID)
+	if rec.OwnerID != 1 {
+		t.Errorf("expected OwnerID 1, got %d", rec.OwnerID)
 	}
 
 	// Wrong plaintext fails

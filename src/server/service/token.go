@@ -23,8 +23,8 @@ const tokenRandomLen = 32
 
 // tokenPrefixForType returns the token prefix for a given owner type.
 // AI.md PART 11: adm_ (admin), usr_ (user), org_ (org).
-func tokenPrefixForType(userType string) string {
-	switch strings.ToLower(userType) {
+func tokenPrefixForType(ownerType string) string {
+	switch strings.ToLower(ownerType) {
 	case "admin":
 		return "adm_"
 	case "org":
@@ -50,19 +50,20 @@ func generateTokenRandom() (string, error) {
 }
 
 // TokenRecord represents a stored API token (plaintext never persisted).
+// Uses the unified tokens table schema from AI.md PART 11.
 type TokenRecord struct {
 	ID          int64
-	UserID      int64
-	UserType    string
+	OwnerType   string
+	OwnerID     int64
 	Name        string
 	TokenPrefix string
-	Scopes      []string
+	Scope       string
 	ExpiresAt   *time.Time
 	CreatedAt   time.Time
-	LastUsed    *time.Time
+	LastUsedAt  *time.Time
 }
 
-// TokenService manages API tokens.
+// TokenService manages API tokens using the unified tokens table (AI.md PART 11).
 type TokenService struct {
 	store *store.Store
 }
@@ -78,21 +79,32 @@ func NewTokenService(st *store.Store) *TokenService {
 //
 // Only the SHA-256 hash and the display prefix (first 8 chars) are persisted.
 // The full plaintext is returned once and never stored.
-func (s *TokenService) CreateToken(ctx context.Context, userID int64, userType, name string, scopes []string, expiresAt *time.Time) (string, error) {
-	prefix := tokenPrefixForType(userType)
+// Writes to the unified tokens table; keeps old api_tokens untouched.
+func (s *TokenService) CreateToken(ctx context.Context, ownerID int64, ownerType, name string, scopes []string, expiresAt *time.Time) (string, error) {
+	prefix := tokenPrefixForType(ownerType)
 	random, err := generateTokenRandom()
 	if err != nil {
 		return "", fmt.Errorf("failed to generate token: %w", err)
 	}
 	plaintext := prefix + random
 	tokenHash := hashAPIToken(plaintext)
+
 	// Store first 8 chars for display: e.g. "adm_a1b2"
 	displayPrefix := plaintext
 	if len(displayPrefix) > 8 {
 		displayPrefix = displayPrefix[:8]
 	}
 
-	scopesStr := strings.Join(scopes, ",")
+	// Map scopes list to a single scope string per the spec:
+	// 'global', 'read-write', or 'read'. Default to 'global'.
+	scope := "global"
+	if len(scopes) > 0 {
+		scope = scopes[0]
+	}
+
+	if name == "" {
+		name = "default"
+	}
 
 	var expiresVal interface{}
 	if expiresAt != nil {
@@ -103,20 +115,12 @@ func (s *TokenService) CreateToken(ctx context.Context, userID int64, userType, 
 	defer cancel()
 
 	_, err = s.store.UsersDB.ExecContext(ctx2,
-		`INSERT INTO api_tokens (user_id, user_type, token_hash, token_prefix, name, permissions, expires_at, created_at)
+		`INSERT INTO tokens (owner_type, owner_id, name, token_hash, token_prefix, scope, expires_at, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		userID, userType, tokenHash, displayPrefix, name, scopesStr, expiresVal, time.Now().UTC(),
+		ownerType, ownerID, name, tokenHash, displayPrefix, scope, expiresVal, time.Now().UTC(),
 	)
 	if err != nil {
-		// Fall back to the old schema (without token_prefix column) for existing DBs.
-		_, err = s.store.UsersDB.ExecContext(ctx2,
-			`INSERT INTO api_tokens (user_id, user_type, token_hash, name, permissions, expires_at, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			userID, userType, tokenHash, name, scopesStr, expiresVal, time.Now().UTC(),
-		)
-		if err != nil {
-			return "", fmt.Errorf("failed to store token: %w", err)
-		}
+		return "", fmt.Errorf("failed to store token: %w", err)
 	}
 
 	return plaintext, nil
@@ -124,6 +128,7 @@ func (s *TokenService) CreateToken(ctx context.Context, userID int64, userType, 
 
 // ValidateToken looks up a token by its SHA-256 hash using constant-time
 // comparison and returns the record if the token is valid and not expired.
+// Checks the unified tokens table per AI.md PART 11.
 func (s *TokenService) ValidateToken(ctx context.Context, plaintext string) (*TokenRecord, error) {
 	wantHash := hashAPIToken(plaintext)
 
@@ -132,18 +137,17 @@ func (s *TokenService) ValidateToken(ctx context.Context, plaintext string) (*To
 
 	var rec TokenRecord
 	var storedHash string
-	var scopesStr string
 	var tokenPrefix sql.NullString
 	var expiresAt sql.NullTime
-	var lastUsed sql.NullTime
+	var lastUsedAt sql.NullTime
 
-	// Fetch by hash (index lookup), then double-check via constant-time compare.
 	err := s.store.UsersDB.QueryRowContext(ctx2,
-		`SELECT id, user_id, user_type, name, permissions, expires_at, created_at, last_used, token_hash, COALESCE(token_prefix, '') as token_prefix
-		 FROM api_tokens WHERE token_hash = ?`, wantHash,
+		`SELECT id, owner_type, owner_id, name, scope, expires_at, created_at, last_used_at,
+		        token_hash, COALESCE(token_prefix, '') as token_prefix
+		 FROM tokens WHERE token_hash = ?`, wantHash,
 	).Scan(
-		&rec.ID, &rec.UserID, &rec.UserType, &rec.Name, &scopesStr,
-		&expiresAt, &rec.CreatedAt, &lastUsed, &storedHash, &tokenPrefix,
+		&rec.ID, &rec.OwnerType, &rec.OwnerID, &rec.Name, &rec.Scope,
+		&expiresAt, &rec.CreatedAt, &lastUsedAt, &storedHash, &tokenPrefix,
 	)
 
 	if err == sql.ErrNoRows {
@@ -166,23 +170,20 @@ func (s *TokenService) ValidateToken(ctx context.Context, plaintext string) (*To
 		t := expiresAt.Time
 		rec.ExpiresAt = &t
 	}
-	if lastUsed.Valid {
-		t := lastUsed.Time
-		rec.LastUsed = &t
-	}
-	if scopesStr != "" {
-		rec.Scopes = strings.Split(scopesStr, ",")
+	if lastUsedAt.Valid {
+		t := lastUsedAt.Time
+		rec.LastUsedAt = &t
 	}
 	if tokenPrefix.Valid {
 		rec.TokenPrefix = tokenPrefix.String
 	}
 
-	// Update last_used asynchronously — ignore errors (non-critical).
+	// Update last_used_at asynchronously — ignore errors (non-critical).
 	go func() {
 		bgCtx, bgCancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer bgCancel()
 		_, _ = s.store.UsersDB.ExecContext(bgCtx,
-			`UPDATE api_tokens SET last_used = ? WHERE id = ?`,
+			`UPDATE tokens SET last_used_at = ? WHERE id = ?`,
 			time.Now().UTC(), rec.ID,
 		)
 	}()
@@ -190,15 +191,16 @@ func (s *TokenService) ValidateToken(ctx context.Context, plaintext string) (*To
 	return &rec, nil
 }
 
-// ListTokens returns all tokens belonging to a user (no hashes exposed).
-func (s *TokenService) ListTokens(ctx context.Context, userID int64) ([]*TokenRecord, error) {
+// ListTokens returns all tokens belonging to a given owner.
+func (s *TokenService) ListTokens(ctx context.Context, ownerID int64) ([]*TokenRecord, error) {
 	ctx2, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	rows, err := s.store.UsersDB.QueryContext(ctx2,
-		`SELECT id, user_id, user_type, name, permissions, expires_at, created_at, last_used, COALESCE(token_prefix, '') as token_prefix
-		 FROM api_tokens WHERE user_id = ? ORDER BY created_at DESC`,
-		userID,
+		`SELECT id, owner_type, owner_id, name, scope, expires_at, created_at, last_used_at,
+		        COALESCE(token_prefix, '') as token_prefix
+		 FROM tokens WHERE owner_id = ? ORDER BY created_at DESC`,
+		ownerID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tokens: %w", err)
@@ -208,14 +210,13 @@ func (s *TokenService) ListTokens(ctx context.Context, userID int64) ([]*TokenRe
 	var tokens []*TokenRecord
 	for rows.Next() {
 		var rec TokenRecord
-		var scopesStr string
 		var tokenPrefix sql.NullString
 		var expiresAt sql.NullTime
-		var lastUsed sql.NullTime
+		var lastUsedAt sql.NullTime
 
 		if err := rows.Scan(
-			&rec.ID, &rec.UserID, &rec.UserType, &rec.Name, &scopesStr,
-			&expiresAt, &rec.CreatedAt, &lastUsed, &tokenPrefix,
+			&rec.ID, &rec.OwnerType, &rec.OwnerID, &rec.Name, &rec.Scope,
+			&expiresAt, &rec.CreatedAt, &lastUsedAt, &tokenPrefix,
 		); err != nil {
 			continue
 		}
@@ -223,12 +224,9 @@ func (s *TokenService) ListTokens(ctx context.Context, userID int64) ([]*TokenRe
 			t := expiresAt.Time
 			rec.ExpiresAt = &t
 		}
-		if lastUsed.Valid {
-			t := lastUsed.Time
-			rec.LastUsed = &t
-		}
-		if scopesStr != "" {
-			rec.Scopes = strings.Split(scopesStr, ",")
+		if lastUsedAt.Valid {
+			t := lastUsedAt.Time
+			rec.LastUsedAt = &t
 		}
 		if tokenPrefix.Valid {
 			rec.TokenPrefix = tokenPrefix.String
@@ -242,13 +240,13 @@ func (s *TokenService) ListTokens(ctx context.Context, userID int64) ([]*TokenRe
 	return tokens, nil
 }
 
-// RevokeToken deletes a token, verifying it belongs to the given user.
-func (s *TokenService) RevokeToken(ctx context.Context, tokenID, userID int64) error {
+// RevokeToken deletes a token, verifying it belongs to the given owner.
+func (s *TokenService) RevokeToken(ctx context.Context, tokenID, ownerID int64) error {
 	ctx2, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	res, err := s.store.UsersDB.ExecContext(ctx2,
-		`DELETE FROM api_tokens WHERE id = ? AND user_id = ?`, tokenID, userID,
+		`DELETE FROM tokens WHERE id = ? AND owner_id = ?`, tokenID, ownerID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to revoke token: %w", err)
@@ -264,4 +262,21 @@ func (s *TokenService) RevokeToken(ctx context.Context, tokenID, userID int64) e
 func hashAPIToken(plaintext string) string {
 	sum := sha256.Sum256([]byte(plaintext))
 	return hex.EncodeToString(sum[:])
+}
+
+// generateOrgToken generates a prefixed org_ token and returns
+// (plaintext, tokenHash, displayPrefix, error).
+// Used by OrgService which is in the same package.
+func generateOrgToken() (string, string, string, error) {
+	random, err := generateTokenRandom()
+	if err != nil {
+		return "", "", "", err
+	}
+	plaintext := "org_" + random
+	tokenHash := hashAPIToken(plaintext)
+	displayPrefix := plaintext
+	if len(displayPrefix) > 8 {
+		displayPrefix = displayPrefix[:8]
+	}
+	return plaintext, tokenHash, displayPrefix, nil
 }

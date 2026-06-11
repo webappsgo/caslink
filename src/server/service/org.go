@@ -2,10 +2,7 @@ package service
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"fmt"
 	"regexp"
 	"strings"
@@ -246,7 +243,8 @@ type OrgToken struct {
 	Active      bool       `json:"active"`
 }
 
-// CreateOrgToken creates a new API token scoped to the given org.
+// CreateOrgToken creates a new org-scoped API token (org_ prefix).
+// Uses the unified tokens table per AI.md PART 11.
 // Only org owners and admins may create tokens (caller must enforce this).
 // Returns the saved OrgToken and the single-use plain-text token.
 // The plain token is NOT stored — only its SHA-256 hex digest is persisted.
@@ -254,28 +252,24 @@ func (s *OrgService) CreateOrgToken(ctx context.Context, orgID, createdBy int64,
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return nil, "", fmt.Errorf("failed to generate token bytes: %w", err)
+	plainToken, tokenHash, displayPrefix, err := generateOrgToken()
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to generate token: %w", err)
 	}
-	plainToken := hex.EncodeToString(raw)
 
-	sum := sha256.Sum256([]byte(plainToken))
-	tokenHash := hex.EncodeToString(sum[:])
-
-	permsJSON := "[" + strings.Join(func() []string {
-		out := make([]string, len(permissions))
-		for i, p := range permissions {
-			out[i] = `"` + strings.ReplaceAll(p, `"`, `\"`) + `"`
-		}
-		return out
-	}(), ",") + "]"
+	scope := "global"
+	if len(permissions) > 0 {
+		scope = permissions[0]
+	}
+	if name == "" {
+		name = "default"
+	}
 
 	now := time.Now()
 	res, err := s.store.UsersDB.ExecContext(ctx,
-		`INSERT INTO org_tokens (org_id, created_by, name, token_hash, permissions, created_at, active)
-		 VALUES (?, ?, ?, ?, ?, ?, 1)`,
-		orgID, createdBy, name, tokenHash, permsJSON, now,
+		`INSERT INTO tokens (owner_type, owner_id, name, token_hash, token_prefix, scope, created_at)
+		 VALUES ('org', ?, ?, ?, ?, ?, ?)`,
+		orgID, name, tokenHash, displayPrefix, scope, now,
 	)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to insert org token: %w", err)
@@ -295,13 +289,14 @@ func (s *OrgService) CreateOrgToken(ctx context.Context, orgID, createdBy int64,
 }
 
 // ListOrgTokens returns all active tokens for the given org.
+// Reads from the unified tokens table per AI.md PART 11.
 func (s *OrgService) ListOrgTokens(ctx context.Context, orgID int64) ([]*OrgToken, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	rows, err := s.store.UsersDB.QueryContext(ctx,
-		`SELECT id, org_id, created_by, name, permissions, created_at, expires_at, last_used_at, active
-		 FROM org_tokens WHERE org_id = ? AND active = 1 ORDER BY created_at DESC`,
+		`SELECT id, owner_id, name, scope, created_at, expires_at, last_used_at
+		 FROM tokens WHERE owner_type = 'org' AND owner_id = ? ORDER BY created_at DESC`,
 		orgID,
 	)
 	if err != nil {
@@ -313,10 +308,13 @@ func (s *OrgService) ListOrgTokens(ctx context.Context, orgID int64) ([]*OrgToke
 	for rows.Next() {
 		var t OrgToken
 		var expiresAt, lastUsedAt sql.NullTime
-		var permsJSON string
-		if err := rows.Scan(&t.ID, &t.OrgID, &t.CreatedBy, &t.Name, &permsJSON,
-			&t.CreatedAt, &expiresAt, &lastUsedAt, &t.Active); err != nil {
+		var scope string
+		if err := rows.Scan(&t.ID, &t.OrgID, &t.Name, &scope,
+			&t.CreatedAt, &expiresAt, &lastUsedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan org token: %w", err)
+		}
+		if scope != "" {
+			t.Permissions = []string{scope}
 		}
 		if expiresAt.Valid {
 			t.ExpiresAt = &expiresAt.Time
@@ -324,6 +322,7 @@ func (s *OrgService) ListOrgTokens(ctx context.Context, orgID int64) ([]*OrgToke
 		if lastUsedAt.Valid {
 			t.LastUsedAt = &lastUsedAt.Time
 		}
+		t.Active = true
 		tokens = append(tokens, &t)
 	}
 	if err := rows.Err(); err != nil {
@@ -332,14 +331,14 @@ func (s *OrgService) ListOrgTokens(ctx context.Context, orgID int64) ([]*OrgToke
 	return tokens, nil
 }
 
-// RevokeOrgToken marks an org token as inactive (soft delete).
+// RevokeOrgToken deletes an org token from the unified tokens table.
 // tokenID must belong to orgID — callers must ensure this to prevent IDOR.
 func (s *OrgService) RevokeOrgToken(ctx context.Context, tokenID, orgID int64) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	res, err := s.store.UsersDB.ExecContext(ctx,
-		`UPDATE org_tokens SET active = 0 WHERE id = ? AND org_id = ?`,
+		`DELETE FROM tokens WHERE id = ? AND owner_type = 'org' AND owner_id = ?`,
 		tokenID, orgID,
 	)
 	if err != nil {
