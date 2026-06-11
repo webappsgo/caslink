@@ -424,6 +424,76 @@ func (s *Store) initUsersSchema() error {
 		`CREATE INDEX IF NOT EXISTS idx_passkey_credentials_credential_id ON passkey_credentials(credential_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_recovery_keys_user_id ON recovery_keys(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_recovery_keys_hash ON recovery_keys(key_hash) WHERE used = 0`,
+		// Trusted devices — remember-this-device 2FA bypass (AI.md PART 10/34)
+		`CREATE TABLE IF NOT EXISTS trusted_devices (
+			id          TEXT PRIMARY KEY,
+			user_type   TEXT NOT NULL,
+			user_id     INTEGER NOT NULL,
+			device_hash TEXT NOT NULL,
+			name        TEXT,
+			created_at  INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+			expires_at  INTEGER NOT NULL,
+			last_used   INTEGER
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_trusted_devices_user ON trusted_devices(user_type, user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_trusted_devices_expires ON trusted_devices(expires_at)`,
+		// Partial sessions — mid-2FA-flow (AI.md PART 10)
+		`CREATE TABLE IF NOT EXISTS partial_sessions (
+			id         TEXT PRIMARY KEY,
+			user_type  TEXT NOT NULL,
+			user_id    INTEGER NOT NULL,
+			created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+			expires_at INTEGER NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_partial_sessions_expires ON partial_sessions(expires_at)`,
+		// Scheduler task tracking (AI.md PART 10/19)
+		`CREATE TABLE IF NOT EXISTS scheduler_tasks (
+			id          TEXT PRIMARY KEY,
+			name        TEXT NOT NULL,
+			task_type   TEXT NOT NULL DEFAULT 'global',
+			enabled     INTEGER NOT NULL DEFAULT 1,
+			schedule    TEXT NOT NULL,
+			last_run    INTEGER,
+			next_run    INTEGER,
+			last_status TEXT,
+			last_error  TEXT,
+			run_count   INTEGER NOT NULL DEFAULT 0,
+			fail_count  INTEGER NOT NULL DEFAULT 0,
+			locked_by   TEXT,
+			locked_at   INTEGER
+		)`,
+		`CREATE TABLE IF NOT EXISTS scheduler_history (
+			id          INTEGER PRIMARY KEY AUTOINCREMENT,
+			task_id     TEXT NOT NULL,
+			started_at  INTEGER NOT NULL,
+			finished_at INTEGER,
+			status      TEXT NOT NULL,
+			error       TEXT,
+			duration_ms INTEGER
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_scheduler_history_task ON scheduler_history(task_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_scheduler_history_started ON scheduler_history(started_at)`,
+		// Backup history (AI.md PART 10/22)
+		`CREATE TABLE IF NOT EXISTS backups (
+			id           INTEGER PRIMARY KEY AUTOINCREMENT,
+			filename     TEXT NOT NULL,
+			size_bytes   INTEGER,
+			checksum     TEXT,
+			encrypted    INTEGER NOT NULL DEFAULT 0,
+			status       TEXT NOT NULL DEFAULT 'pending',
+			error        TEXT,
+			created_at   INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+			completed_at INTEGER
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_backups_created_at ON backups(created_at)`,
+		// DB-backed rate limits — supplement in-memory limiter (AI.md PART 10)
+		`CREATE TABLE IF NOT EXISTS rate_limits (
+			key          TEXT PRIMARY KEY,
+			count        INTEGER NOT NULL DEFAULT 1,
+			window_start INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+			updated_at   INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits(window_start)`,
 	}
 	for _, query := range usersUpdates {
 		ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
