@@ -21,6 +21,7 @@ import (
 
 	"net/http/pprof"
 
+	"github.com/casjaysdevdocker/caslink/src/common/i18n"
 	"github.com/casjaysdevdocker/caslink/src/config"
 	"github.com/casjaysdevdocker/caslink/src/geoip"
 	"github.com/casjaysdevdocker/caslink/src/graphql"
@@ -220,6 +221,9 @@ func (s *Server) setupMiddleware() {
 	})
 
 	// Timeout middleware (30 second timeout)
+	// Language selection per AI.md PART 31: ?lang= query param > lang cookie > Accept-Language > default (en)
+	s.router.Use(i18n.LanguageMiddleware)
+
 	s.router.Use(middleware.Timeout(30 * time.Second))
 
 	// CORS middleware. When unset, restrict to same-origin (no allowed
@@ -304,6 +308,20 @@ func (s *Server) setupRoutes() {
 
 	// Static assets (CSS, JS, PWA manifest, service worker)
 	s.router.Handle("/static/*", tmpl.StaticHandler())
+
+	// Serve embedded locale JSON files for frontend i18n (AI.md PART 31).
+	// GET /locales/{lang}.json → returns the embedded translation file.
+	s.router.Get("/locales/{lang}.json", func(w http.ResponseWriter, r *http.Request) {
+		lang := chi.URLParam(r, "lang")
+		data, err := i18n.LocaleJSON(lang)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		w.Write(data)
+	})
 
 	// Debug endpoints — only in development/debug mode per AI.md PART 6.
 	// These endpoints MUST NOT be exposed in production (pprof leaks internals).

@@ -225,6 +225,17 @@ func Languages() []LanguageInfo {
 	return out
 }
 
+// LocaleJSON returns the raw JSON bytes for the given language code.
+// Returns an error when the language is unsupported or the file is missing.
+// Used by the /locales/{lang}.json HTTP endpoint (AI.md PART 31).
+func LocaleJSON(lang string) ([]byte, error) {
+	lang = strings.ToLower(strings.TrimSpace(lang))
+	if !isSupported(lang) {
+		return nil, fmt.Errorf("unsupported language: %s", lang)
+	}
+	return localeFS.ReadFile(fmt.Sprintf("locales/%s.json", lang))
+}
+
 // lookup resolves a dot-separated key path inside a nested map.
 func lookup(m map[string]any, key string) string {
 	if m == nil {
