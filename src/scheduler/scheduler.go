@@ -356,22 +356,36 @@ func compressLog(src, dst string) error {
 	return os.Truncate(src, 0)
 }
 
-// cleanupSessions removes expired sessions.
+// cleanupSessions removes expired sessions from both session tables.
+// admin_sessions lives in server.db; user_sessions lives in users.db.
 func (s *Scheduler) cleanupSessions() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	res, err := s.store.UsersDB.ExecContext(ctx,
-		`DELETE FROM sessions WHERE expires_at < ?`,
-		time.Now().UTC(),
-	)
+	now := time.Now().Unix()
+
+	var total int64
+
+	resAdmin, err := s.store.ServerDB.ExecContext(ctx,
+		`DELETE FROM admin_sessions WHERE expires_at < ?`, now)
 	if err != nil {
-		log.Printf("[scheduler] cleanupSessions error: %v", err)
-		return
+		log.Printf("[scheduler] cleanupSessions admin_sessions error: %v", err)
+	} else {
+		n, _ := resAdmin.RowsAffected()
+		total += n
 	}
-	n, _ := res.RowsAffected()
-	if n > 0 {
-		log.Printf("[scheduler] cleanupSessions: removed %d expired sessions", n)
+
+	resUser, err := s.store.UsersDB.ExecContext(ctx,
+		`DELETE FROM user_sessions WHERE expires_at < ?`, now)
+	if err != nil {
+		log.Printf("[scheduler] cleanupSessions user_sessions error: %v", err)
+	} else {
+		n, _ := resUser.RowsAffected()
+		total += n
+	}
+
+	if total > 0 {
+		log.Printf("[scheduler] cleanupSessions: removed %d expired sessions", total)
 	}
 }
 

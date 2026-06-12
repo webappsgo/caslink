@@ -147,6 +147,95 @@ func (s *Store) initServerSchema() error {
 		}
 	}
 
+	// server.db: config KV store (spec PART 5/6)
+	serverConfigTables := []string{
+		`CREATE TABLE IF NOT EXISTS config (
+			key        TEXT PRIMARY KEY,
+			value      TEXT NOT NULL,
+			updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+			updated_by TEXT
+		)`,
+		`CREATE TABLE IF NOT EXISTS config_meta (
+			id         INTEGER PRIMARY KEY DEFAULT 1,
+			version    INTEGER NOT NULL DEFAULT 1,
+			updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+		)`,
+		// Admin sessions belong in server.db (spec lines 11984-11992)
+		`CREATE TABLE IF NOT EXISTS admin_sessions (
+			id          TEXT PRIMARY KEY,
+			admin_id    INTEGER NOT NULL,
+			ip_address  TEXT NOT NULL DEFAULT '',
+			user_agent  TEXT,
+			created_at  INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+			expires_at  INTEGER NOT NULL,
+			last_active INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+		)`,
+		// Rate limits belong in server.db (spec lines 7879-7906)
+		`CREATE TABLE IF NOT EXISTS rate_limits (
+			key          TEXT PRIMARY KEY,
+			count        INTEGER NOT NULL DEFAULT 1,
+			window_start INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+			updated_at   INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+		)`,
+		// Audit log belongs in server.db (spec lines 7879-7906)
+		`CREATE TABLE IF NOT EXISTS audit_log (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER,
+			user_type TEXT,
+			action TEXT NOT NULL,
+			resource TEXT,
+			details TEXT,
+			ip_address TEXT,
+			user_agent TEXT,
+			created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+		)`,
+		// Scheduler tables belong in server.db (spec lines 7879-7906)
+		`CREATE TABLE IF NOT EXISTS scheduler_tasks (
+			id          TEXT PRIMARY KEY,
+			name        TEXT NOT NULL,
+			task_type   TEXT NOT NULL DEFAULT 'global',
+			enabled     INTEGER NOT NULL DEFAULT 1,
+			schedule    TEXT NOT NULL,
+			last_run    INTEGER,
+			next_run    INTEGER,
+			last_status TEXT,
+			last_error  TEXT,
+			run_count   INTEGER NOT NULL DEFAULT 0,
+			fail_count  INTEGER NOT NULL DEFAULT 0,
+			locked_by   TEXT,
+			locked_at   INTEGER
+		)`,
+		`CREATE TABLE IF NOT EXISTS scheduler_history (
+			id          INTEGER PRIMARY KEY AUTOINCREMENT,
+			task_id     TEXT NOT NULL,
+			started_at  INTEGER NOT NULL,
+			finished_at INTEGER,
+			status      TEXT NOT NULL,
+			error       TEXT,
+			duration_ms INTEGER
+		)`,
+		// Backup history belongs in server.db (spec lines 7879-7906)
+		`CREATE TABLE IF NOT EXISTS backups (
+			id           INTEGER PRIMARY KEY AUTOINCREMENT,
+			filename     TEXT NOT NULL,
+			size_bytes   INTEGER,
+			checksum     TEXT,
+			encrypted    INTEGER NOT NULL DEFAULT 0,
+			status       TEXT NOT NULL DEFAULT 'pending',
+			error        TEXT,
+			created_at   INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+			completed_at INTEGER
+		)`,
+	}
+	for _, query := range serverConfigTables {
+		ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
+		_, err := s.ServerDB.ExecContext(ctx, query)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("failed to create server config table: %w", err)
+		}
+	}
+
 	// Idempotent schema updates — safe to run on every startup.
 	serverUpdates := []string{
 		`CREATE INDEX IF NOT EXISTS idx_urls_short_code ON urls(short_code)`,
@@ -157,6 +246,14 @@ func (s *Store) initServerSchema() error {
 		`CREATE INDEX IF NOT EXISTS idx_clicks_clicked_at ON clicks(clicked_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_click_daily_stats_url_id ON click_daily_stats(url_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_click_daily_stats_date ON click_daily_stats(date)`,
+		`CREATE INDEX IF NOT EXISTS idx_admin_sessions_admin ON admin_sessions(admin_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_sessions(expires_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON audit_log(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits(window_start)`,
+		`CREATE INDEX IF NOT EXISTS idx_scheduler_history_task ON scheduler_history(task_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_scheduler_history_started ON scheduler_history(started_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_backups_created_at ON backups(created_at)`,
 	}
 	for _, query := range serverUpdates {
 		ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
@@ -394,6 +491,31 @@ func (s *Store) initUsersSchema() error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 		)`,
+
+		// User sessions (spec lines 12355-12366) — regular user sessions in users.db
+		`CREATE TABLE IF NOT EXISTS user_sessions (
+			id          TEXT PRIMARY KEY,
+			user_id     INTEGER NOT NULL,
+			ip_address  TEXT NOT NULL DEFAULT '',
+			user_agent  TEXT,
+			created_at  INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+			expires_at  INTEGER NOT NULL,
+			last_active INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+		)`,
+
+		// Passkeys (spec lines 12374-12387) — WebAuthn credentials keyed by user_type+user_id
+		`CREATE TABLE IF NOT EXISTS passkeys (
+			id          TEXT PRIMARY KEY,
+			user_type   TEXT NOT NULL,
+			user_id     INTEGER NOT NULL,
+			name        TEXT NOT NULL,
+			public_key  TEXT NOT NULL,
+			sign_count  INTEGER NOT NULL DEFAULT 0,
+			transports  TEXT,
+			aaguid      TEXT,
+			created_at  INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+			last_used   INTEGER
+		)`,
 	}
 
 	for _, query := range queries {
@@ -443,6 +565,9 @@ func (s *Store) initUsersSchema() error {
 		`CREATE INDEX IF NOT EXISTS idx_passkey_credentials_credential_id ON passkey_credentials(credential_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_recovery_keys_user_id ON recovery_keys(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_recovery_keys_hash ON recovery_keys(key_hash) WHERE used = 0`,
+		`CREATE INDEX IF NOT EXISTS idx_user_sessions_user_id ON user_sessions(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_user_sessions_expires ON user_sessions(expires_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_passkeys_user ON passkeys(user_type, user_id)`,
 		// Trusted devices — remember-this-device 2FA bypass (AI.md PART 10/34)
 		`CREATE TABLE IF NOT EXISTS trusted_devices (
 			id          TEXT PRIMARY KEY,

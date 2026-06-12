@@ -115,27 +115,24 @@ func (s *AuthService) CreatePrimaryAdmin(ctx context.Context, username, password
 	return nil
 }
 
-// CreateSession creates a new admin session
+// CreateSession creates a new admin session in server.db (admin_sessions table).
 func (s *AuthService) CreateSession(ctx context.Context, adminID int64, rememberMe bool) (string, error) {
-	// Generate session ID
 	sessionID, err := generateSessionID()
 	if err != nil {
 		return "", fmt.Errorf("failed to generate session ID: %w", err)
 	}
 
-	// Calculate expiration
-	var expiresAt time.Time
+	var expiresAt int64
 	if rememberMe {
-		expiresAt = time.Now().Add(90 * 24 * time.Hour) // 90 days
+		expiresAt = time.Now().Add(90 * 24 * time.Hour).Unix()
 	} else {
-		expiresAt = time.Now().Add(30 * 24 * time.Hour) // 30 days
+		expiresAt = time.Now().Add(30 * 24 * time.Hour).Unix()
 	}
 
-	// Insert session
-	query := `INSERT INTO sessions (id, user_id, user_type, expires_at, created_at)
-	          VALUES (?, ?, 'admin', ?, ?)`
-
-	_, err = s.store.UsersDB.ExecContext(ctx, query, sessionID, adminID, expiresAt, time.Now())
+	_, err = s.store.ServerDB.ExecContext(ctx,
+		`INSERT INTO admin_sessions (id, admin_id, expires_at) VALUES (?, ?, ?)`,
+		sessionID, adminID, expiresAt,
+	)
 	if err != nil {
 		return "", fmt.Errorf("failed to create session: %w", err)
 	}
@@ -143,20 +140,15 @@ func (s *AuthService) CreateSession(ctx context.Context, adminID int64, remember
 	return sessionID, nil
 }
 
-// ValidateSession validates a session ID and returns the admin
+// ValidateSession validates an admin session from server.db and returns the admin
+// from users.db. SQLite does not support cross-file JOINs, so two queries are used.
 func (s *AuthService) ValidateSession(ctx context.Context, sessionID string) (*Admin, error) {
-	// Query session with join to admins table
-	query := `SELECT a.id, a.username, a.email, a.is_primary, a.totp_enabled, a.created_at, a.last_login
-	          FROM sessions s
-	          JOIN admins a ON s.user_id = a.id
-	          WHERE s.id = ? AND s.user_type = 'admin' AND s.expires_at > ?`
-
-	var admin Admin
-	err := s.store.UsersDB.QueryRowContext(ctx, query, sessionID, time.Now()).Scan(
-		&admin.ID, &admin.Username, &admin.Email,
-		&admin.IsPrimary, &admin.TOTPEnabled, &admin.CreatedAt, &admin.LastLogin,
-	)
-
+	// Step 1: look up session in server.db
+	var adminID int64
+	err := s.store.ServerDB.QueryRowContext(ctx,
+		`SELECT admin_id FROM admin_sessions WHERE id = ? AND expires_at > ?`,
+		sessionID, time.Now().Unix(),
+	).Scan(&adminID)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("invalid or expired session")
 	}
@@ -164,13 +156,28 @@ func (s *AuthService) ValidateSession(ctx context.Context, sessionID string) (*A
 		return nil, fmt.Errorf("failed to validate session: %w", err)
 	}
 
+	// Step 2: fetch admin from users.db
+	var admin Admin
+	err = s.store.UsersDB.QueryRowContext(ctx,
+		`SELECT id, username, email, is_primary, totp_enabled, created_at, last_login
+		 FROM admins WHERE id = ?`,
+		adminID,
+	).Scan(&admin.ID, &admin.Username, &admin.Email,
+		&admin.IsPrimary, &admin.TOTPEnabled, &admin.CreatedAt, &admin.LastLogin)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("invalid or expired session")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to load admin: %w", err)
+	}
+
 	return &admin, nil
 }
 
-// DeleteSession deletes a session (logout)
+// DeleteSession deletes an admin session from server.db (logout).
 func (s *AuthService) DeleteSession(ctx context.Context, sessionID string) error {
-	query := `DELETE FROM sessions WHERE id = ?`
-	_, err := s.store.UsersDB.ExecContext(ctx, query, sessionID)
+	_, err := s.store.ServerDB.ExecContext(ctx,
+		`DELETE FROM admin_sessions WHERE id = ?`, sessionID)
 	return err
 }
 
@@ -292,27 +299,25 @@ func (s *AuthService) AuthenticateUser(ctx context.Context, identifier, password
 	return &user, nil
 }
 
-// CreateUserSession creates a new user session
+// CreateUserSession creates a new regular user session in users.db (user_sessions table).
 func (s *AuthService) CreateUserSession(ctx context.Context, userID int64, rememberMe bool) (string, error) {
-	// Generate session ID
 	sessionID, err := generateSessionID()
 	if err != nil {
 		return "", fmt.Errorf("failed to generate session ID: %w", err)
 	}
 
-	// Calculate expiration (7 days default, per PART 23)
-	var expiresAt time.Time
+	// 7 days default, 30 days with rememberMe (per PART 23)
+	var expiresAt int64
 	if rememberMe {
-		expiresAt = time.Now().Add(30 * 24 * time.Hour) // 30 days
+		expiresAt = time.Now().Add(30 * 24 * time.Hour).Unix()
 	} else {
-		expiresAt = time.Now().Add(7 * 24 * time.Hour) // 7 days
+		expiresAt = time.Now().Add(7 * 24 * time.Hour).Unix()
 	}
 
-	// Insert session
-	query := `INSERT INTO sessions (id, user_id, user_type, expires_at, created_at)
-	          VALUES (?, ?, 'user', ?, ?)`
-
-	_, err = s.store.UsersDB.ExecContext(ctx, query, sessionID, userID, expiresAt, time.Now())
+	_, err = s.store.UsersDB.ExecContext(ctx,
+		`INSERT INTO user_sessions (id, user_id, expires_at) VALUES (?, ?, ?)`,
+		sessionID, userID, expiresAt,
+	)
 	if err != nil {
 		return "", fmt.Errorf("failed to create session: %w", err)
 	}
@@ -320,16 +325,16 @@ func (s *AuthService) CreateUserSession(ctx context.Context, userID int64, remem
 	return sessionID, nil
 }
 
-// ValidateUserSession validates a user session ID and returns the user
+// ValidateUserSession validates a user session from user_sessions and returns the user.
+// Both tables are in users.db so a JOIN is used.
 func (s *AuthService) ValidateUserSession(ctx context.Context, sessionID string) (*User, error) {
-	// Query session with join to users table
 	query := `SELECT u.id, u.username, u.email, u.email_verified, u.totp_enabled, u.created_at, u.last_login
-	          FROM sessions s
+	          FROM user_sessions s
 	          JOIN users u ON s.user_id = u.id
-	          WHERE s.id = ? AND s.user_type = 'user' AND s.expires_at > ?`
+	          WHERE s.id = ? AND s.expires_at > ?`
 
 	var user User
-	err := s.store.UsersDB.QueryRowContext(ctx, query, sessionID, time.Now()).Scan(
+	err := s.store.UsersDB.QueryRowContext(ctx, query, sessionID, time.Now().Unix()).Scan(
 		&user.ID, &user.Username, &user.Email, &user.EmailVerified,
 		&user.TOTPEnabled, &user.CreatedAt, &user.LastLogin,
 	)
@@ -446,10 +451,15 @@ func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword stri
 	// Best-effort update — don't fail password reset if marking token fails
 	_, _ = s.store.UsersDB.ExecContext(ctx, markUsedQuery, time.Now().Unix(), tokenHash)
 
-	// Invalidate all existing sessions per PART 23 line 20534
-	deleteSessionsQuery := `DELETE FROM sessions WHERE user_id = ? AND user_type = ?`
-	// Best-effort cleanup — don't fail password reset if session deletion fails
-	_, _ = s.store.UsersDB.ExecContext(ctx, deleteSessionsQuery, userID, userType)
+	// Invalidate all existing sessions per PART 23 line 20534.
+	// Admin sessions live in server.db; user sessions live in users.db.
+	if userType == "admin" {
+		_, _ = s.store.ServerDB.ExecContext(ctx,
+			`DELETE FROM admin_sessions WHERE admin_id = ?`, userID)
+	} else {
+		_, _ = s.store.UsersDB.ExecContext(ctx,
+			`DELETE FROM user_sessions WHERE user_id = ?`, userID)
+	}
 
 	return nil
 }
@@ -508,13 +518,28 @@ type Session struct {
 }
 
 // GetUserSessions retrieves all active sessions for a user.
+// Admin sessions are read from server.db; user sessions from users.db.
 func (s *AuthService) GetUserSessions(ctx context.Context, userID int64, userType string) ([]Session, error) {
-	query := `SELECT id, user_id, user_type, expires_at, created_at
-	          FROM sessions
-	          WHERE user_id = ? AND user_type = ? AND expires_at > ?
-	          ORDER BY created_at DESC`
+	now := time.Now().Unix()
 
-	rows, err := s.store.UsersDB.QueryContext(ctx, query, userID, userType, time.Now())
+	var rows *sql.Rows
+	var err error
+
+	if userType == "admin" {
+		rows, err = s.store.ServerDB.QueryContext(ctx,
+			`SELECT id, admin_id, expires_at, created_at
+			 FROM admin_sessions
+			 WHERE admin_id = ? AND expires_at > ?
+			 ORDER BY created_at DESC`,
+			userID, now)
+	} else {
+		rows, err = s.store.UsersDB.QueryContext(ctx,
+			`SELECT id, user_id, expires_at, created_at
+			 FROM user_sessions
+			 WHERE user_id = ? AND expires_at > ?
+			 ORDER BY created_at DESC`,
+			userID, now)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to query sessions: %w", err)
 	}
@@ -523,9 +548,13 @@ func (s *AuthService) GetUserSessions(ctx context.Context, userID int64, userTyp
 	var sessions []Session
 	for rows.Next() {
 		var sess Session
-		if err := rows.Scan(&sess.ID, &sess.UserID, &sess.UserType, &sess.ExpiresAt, &sess.CreatedAt); err != nil {
+		var expiresUnix, createdUnix int64
+		if err := rows.Scan(&sess.ID, &sess.UserID, &expiresUnix, &createdUnix); err != nil {
 			continue
 		}
+		sess.UserType = userType
+		sess.ExpiresAt = time.Unix(expiresUnix, 0)
+		sess.CreatedAt = time.Unix(createdUnix, 0)
 		sessions = append(sessions, sess)
 	}
 	if err := rows.Err(); err != nil {
@@ -535,16 +564,25 @@ func (s *AuthService) GetUserSessions(ctx context.Context, userID int64, userTyp
 	return sessions, nil
 }
 
-// RevokeSession revokes a specific session.
+// RevokeSession revokes a specific user session from users.db.
+// For admin session revocation use DeleteSession.
 func (s *AuthService) RevokeSession(ctx context.Context, sessionID string) error {
-	query := `DELETE FROM sessions WHERE id = ?`
-	_, err := s.store.UsersDB.ExecContext(ctx, query, sessionID)
+	_, err := s.store.UsersDB.ExecContext(ctx,
+		`DELETE FROM user_sessions WHERE id = ?`, sessionID)
 	return err
 }
 
 // RevokeAllUserSessions revokes all sessions for a user except the current one.
+// Routes to admin_sessions (server.db) or user_sessions (users.db) based on userType.
 func (s *AuthService) RevokeAllUserSessions(ctx context.Context, userID int64, userType string, exceptSessionID string) error {
-	query := `DELETE FROM sessions WHERE user_id = ? AND user_type = ? AND id != ?`
-	_, err := s.store.UsersDB.ExecContext(ctx, query, userID, userType, exceptSessionID)
+	if userType == "admin" {
+		_, err := s.store.ServerDB.ExecContext(ctx,
+			`DELETE FROM admin_sessions WHERE admin_id = ? AND id != ?`,
+			userID, exceptSessionID)
+		return err
+	}
+	_, err := s.store.UsersDB.ExecContext(ctx,
+		`DELETE FROM user_sessions WHERE user_id = ? AND id != ?`,
+		userID, exceptSessionID)
 	return err
 }

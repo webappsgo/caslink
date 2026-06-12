@@ -6,15 +6,15 @@ import (
 	"time"
 )
 
-// GetConfigValue retrieves a value from the server_config key-value store.
+// GetConfigValue retrieves a value from the config key-value store in server.db.
 // Returns ("", false, nil) when the key does not exist.
 func (s *Store) GetConfigValue(key string) (string, bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
 	defer cancel()
 
 	var value string
-	err := s.UsersDB.QueryRowContext(ctx,
-		`SELECT value FROM server_config WHERE key = ?`, key,
+	err := s.ServerDB.QueryRowContext(ctx,
+		`SELECT value FROM config WHERE key = ?`, key,
 	).Scan(&value)
 	if err == sql.ErrNoRows {
 		return "", false, nil
@@ -25,15 +25,15 @@ func (s *Store) GetConfigValue(key string) (string, bool, error) {
 	return value, true, nil
 }
 
-// SetConfigValue inserts or updates a key in the server_config table.
+// SetConfigValue inserts or updates a key in the config table in server.db.
 // updatedBy is the admin username performing the change (used for auditing).
 func (s *Store) SetConfigValue(key, value, updatedBy string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
 	defer cancel()
 
-	now := time.Now().UTC().Format(time.RFC3339)
-	_, err := s.UsersDB.ExecContext(ctx,
-		`INSERT INTO server_config (key, value, updated_at, updated_by)
+	now := time.Now().Unix()
+	_, err := s.ServerDB.ExecContext(ctx,
+		`INSERT INTO config (key, value, updated_at, updated_by)
 		 VALUES (?, ?, ?, ?)
 		 ON CONFLICT(key) DO UPDATE SET
 		   value      = excluded.value,
@@ -44,7 +44,7 @@ func (s *Store) SetConfigValue(key, value, updatedBy string) error {
 	return err
 }
 
-// GetConfigValues retrieves multiple keys in one query.
+// GetConfigValues retrieves multiple keys in one query from server.db.
 // Returns a map of key → value for keys that exist.
 func (s *Store) GetConfigValues(keys ...string) (map[string]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
@@ -65,8 +65,8 @@ func (s *Store) GetConfigValues(keys ...string) (map[string]string, error) {
 		placeholders += ",?"
 	}
 
-	rows, err := s.UsersDB.QueryContext(ctx,
-		`SELECT key, value FROM server_config WHERE key IN (`+placeholders+`)`,
+	rows, err := s.ServerDB.QueryContext(ctx,
+		`SELECT key, value FROM config WHERE key IN (`+placeholders+`)`,
 		args...,
 	)
 	if err != nil {
