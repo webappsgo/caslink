@@ -1,0 +1,24 @@
+# Build toolchain image for caslink CI/CD.
+# Based on casjaysdev/go:latest which includes Go + Alpine tooling.
+# Adds all build, lint, test, and scan tools required by ci.yml.
+# Tagged :build — rebuilt monthly via build-toolchain.yml.
+# AI.md PART 27/28: docker/Dockerfile.build spec.
+FROM casjaysdev/go:latest
+
+RUN apk add --no-cache \
+    git \
+    bash \
+    curl \
+    ca-certificates
+
+# Install go tooling — all CI tools must be pre-installed here,
+# never via inline apk/go install in CI job steps.
+RUN go install golang.org/x/vuln/cmd/govulncheck@latest && \
+    go install honnef.co/go/tools/cmd/staticcheck@latest && \
+    go install github.com/google/go-licenses@latest
+
+# Install trufflehog for secret scanning (Apache-2.0 license — free for all use).
+RUN curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh \
+    | sh -s -- -b /usr/local/bin
+
+ENV CGO_ENABLED=0
