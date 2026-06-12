@@ -1,70 +1,60 @@
 # TODO.AI.md — Caslink Outstanding Work
 
-Tracks remaining unimplemented items by AI.md PART number.
+Tracks remaining unimplemented or spec-violating items.
 Items are removed once fully implemented and committed.
 
 ---
 
-## PART 19 — Scheduler
+## PART 10 — Database Schema: sessions table names
 
-- [x] `blocklist_update` task: download updated IP/domain blocklists used by URL
-      validation when blocklist sources are configured in `server.yml`.
-- [x] `cve_update` task: download updated CVE/security databases used by the
-      admin security panel when CVE sources are configured in `server.yml`.
+The spec (PART 10/PART 11) requires:
+- `admin_sessions` in server.db for admin web sessions
+- `user_sessions` in users.db for regular-user web sessions
 
-**Already implemented:** `backup_daily` (calls `backup.RunBackup`),
-`log_rotation` (gzip + prune), `session_cleanup`, `token_cleanup`,
-`healthcheck_self`, `expire_urls`, `ssl_renewal`, `geoip_update`,
-`tor_health`.
+**Current state:** a unified `sessions` table with a `user_type TEXT`
+column lives in users.db and serves both admin and user sessions.
 
----
+**Functional impact:** sessions work correctly; the column correctly
+scopes lookups. The schema name deviates from the spec.
 
-## PART 28 — CI/CD Workflows (CRITICAL)
-
-- [ ] `.github/workflows/` is empty — workflows were deliberately removed in
-      commit `afd9bb16`. Per `cicd-rules.md` the following are required:
-      `build.yml`, `release.yml`, `security.yml`, `beta.yml`, `daily.yml`,
-      `docker.yml`. Restore when code is ready to ship (all tests pass, lint
-      clean). Previous pinned-SHA versions are in commit `8934543308b1`.
-- [ ] `.gitea/workflows/` mirror of the above (same Gitea Actions syntax).
-- [ ] `Jenkinsfile` — check if present and spec-compliant.
+**Fix required:** rename to separate tables and split the auth service.
+This is a large refactor — auth.go, middleware, and all session-related
+callers must be updated. Schema migration needed.
 
 ---
 
-## PART 32 — Tor Hidden Service
+## PART 10 — Missing `metrics` field in server.db `nodes` table
 
-- [x] `binetор` Cyrillic alias fixed → `binetor` (ASCII) in `src/tor/service.go`.
-
----
-
-## PART 34 — Multi-User / WebAuthn
-
-- [x] Admin panel: "force regenerate recovery keys for user" action implemented
-      at `POST /server/{adminPath}/config/users/{id}/recovery-keys` (HTML) and
-      `POST /api/v1/server/{adminPath}/config/users/{id}/recovery-keys` (JSON API).
+The spec requires a `nodes` table in server.db for cluster heartbeats.
+Currently not implemented — single-node only, no cluster node tracking.
 
 ---
 
-## PART 35/36 — Organisations / Custom Domains
+## PART 21 — /metrics request counters not hooked to Prometheus
 
-- [x] Org-scoped API tokens: `GET /api/v1/orgs/{slug}/tokens`,
-      `POST /api/v1/orgs/{slug}/tokens`,
-      `DELETE /api/v1/orgs/{slug}/tokens/{tokenID}` — routed and implemented.
-- [x] Org ownership transfer: `POST /api/v1/orgs/{slug}/transfer` — implemented.
+The `requests_total` and `active_connections` fields in `/server/healthz`
+stats come from in-memory atomics (correct). The Prometheus `/metrics`
+endpoint uses a separate set of counters via `s.metrics.Middleware`.
+These two counter sets are not unified — Prometheus has richer
+per-method/per-path labels, the health atomics are single counters.
+
+No action required for spec compliance (both are correct per their specs);
+note here in case they need to be unified.
+
+---
+
+## PART 28 — CI/CD Workflows
+
+User said "No — leave empty for now" (session 2026-06-04).
+Workflows are intentionally absent.
 
 ---
 
 ## Federation (Out-of-scope for v1)
 
-- [ ] `FederationConfig` struct present; no service, no `/.well-known/federation`,
-      no discovery or sync. Deferred.
+`FederationConfig` struct present; no service, no `/.well-known/federation`,
+no discovery or sync. Deferred.
 
 ---
 
-## PART 17 — Admin Panel Config Pages
-
-All 24+ admin config pages are now implemented and committed (6afdf87b).
-Routes, handlers, KV-store persistence, and API endpoints are all live.
-No remaining PART 17 items.
-
-Last refreshed: 2026-06-04
+Last refreshed: 2026-06-12
