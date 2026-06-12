@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -52,6 +53,14 @@ type Server struct {
 	torManager  *apktor.TorManager    // non-nil when Tor binary was found at startup
 	configDir   string                // kept for TorManager (port not known until Start)
 	dataDir     string                // kept for TorManager
+
+	// Request counters for health endpoint (AI.md PART 13 stats fields).
+	// reqTotal is incremented on each request; activeConn is a live gauge.
+	// reqWindow is a 1440-bucket ring (one per minute) for the 24h window.
+	reqTotal   int64
+	activeConn int64
+	reqWindow  [1440]int64 // ring buffer: one slot per minute, 24 × 60 = 1440
+	reqWinSlot int64       // minute-index of the last written slot (Unix minutes)
 
 	// Version information
 	Version   string
@@ -185,6 +194,30 @@ func (s *Server) setupMiddleware() {
 	if s.config.Server.Metrics.Enabled {
 		s.router.Use(s.metrics.Middleware)
 	}
+
+	// Request counter middleware — increments reqTotal, activeConn, and the
+	// rolling 24h ring buffer used by /server/healthz stats per AI.md PART 13.
+	s.router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			atomic.AddInt64(&s.reqTotal, 1)
+			atomic.AddInt64(&s.activeConn, 1)
+			defer atomic.AddInt64(&s.activeConn, -1)
+
+			// Write into the current minute slot of the ring buffer.
+			nowMin := time.Now().Unix() / 60
+			slot := int(nowMin % 1440)
+			prevSlot := atomic.LoadInt64(&s.reqWinSlot)
+			if prevSlot != nowMin {
+				// New minute — zero the slot before writing to it.
+				if atomic.CompareAndSwapInt64(&s.reqWinSlot, prevSlot, nowMin) {
+					atomic.StoreInt64(&s.reqWindow[slot], 0)
+				}
+			}
+			atomic.AddInt64(&s.reqWindow[slot], 1)
+
+			next.ServeHTTP(w, r)
+		})
+	})
 
 	// Timeout middleware (30 second timeout)
 	s.router.Use(middleware.Timeout(30 * time.Second))
@@ -568,8 +601,22 @@ func (s *Server) setupRoutes() {
 		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled, s.mode.IsDevelopment()))
 
 		// Public endpoints (no auth)
-		r.Get("/server/healthz", handler.APIHealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String(), s.store, func() *apktor.TorManager { return s.torManager }))
-		r.Get("/healthz", handler.APIHealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String(), s.store, func() *apktor.TorManager { return s.torManager }))
+		r.Get("/server/healthz", handler.APIHealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String(), s.store, func() *apktor.TorManager { return s.torManager }, func() (reqTotal, reqs24h, activeConn int64) {
+				reqTotal = atomic.LoadInt64(&s.reqTotal)
+				activeConn = atomic.LoadInt64(&s.activeConn)
+				for i := range s.reqWindow {
+					reqs24h += atomic.LoadInt64(&s.reqWindow[i])
+				}
+				return
+			}))
+		r.Get("/healthz", handler.APIHealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String(), s.store, func() *apktor.TorManager { return s.torManager }, func() (reqTotal, reqs24h, activeConn int64) {
+				reqTotal = atomic.LoadInt64(&s.reqTotal)
+				activeConn = atomic.LoadInt64(&s.activeConn)
+				for i := range s.reqWindow {
+					reqs24h += atomic.LoadInt64(&s.reqWindow[i])
+				}
+				return
+			}))
 		r.Get("/version", handler.VersionHandler(s.Version, s.CommitID, s.BuildDate))
 		// OpenAPI JSON spec — canonical per spec PART 14 + IDEA.md
 		r.Get("/server/swagger", swagger.SpecHandler(s.Version))

@@ -77,15 +77,16 @@ type ChecksInfo struct {
 	Tor       string `json:"tor,omitempty"`
 }
 
-// CaslinkStatsInfo extends StatsInfo with URL-shortener specific fields.
-type CaslinkStatsInfo struct {
+// StatsInfo holds request and operational statistics for the health response.
+// Includes generic fields required by AI.md PART 13 plus caslink-specific fields.
+type StatsInfo struct {
+	// Standard fields required by AI.md PART 13
+	RequestsTotal    int64 `json:"requests_total"`
+	Requests24h      int64 `json:"requests_24h"`
+	ActiveConnections int64 `json:"active_connections"`
+	// Caslink-specific fields
 	LinksTotal   int64 `json:"links_total"`
 	Redirects24h int64 `json:"redirects_24h"`
-}
-
-// StatsInfo wraps caslink-specific stats.
-type StatsInfo struct {
-	CaslinkStatsInfo
 }
 
 // HealthHandler handles /server/healthz endpoint (HTML).
@@ -129,7 +130,8 @@ func HealthHandler(version, commitID, buildDate, mode string) http.HandlerFunc {
 // APIHealthHandler handles /api/v1/server/healthz endpoint (JSON).
 // The store parameter is used to probe the DB; pass nil for testing.
 // getTorManager may be nil when Tor is not available.
-func APIHealthHandler(version, commitID, buildDate, mode string, st *store.Store, getTorManager func() *apktor.TorManager) http.HandlerFunc {
+// getCounters returns (requestsTotal, requests24h, activeConnections) from server-level atomics.
+func APIHealthHandler(version, commitID, buildDate, mode string, st *store.Store, getTorManager func() *apktor.TorManager, getCounters func() (int64, int64, int64)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		checks := ChecksInfo{
 			Scheduler: "ok",
@@ -159,6 +161,11 @@ func APIHealthHandler(version, commitID, buildDate, mode string, st *store.Store
 		status := "healthy"
 		if checks.Database != "ok" {
 			status = "degraded"
+		}
+
+		var reqTotal, reqs24h, activeConn int64
+		if getCounters != nil {
+			reqTotal, reqs24h, activeConn = getCounters()
 		}
 
 		var linksTotal, redirects24h int64
@@ -202,10 +209,11 @@ func APIHealthHandler(version, commitID, buildDate, mode string, st *store.Store
 			},
 			Checks: checks,
 			Stats: StatsInfo{
-				CaslinkStatsInfo: CaslinkStatsInfo{
-					LinksTotal:   linksTotal,
-					Redirects24h: redirects24h,
-				},
+				RequestsTotal:     reqTotal,
+				Requests24h:       reqs24h,
+				ActiveConnections: activeConn,
+				LinksTotal:        linksTotal,
+				Redirects24h:      redirects24h,
 			},
 		}
 
