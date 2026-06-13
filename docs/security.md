@@ -20,7 +20,7 @@ This page documents the security model, authentication, public endpoints, and ho
 ### API Tokens
 
 - Long-lived **Bearer tokens** for API access.
-- Managed at `/user/tokens` in the web UI and via `caslink-cli user tokens`.
+- Managed at `/users/tokens` in the web UI and via `caslink-cli user tokens`.
 - Stored as **SHA-256 hashes** — the raw token is shown only once at creation.
 - Org-scoped tokens available for organization API access.
 
@@ -73,7 +73,7 @@ The following endpoints are publicly accessible without authentication:
 | `/api/v1/server/healthz` | Health check (JSON) |
 | `/server/about` | About page |
 | `/server/help` | Help page with API examples |
-| `/swagger` | Swagger UI (API documentation) |
+| `/server/docs/swagger` | Swagger UI (API documentation) |
 | `/graphiql` | GraphQL explorer |
 
 The `/metrics` endpoint (Prometheus) is **internal-only** and never publicly exposed. Optionally protected with bearer token auth.
@@ -82,10 +82,9 @@ The `/metrics` endpoint (Prometheus) is **internal-only** and never publicly exp
 
 | Path | Purpose |
 |------|---------|
-| `/.well-known/security.txt` | Security contact and disclosure policy |
-| `/.well-known/apple-app-site-association` | iOS universal links |
-| `/.well-known/assetlinks.json` | Android app links |
-| `/.well-known/acme-challenge/` | Let's Encrypt HTTP-01 challenge |
+| `/.well-known/security.txt` | Security contact and disclosure policy (RFC 9116) |
+| `/.well-known/change-password` | Redirect to password-change or forgot-password page |
+| `/.well-known/acme-challenge/{token}` | Let's Encrypt HTTP-01 challenge |
 
 ## Security Headers
 

@@ -3,8 +3,8 @@ site_description: Self-Hosted URL Shortener
 site_author: casapps
 site_url: https://caslink.casapps.us
 
-repo_name: casapps/caslink
-repo_url: https://github.com/casapps/caslink
+repo_name: webappsgo/caslink
+repo_url: https://github.com/webappsgo/caslink
 edit_uri: edit/main/docs/
 
 theme:
