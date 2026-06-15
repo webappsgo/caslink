@@ -412,17 +412,18 @@ func (s *Scheduler) updateGeoIP() {
 	}
 }
 
-// runDailyBackup creates a full backup of all application data.
+// runDailyBackup creates a dated full backup + the fixed-name daily incremental
+// per AI.md PART 22. Both files are verified after creation.
 // Silently skips when backupDir is not configured.
 func (s *Scheduler) runDailyBackup() {
 	if s.backupDir == "" {
 		return
 	}
-	if err := backup.RunBackup(s.configDir, s.dataDir, s.backupDir, ""); err != nil {
+	if err := backup.RunDailyBackup(s.configDir, s.dataDir, s.backupDir); err != nil {
 		log.Printf("[scheduler] backup_daily: %v", err)
 		return
 	}
-	log.Printf("[scheduler] backup_daily: backup complete")
+	log.Printf("[scheduler] backup_daily: backup_daily complete (full + daily incremental written and verified)")
 }
 
 // updateBlocklist downloads updated IP/domain blocklists from configured
