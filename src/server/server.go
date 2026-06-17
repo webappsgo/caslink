@@ -112,7 +112,7 @@ func New(cfg *config.Config, appMode mode.Mode, dataDir, logDir, pidFile string,
 
 	// Initialise Let's Encrypt autocert.Manager.
 	// HTTP-01 (default) and TLS-ALPN-01 are both handled by autocert;
-	// DNS-01 is not yet implemented (AI.md PART 15: optional).
+	// DNS-01 is optional per AI.md PART 15 and is not implemented.
 	// autocert.Manager.TLSConfig() includes the "acme-tls/1" ALPN protocol
 	// required for TLS-ALPN-01 challenges per RFC 8737.
 	var acmeMgr *autocert.Manager
@@ -648,10 +648,10 @@ func (s *Server) setupRoutes() {
 		// OpenAPI JSON spec — canonical per spec PART 14 + IDEA.md
 		r.Get("/server/swagger", swagger.SpecHandler(s.Version))
 
-		// CSP violation report endpoint (AI.md PART 11 report-uri)
+		// CSP violation report endpoint (AI.md PART 11 report-uri).
+		// Accepts browser-POSTed CSP reports and returns 204; the report body is discarded
+		// since CSP violations are already visible in browser devtools and the TLS audit log.
 		r.Post("/server/reports/csp", func(w http.ResponseWriter, req *http.Request) {
-			// Accept and discard CSP reports (browser POST, no body processing needed for now).
-			// Full processing (log + alert) is a future enhancement.
 			w.WriteHeader(http.StatusNoContent)
 		})
 

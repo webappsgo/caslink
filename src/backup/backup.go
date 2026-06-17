@@ -124,7 +124,7 @@ func Verify(dst string) error {
 		return fmt.Errorf("archive contains no entries")
 	}
 
-	_ = hex.EncodeToString(h.Sum(nil)) // checksum available for future manifest
+	_ = hex.EncodeToString(h.Sum(nil)) // SHA-256 computed; available for manifest writes when added
 	return nil
 }
 
