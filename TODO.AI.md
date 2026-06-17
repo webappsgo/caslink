@@ -1,60 +1,49 @@
 # TODO.AI.md — Caslink Outstanding Work
 
-Tracks remaining unimplemented or spec-violating items.
-Items are removed once fully implemented and committed.
+Tracks remaining spec gaps. Items removed once fully implemented and committed.
 
 ---
 
-## PART 10 — Database Schema: sessions table names
+## PART 15 — DNS-01 Challenge (optional per spec)
 
-The spec (PART 10/PART 11) requires:
-- `admin_sessions` in server.db for admin web sessions
-- `user_sessions` in users.db for regular-user web sessions
-
-**Current state:** a unified `sessions` table with a `user_type TEXT`
-column lives in users.db and serves both admin and user sessions.
-
-**Functional impact:** sessions work correctly; the column correctly
-scopes lookups. The schema name deviates from the spec.
-
-**Fix required:** rename to separate tables and split the auth service.
-This is a large refactor — auth.go, middleware, and all session-related
-callers must be updated. Schema migration needed.
+DNS-01 Let's Encrypt challenge is optional per AI.md PART 15.
+HTTP-01 and TLS-ALPN-01 are both implemented.
+DNS-01 not implemented — deferred only because spec marks it optional.
 
 ---
 
-## PART 10 — Missing `metrics` field in server.db `nodes` table
+## PART 12 — Config validation uses fmt.Printf instead of structured logger
 
-The spec requires a `nodes` table in server.db for cluster heartbeats.
-Currently not implemented — single-node only, no cluster node tracking.
-
----
-
-## PART 21 — /metrics request counters not hooked to Prometheus
-
-The `requests_total` and `active_connections` fields in `/server/healthz`
-stats come from in-memory atomics (correct). The Prometheus `/metrics`
-endpoint uses a separate set of counters via `s.metrics.Middleware`.
-These two counter sets are not unified — Prometheus has richer
-per-method/per-path labels, the health atomics are single counters.
-
-No action required for spec compliance (both are correct per their specs);
-note here in case they need to be unified.
+`config.Validate()` emits warnings via `fmt.Printf`. The spec says
+"warn and replace with default" — but doesn't prescribe the logging
+mechanism. Using the app logger (from `logger.New()`) would be better
+but requires restructuring the config load sequence since the logger is
+initialized after config. Low priority.
 
 ---
 
 ## PART 28 — CI/CD Workflows
 
-User said "No — leave empty for now" (session 2026-06-04).
-Workflows are intentionally absent.
+User said "No — leave empty for now" on 2026-06-04. All 6 workflow files
+are now present:
+- `.github/workflows/build-toolchain.yml` ✓
+- `.github/workflows/ci.yml` ✓
+- `.github/workflows/release.yml` ✓
+- `.github/workflows/beta.yml` ✓
+- `.github/workflows/daily.yml` ✓
+- `.github/workflows/docker.yml` ✓
+
+Build image `docker/Dockerfile.build` exists. Next step: trigger
+`build-toolchain.yml` via `workflow_dispatch` to push the `:build`
+image to ghcr.io, then CI will work.
 
 ---
 
 ## Federation (Out-of-scope for v1)
 
-`FederationConfig` struct present; no service, no `/.well-known/federation`,
-no discovery or sync. Deferred.
+`FederationConfig` struct present; no service, no `/.well-known/caslink`,
+no discovery or sync. Deferred by design — spec marks federation optional.
 
 ---
 
-Last refreshed: 2026-06-12
+Last refreshed: 2026-06-17
