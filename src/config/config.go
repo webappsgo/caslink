@@ -509,11 +509,18 @@ func Load(configDir string) (*Config, error) {
 // applyEnvOverrides overlays environment variables on top of the loaded config.
 // Checks CASLINK_* prefix first (per AI.md PART 9 / {PROJECT_NAME}_* spec),
 // then falls back to bare names for backward compatibility.
+// applyEnvOverrides overlays CASLINK_* environment variables on top of the
+// loaded config per AI.md PART 12 hierarchy. ALL boolean values use
+// config.ParseBool() — never strconv.ParseBool().
 func applyEnvOverrides(cfg *Config) {
+	// Server basics
 	if v := envStr("MODE"); v != "" {
 		cfg.Server.Mode = v
 	}
 	if v := envStr("DOMAIN"); v != "" {
+		cfg.Server.FQDN = v
+	}
+	if v := envStr("FQDN"); v != "" {
 		cfg.Server.FQDN = v
 	}
 	if v := envStr("PORT"); v != "" {
@@ -524,11 +531,119 @@ func applyEnvOverrides(cfg *Config) {
 	if v := envStr("LISTEN"); v != "" {
 		cfg.Server.Address = v
 	}
+	if v := envStr("ADDRESS"); v != "" {
+		cfg.Server.Address = v
+	}
+
+	// Admin
+	if v := envStr("ADMIN_EMAIL"); v != "" {
+		cfg.Server.Admin.Email = v
+	}
+	if v := envStr("ADMIN_PATH"); v != "" {
+		cfg.Server.Admin.Path = v
+	}
+
+	// Database
 	if v := envStr("DATABASE_DRIVER"); v != "" {
 		cfg.Server.Database.Driver = v
 	}
 	if v := envStr("DATABASE_URL"); v != "" {
 		cfg.Server.Database.Host = v // full DSN — factory.go resolves per driver
+	}
+	if v := envStr("DATABASE_HOST"); v != "" {
+		cfg.Server.Database.Host = v
+	}
+	if v := envStr("DATABASE_NAME"); v != "" {
+		cfg.Server.Database.Name = v
+	}
+	if v := envStr("DATABASE_USERNAME"); v != "" {
+		cfg.Server.Database.Username = v
+	}
+	if v := envStr("DATABASE_PASSWORD"); v != "" {
+		cfg.Server.Database.Password = v
+	}
+
+	// SSL / Let's Encrypt (booleans use ParseBool per AI.md PART 12)
+	if v := envStr("SSL_ENABLED"); v != "" {
+		cfg.Server.SSL.Enabled = ParseBool(v)
+	}
+	if v := envStr("LE_ENABLED"); v != "" {
+		cfg.Server.SSL.LetsEncrypt.Enabled = ParseBool(v)
+	}
+	if v := envStr("LE_EMAIL"); v != "" {
+		cfg.Server.SSL.LetsEncrypt.Email = v
+	}
+	if v := envStr("LE_CHALLENGE"); v != "" {
+		cfg.Server.SSL.LetsEncrypt.Challenge = v
+	}
+	if v := envStr("LE_STAGING"); v != "" {
+		cfg.Server.SSL.LetsEncrypt.Staging = ParseBool(v)
+	}
+
+	// Rate limiting
+	if v := envStr("RATE_LIMIT_ENABLED"); v != "" {
+		cfg.Server.RateLimit.Enabled = ParseBool(v)
+	}
+	if v := envStr("RATE_LIMIT_REQUESTS"); v != "" {
+		if n := parseInt(v); n > 0 {
+			cfg.Server.RateLimit.Requests = n
+		}
+	}
+
+	// Metrics
+	if v := envStr("METRICS_ENABLED"); v != "" {
+		cfg.Server.Metrics.Enabled = ParseBool(v)
+	}
+	if v := envStr("METRICS_TOKEN"); v != "" {
+		cfg.Server.Metrics.Token = v
+	}
+
+	// GeoIP
+	if v := envStr("GEOIP_ENABLED"); v != "" {
+		cfg.Server.GeoIP.Enabled = ParseBool(v)
+	}
+
+	// Email / SMTP
+	if v := envStr("EMAIL_ENABLED"); v != "" {
+		cfg.Server.Notifications.Email.Enabled = ParseBool(v)
+	}
+	if v := envStr("SMTP_HOST"); v != "" {
+		cfg.Server.Notifications.Email.SMTP.Host = v
+	}
+	if v := envStr("SMTP_PORT"); v != "" {
+		if n := parseInt(v); n > 0 {
+			cfg.Server.Notifications.Email.SMTP.Port = n
+		}
+	}
+	if v := envStr("SMTP_USERNAME"); v != "" {
+		cfg.Server.Notifications.Email.SMTP.Username = v
+	}
+	if v := envStr("SMTP_PASSWORD"); v != "" {
+		cfg.Server.Notifications.Email.SMTP.Password = v
+	}
+	if v := envStr("EMAIL_FROM"); v != "" {
+		cfg.Server.Notifications.Email.From = v
+	}
+
+	// Branding
+	if v := envStr("APP_NAME"); v != "" {
+		cfg.Server.Branding.Title = v
+	}
+	if v := envStr("APP_DESCRIPTION"); v != "" {
+		cfg.Server.Branding.Description = v
+	}
+
+	// Caslink features
+	if v := envStr("MIN_RANDOM_LENGTH"); v != "" {
+		if n := parseInt(v); n > 0 {
+			cfg.Caslink.URL.MinRandomLength = n
+		}
+	}
+	if v := envStr("ANALYTICS_ENABLED"); v != "" {
+		cfg.Caslink.Analytics.Enabled = ParseBool(v)
+	}
+	if v := envStr("ANONYMIZE_IPS"); v != "" {
+		cfg.Caslink.Analytics.AnonymizeIPs = ParseBool(v)
 	}
 }
 
