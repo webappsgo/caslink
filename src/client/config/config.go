@@ -12,8 +12,14 @@ import (
 
 // CLIConfig is the persistent configuration for caslink-cli.
 type CLIConfig struct {
-	// Server is the base URL of the caslink server (e.g. https://link.example.com).
+	// Server is the primary caslink server URL (e.g. https://link.example.com).
 	Server string `yaml:"server"`
+	// Cluster is the full list of cluster node URLs populated from
+	// /api/autodiscover (AI.md PART 33). Empty on single-node deployments.
+	Cluster []string `yaml:"cluster,omitempty"`
+	// ClusterRefreshedAt is the Unix timestamp of the last /api/autodiscover
+	// call. The CLI re-refreshes when this is >30 minutes old.
+	ClusterRefreshedAt int64 `yaml:"cluster_refreshed_at,omitempty"`
 	// Token is the API bearer token stored for reuse between invocations.
 	// Stored as plain text in a 0600 file — keep the file mode enforced.
 	Token string `yaml:"token,omitempty"`

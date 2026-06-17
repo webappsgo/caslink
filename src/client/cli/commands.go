@@ -17,6 +17,13 @@ import (
 	"github.com/casjaysdevdocker/caslink/src/client/config"
 )
 
+// autodiscoverResponse mirrors the /api/autodiscover JSON shape (AI.md PART 14/33).
+type autodiscoverResponse struct {
+	Primary    string   `json:"primary"`
+	Cluster    []string `json:"cluster"`
+	APIVersion string   `json:"api_version"`
+}
+
 // GlobalFlags holds values parsed from persistent root flags.
 // Exported so main.go can populate it before handing off to cobra.
 type GlobalFlags struct {
@@ -64,13 +71,16 @@ type referrerCount struct {
 	Count    int64  `json:"count"`
 }
 
-// client wraps an http.Client with auth and base URL.
+// client wraps an http.Client with auth, base URL, and cluster failover
+// per AI.md PART 33.
 type client struct {
-	base   string
-	token  string
-	http   *http.Client
-	output string
-	debug  bool
+	base    string
+	cluster []string // additional URLs to try on primary failure
+	token   string
+	http    *http.Client
+	output  string
+	debug   bool
+	cfg     *config.CLIConfig // kept for cluster persistence
 }
 
 func newClient(cfg *config.CLIConfig, gf GlobalFlags) *client {
@@ -88,12 +98,82 @@ func newClient(cfg *config.CLIConfig, gf GlobalFlags) *client {
 	}
 	_ = out
 	return &client{
-		base:   strings.TrimRight(base, "/"),
-		token:  tok,
-		http:   &http.Client{Timeout: 30 * time.Second},
-		output: gf.Output,
-		debug:  gf.Debug,
+		base:    strings.TrimRight(base, "/"),
+		cluster: cfg.Cluster,
+		token:   tok,
+		http:    &http.Client{Timeout: 30 * time.Second},
+		output:  gf.Output,
+		debug:   gf.Debug,
+		cfg:     cfg,
 	}
+}
+
+// refreshCluster calls /api/autodiscover against the primary URL and updates
+// the cluster list in the config when the cached data is stale (>30 minutes).
+// Errors are non-fatal — the existing cluster list is kept.
+func (c *client) refreshCluster() {
+	if c.cfg == nil {
+		return
+	}
+	// Skip refresh if cache is fresh (< 30 minutes old).
+	if c.cfg.ClusterRefreshedAt > 0 &&
+		time.Now().Unix()-c.cfg.ClusterRefreshedAt < 30*60 {
+		return
+	}
+	resp, err := c.http.Get(c.base + "/api/autodiscover")
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	var disc autodiscoverResponse
+	if json.NewDecoder(resp.Body).Decode(&disc) != nil {
+		return
+	}
+	if len(disc.Cluster) > 0 {
+		c.cluster = disc.Cluster
+		c.cfg.Cluster = disc.Cluster
+	}
+	c.cfg.ClusterRefreshedAt = time.Now().Unix()
+	_ = config.SaveCLIConfig(c.cfg) // non-fatal if save fails
+}
+
+// doWithFailover wraps do() with cluster failover per AI.md PART 33.
+// On a connection-level error to the primary, each cluster URL is tried in
+// order. The first success promotes that URL for the rest of the session.
+// 4xx errors (including 401) are never retried — they are caller errors.
+func (c *client) doWithFailover(method, path string, body io.Reader) (*apiResponse, error) {
+	ar, err := c.do(method, path, body)
+	if err == nil {
+		return ar, nil
+	}
+	// Only fail-over on connection errors, not on HTTP 4xx/5xx from the server.
+	if len(c.cluster) == 0 {
+		return nil, err
+	}
+	lastErr := err
+	for _, alt := range c.cluster {
+		altBase := strings.TrimRight(alt, "/")
+		if altBase == c.base {
+			continue
+		}
+		saved := c.base
+		c.base = altBase
+		ar2, err2 := c.do(method, path, body)
+		if err2 == nil {
+			if c.debug {
+				fmt.Fprintf(os.Stderr, "cluster failover: promoted %s (was %s)\n", altBase, saved)
+			}
+			if c.cfg != nil {
+				c.cfg.Server = altBase
+				_ = config.SaveCLIConfig(c.cfg)
+			}
+			return ar2, nil
+		}
+		c.base = saved
+		lastErr = err2
+	}
+	return nil, fmt.Errorf("cannot reach caslink server at any of %d configured URLs (last error: %w)",
+		1+len(c.cluster), lastErr)
 }
 
 func (c *client) do(method, path string, body io.Reader) (*apiResponse, error) {
@@ -187,6 +267,9 @@ func loginCmd(cfg *config.CLIConfig, gf *GlobalFlags) *cobra.Command {
 				}
 			}
 			cfg.Token = strings.TrimSpace(tok)
+			// Refresh autodiscover to populate cluster list (PART 33).
+			c := newClient(cfg, *gf)
+			c.refreshCluster()
 			if err := config.SaveCLIConfig(cfg); err != nil {
 				return fmt.Errorf("save config: %w", err)
 			}
@@ -224,7 +307,7 @@ func listCmd(cfg *config.CLIConfig, gf *GlobalFlags) *cobra.Command {
 		Short: "List all links",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c := newClient(cfg, *gf)
-			ar, err := c.do(http.MethodGet, "/links", nil)
+			ar, err := c.doWithFailover(http.MethodGet, "/links", nil)
 			if err != nil {
 				return err
 			}
@@ -251,7 +334,7 @@ func createCmd(cfg *config.CLIConfig, gf *GlobalFlags) *cobra.Command {
 				payload += fmt.Sprintf(`,"code":%q`, code)
 			}
 			payload += "}"
-			ar, err := c.do(http.MethodPost, "/links", strings.NewReader(payload))
+			ar, err := c.doWithFailover(http.MethodPost, "/links", strings.NewReader(payload))
 			if err != nil {
 				return err
 			}
@@ -274,7 +357,7 @@ func getCmd(cfg *config.CLIConfig, gf *GlobalFlags) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c := newClient(cfg, *gf)
-			ar, err := c.do(http.MethodGet, "/links/"+args[0], nil)
+			ar, err := c.doWithFailover(http.MethodGet, "/links/"+args[0], nil)
 			if err != nil {
 				return err
 			}
@@ -295,7 +378,7 @@ func deleteCmd(cfg *config.CLIConfig, gf *GlobalFlags) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c := newClient(cfg, *gf)
-			_, err := c.do(http.MethodDelete, "/links/"+args[0], nil)
+			_, err := c.doWithFailover(http.MethodDelete, "/links/"+args[0], nil)
 			if err != nil {
 				return err
 			}
@@ -313,7 +396,7 @@ func qrCmd(cfg *config.CLIConfig, gf *GlobalFlags) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c := newClient(cfg, *gf)
-			ar, err := c.do(http.MethodGet, "/links/"+args[0]+"/qr", nil)
+			ar, err := c.doWithFailover(http.MethodGet, "/links/"+args[0]+"/qr", nil)
 			if err != nil {
 				return err
 			}
@@ -342,7 +425,7 @@ func statsCmd(cfg *config.CLIConfig, gf *GlobalFlags) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c := newClient(cfg, *gf)
-			ar, err := c.do(http.MethodGet, "/links/"+args[0]+"/stats", nil)
+			ar, err := c.doWithFailover(http.MethodGet, "/links/"+args[0]+"/stats", nil)
 			if err != nil {
 				return err
 			}
