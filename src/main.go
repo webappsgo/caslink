@@ -340,6 +340,15 @@ func main() {
 	fmt.Printf("  - http://localhost:%d/api/v1/healthz\n", cfg.Server.Port)
 	fmt.Printf("\n")
 
+	// Drop from root to caslink system user when binding a privileged port
+	// (< 1024) per AI.md PART 24. The server binds on Start(), so we
+	// drop immediately before starting when running as root.
+	// Ports >= 1024 (our default 64xxx range): drop is a no-op unless the
+	// process is root, in which case we still drop for principle-of-least-privilege.
+	if err := svcmgr.DropPrivilegesIfRoot("caslink"); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not drop privileges: %v\n", err)
+	}
+
 	// Start server (blocks until shutdown)
 	if err := srv.Start(cfg.Server.Address, cfg.Server.Port); err != nil {
 		fmt.Fprintf(os.Stderr, "Server error: %v\n", err)
