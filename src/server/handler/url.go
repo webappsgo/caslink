@@ -47,7 +47,11 @@ func (h *URLHandler) CreateURL(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusBadRequest, "Invalid form data")
 			return
 		}
-		req.LongURL = r.FormValue("url")
+		// Accept both "url" (short) and "long_url" (form field name in dashboard).
+		req.LongURL = r.FormValue("long_url")
+		if req.LongURL == "" {
+			req.LongURL = r.FormValue("url")
+		}
 		req.CustomCode = r.FormValue("custom_code")
 		req.Password = r.FormValue("password")
 	} else {
@@ -76,6 +80,38 @@ func (h *URLHandler) CreateURL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusCreated, url)
+}
+
+// WebCreateURL handles POST /urls — the HTML-form version of CreateURL.
+// Uses the Post/Redirect/Get (PRG) pattern so the browser follows a 303
+// redirect after success instead of re-submitting on back/reload.
+// This makes core URL creation work without JavaScript (PART 16 PRE).
+func (h *URLHandler) WebCreateURL(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form data", http.StatusBadRequest)
+		return
+	}
+	longURL := r.FormValue("long_url")
+	if longURL == "" {
+		longURL = r.FormValue("url")
+	}
+	if longURL == "" {
+		http.Error(w, "URL is required", http.StatusBadRequest)
+		return
+	}
+	req := &model.CreateURLRequest{
+		LongURL:    longURL,
+		CustomCode: r.FormValue("custom_code"),
+		Password:   r.FormValue("password"),
+	}
+	url, err := h.urlService.CreateURL(r.Context(), req)
+	if err != nil {
+		// Redirect back to root with an error query param.
+		http.Redirect(w, r, "/?error="+http.StatusText(http.StatusBadRequest), http.StatusSeeOther)
+		return
+	}
+	// PRG: redirect to the dashboard with the new code highlighted.
+	http.Redirect(w, r, "/users/dashboard?created="+url.ShortCode, http.StatusSeeOther)
 }
 
 // GetURL handles GET /api/v1/urls/{code}

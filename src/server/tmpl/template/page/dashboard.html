@@ -8,7 +8,7 @@
 
   <div class="card mb-4">
     <h2 class="card-title">Create Short Link</h2>
-    <form method="POST" action="/api/v1/urls" id="create-form">
+    <form method="POST" action="/urls" id="create-form">
       <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
       <div class="form-group">
         <label for="long_url">Destination URL</label>
@@ -79,19 +79,27 @@
     if (form.custom_code.value) data.custom_code = form.custom_code.value;
     fetch('/api/v1/urls', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': (document.querySelector('meta[name="csrf-token"]')||{}).content||'' },
       body: JSON.stringify(data)
     }).then(function(r){ return r.json(); }).then(function(j){
-      if (j.short_url) {
-        shortLink.href = j.short_url;
-        shortLink.textContent = j.short_url;
-        copyBtn.setAttribute('data-copy-text', j.short_url);
+      if (j.ok && j.data && j.data.short_url) {
+        shortLink.href = j.data.short_url;
+        shortLink.textContent = j.data.short_url;
+        copyBtn.setAttribute('data-copy-text', j.data.short_url);
         result.classList.remove('hidden');
         form.reset();
       } else {
-        alert(j.error || 'Failed to create link');
+        showToast(j.message || j.error || 'Failed to create link', 'danger');
       }
-    }).catch(function(){ alert('Network error'); });
+    }).catch(function(){ showToast('Network error — check your connection', 'danger'); });
+    function showToast(msg, type) {
+      var t = document.createElement('div');
+      t.className = 'alert alert-' + (type||'info');
+      t.style.cssText = 'position:fixed;top:16px;right:16px;z-index:9999;max-width:400px';
+      t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(function(){ t.remove(); }, 5000);
+    }
   });
 })();
 {{end}}

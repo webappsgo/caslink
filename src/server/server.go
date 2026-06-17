@@ -740,6 +740,11 @@ func (s *Server) setupRoutes() {
 	// Root handler
 	s.router.Get("/", s.handleRoot)
 
+	// Web URL creation — PRG (Post/Redirect/Get) for progressive enhancement
+	// without JavaScript per AI.md PART 16. The form on the dashboard POSTs here
+	// and is redirected to /users/dashboard on success.
+	s.router.With(UserAuthMiddleware(authService)).Post("/urls", urlHandler.WebCreateURL)
+
 	// SEO endpoints — registered before the short-URL catch-all so they are
 	// served directly and never treated as short codes.
 	s.router.Get("/robots.txt", s.robotsTxt)
