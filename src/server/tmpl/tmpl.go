@@ -73,14 +73,23 @@ func New() (*Renderer, error) {
 
 // Data is the base template context.
 type Data struct {
-	AppName   string
-	AppDesc   string
-	Version   string
-	Title     string
-	CSRFToken string
-	Theme     string // dark|light|auto
-	User      interface{}
-	Flash     *Flash
+	AppName            string
+	AppDesc            string
+	Version            string
+	Title              string
+	CSRFToken          string
+	Theme              string // dark|light|auto
+	Lang               string // active language code, e.g. "en"
+	AvailableLanguages []LangOption
+	User               interface{}
+	Flash              *Flash
+}
+
+// LangOption is a single entry in the language selector dropdown.
+type LangOption struct {
+	Code       string
+	NativeName string
+	Active     bool
 }
 
 // Flash is a one-shot UI notification.

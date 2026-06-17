@@ -48,14 +48,19 @@ func checkStatus(name string) string {
 	return "unknown"
 }
 
+// systemdUnit is the service unit written by --service --install.
+// User=caslink / Group=caslink per AI.md PART 24/25: the service drops
+// privileges to the caslink system user after installation.
 const systemdUnit = `[Unit]
 Description=Caslink URL Shortener
-Documentation=https://casapps.github.io/caslink
+Documentation=https://caslink.casapps.us
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
+User=caslink
+Group=caslink
 ExecStart=/usr/local/bin/caslink
 Restart=on-failure
 RestartSec=5
@@ -73,9 +78,56 @@ ReadWritePaths=/var/log/casapps/caslink
 WantedBy=multi-user.target
 `
 
+// ensureServiceUser creates the caslink system user and group if they do not
+// exist. Requires root. Called by install() before writing the unit file.
+func ensureServiceUser() error {
+	if err := exec.Command("id", "caslink").Run(); err == nil {
+		return nil // user already exists
+	}
+	if err := exec.Command("useradd",
+		"--system",
+		"--no-create-home",
+		"--shell", "/usr/sbin/nologin",
+		"--comment", "Caslink service account",
+		"caslink",
+	).Run(); err != nil {
+		return fmt.Errorf("useradd caslink: %w", err)
+	}
+	return nil
+}
+
+// escalateIfNeeded re-executes the binary with sudo when not running as root.
+// Returns nil and continues when already root.
+func escalateIfNeeded() error {
+	if os.Getuid() == 0 {
+		return nil
+	}
+	// Try sudo first, then pkexec.
+	for _, escalator := range []string{"sudo", "pkexec"} {
+		if _, err := exec.LookPath(escalator); err == nil {
+			args := append([]string{"/proc/self/exe"}, os.Args[1:]...)
+			cmd := exec.Command(escalator, args...)
+			cmd.Stdin = os.Stdin
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("%s: %w", escalator, err)
+			}
+			os.Exit(0)
+		}
+	}
+	return fmt.Errorf("root privileges required; install sudo or pkexec, or run as root")
+}
+
 func install(m *Manager) error {
 	switch detectInitSystem() {
 	case "systemd":
+		if err := escalateIfNeeded(); err != nil {
+			return err
+		}
+		if err := ensureServiceUser(); err != nil {
+			return fmt.Errorf("create service user: %w", err)
+		}
 		unitPath := "/etc/systemd/system/caslink.service"
 		if err := os.WriteFile(unitPath, []byte(systemdUnit), 0644); err != nil {
 			return fmt.Errorf("failed to write unit file: %w", err)
@@ -89,7 +141,7 @@ func install(m *Manager) error {
 		if err := exec.Command("systemctl", "start", "caslink").Run(); err != nil {
 			return fmt.Errorf("start failed: %w", err)
 		}
-		fmt.Println("caslink service installed and started (systemd)")
+		fmt.Println("caslink service installed and started (systemd) — running as User=caslink")
 		return nil
 	default:
 		return fmt.Errorf("unsupported init system: %s", detectInitSystem())

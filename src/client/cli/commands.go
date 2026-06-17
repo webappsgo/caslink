@@ -121,6 +121,21 @@ func (c *client) do(method, path string, body io.Reader) (*apiResponse, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&ar); err != nil {
 		return nil, fmt.Errorf("decode response (HTTP %d): %w", resp.StatusCode, err)
 	}
+
+	// Handle token revocation per AI.md PART 33.
+	// On TOKEN_REVOKED or TOKEN_EXPIRED the CLI clears the cached token
+	// so the next invocation prompts for fresh credentials.
+	if resp.StatusCode == http.StatusUnauthorized &&
+		(ar.Error == "TOKEN_REVOKED" || ar.Error == "TOKEN_EXPIRED") {
+		// Clear the cached token from the in-memory config (callers must
+		// persist via config.SaveCLIConfig if needed).
+		if c.token != "" {
+			c.token = ""
+		}
+		fmt.Fprintln(os.Stderr, "error: your API token has been revoked or has expired. Run 'caslink-cli login' to re-authenticate.")
+		os.Exit(4)
+	}
+
 	if !ar.OK {
 		if ar.Message != "" {
 			return nil, fmt.Errorf("[%s] %s", ar.Error, ar.Message)

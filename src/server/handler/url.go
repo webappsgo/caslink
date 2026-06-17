@@ -33,13 +33,28 @@ func NewURLHandler(urlService *service.URLService, analyticsService *service.Ana
 	}
 }
 
-// CreateURL handles POST /api/v1/urls
+// CreateURL handles POST /api/v1/urls.
+// Accepts both application/json (API clients) and
+// application/x-www-form-urlencoded (HTML forms, progressive enhancement
+// per AI.md PART 16).
 func (h *URLHandler) CreateURL(w http.ResponseWriter, r *http.Request) {
 	var req model.CreateURLRequest
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "Invalid request body")
-		return
+	ct := r.Header.Get("Content-Type")
+	if ct == "application/x-www-form-urlencoded" || ct == "multipart/form-data" ||
+		(len(ct) > 33 && ct[:33] == "application/x-www-form-urlencoded") {
+		if err := r.ParseForm(); err != nil {
+			respondError(w, http.StatusBadRequest, "Invalid form data")
+			return
+		}
+		req.LongURL = r.FormValue("url")
+		req.CustomCode = r.FormValue("custom_code")
+		req.Password = r.FormValue("password")
+	} else {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondError(w, http.StatusBadRequest, "Invalid request body")
+			return
+		}
 	}
 
 	url, err := h.urlService.CreateURL(r.Context(), &req)

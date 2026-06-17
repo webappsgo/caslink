@@ -301,7 +301,7 @@ func main() {
 
 	// Handle --update
 	if updateCmd != "" {
-		handleUpdate(updateCmd, flag.Args(), binaryName)
+		handleUpdate(updateCmd, flag.Args(), binaryName, configDir)
 	}
 
 	// Check PID file — refuse to start if a previous instance is still alive.
@@ -380,7 +380,7 @@ Examples:
 		if len(args) > 0 {
 			sub = args[0]
 		}
-		handleUpdate(sub, args[1:], binaryName)
+		handleUpdate(sub, args[1:], binaryName, configDir)
 	case "mode":
 		if len(args) == 0 {
 			fmt.Fprintf(os.Stderr, "Usage: %s --maintenance mode <production|development>\n", binaryName)
@@ -427,7 +427,36 @@ Examples:
 	_, _, _, _ = configDir, dataDir, logDir, pidFile
 }
 
-func handleUpdate(cmd string, args []string, binaryName string) {
+// branchFile returns the path where the active update channel is persisted.
+func branchFile(configDir string) string {
+	return filepath.Join(configDir, "update_branch")
+}
+
+// currentBranch reads the persisted update channel from configDir.
+// Falls back to "stable" when no selection has been saved.
+func currentBranch(configDir string) string {
+	data, err := os.ReadFile(branchFile(configDir))
+	if err != nil {
+		return "stable"
+	}
+	b := strings.TrimSpace(string(data))
+	switch b {
+	case "stable", "beta", "daily":
+		return b
+	default:
+		return "stable"
+	}
+}
+
+// saveBranch persists the update channel to disk per AI.md PART 23.
+func saveBranch(configDir, branch string) error {
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(branchFile(configDir), []byte(branch+"\n"), 0o644)
+}
+
+func handleUpdate(cmd string, args []string, binaryName, configDir string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -447,7 +476,7 @@ Examples:
 `, binaryName, binaryName, binaryName, binaryName)
 		os.Exit(0)
 	case "check":
-		branch := currentBranch()
+		branch := currentBranch(configDir)
 		fmt.Printf("Checking for updates (branch: %s)...\n", branch)
 		release, err := updater.CheckForUpdate(ctx, Version, branch)
 		if err != nil {
@@ -471,10 +500,14 @@ Examples:
 			fmt.Fprintf(os.Stderr, "Unknown branch: %s (must be stable, beta, or daily)\n", branchName)
 			os.Exit(1)
 		}
-		fmt.Printf("Update branch set to: %s\n", branchName)
+		if err := saveBranch(configDir, branchName); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to persist branch: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Update branch set to: %s (persisted to %s)\n", branchName, branchFile(configDir))
 		os.Exit(0)
 	case "yes", "":
-		branch := currentBranch()
+		branch := currentBranch(configDir)
 		fmt.Printf("Checking for updates (branch: %s)...\n", branch)
 		release, err := updater.CheckForUpdate(ctx, Version, branch)
 		if err != nil {
@@ -500,10 +533,6 @@ Examples:
 		fmt.Fprintf(os.Stderr, "Unknown update command: %s\nRun '%s --update --help' for usage.\n", cmd, binaryName)
 		os.Exit(1)
 	}
-}
-
-func currentBranch() string {
-	return "stable"
 }
 
 func printHelp(binaryName string) {

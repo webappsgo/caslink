@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/casjaysdevdocker/caslink/src/common/i18n"
 	"github.com/casjaysdevdocker/caslink/src/config"
 	"github.com/casjaysdevdocker/caslink/src/server/service"
 	"github.com/casjaysdevdocker/caslink/src/server/tmpl"
@@ -134,7 +135,8 @@ func csrfToken(r *http.Request) string {
 }
 
 // newPageData builds a base tmpl.Data from config and request, optionally
-// attaching the authenticated user. Extra fields are set by the caller.
+// attaching the authenticated user. Includes language info for the UI selector
+// per AI.md PART 31.
 func newPageData(cfg *config.Config, r *http.Request, title string, user *service.User) tmpl.Data {
 	appName := cfg.Server.Branding.Title
 	if appName == "" {
@@ -144,12 +146,27 @@ func newPageData(cfg *config.Config, r *http.Request, title string, user *servic
 	if appDesc == "" {
 		appDesc = "Self-hosted URL shortener"
 	}
+
+	// Populate language selector data (PART 31).
+	activeLang := i18n.LangFromContext(r.Context())
+	langs := i18n.Languages()
+	var opts []tmpl.LangOption
+	for _, l := range langs {
+		opts = append(opts, tmpl.LangOption{
+			Code:       l.Code,
+			NativeName: l.NativeName,
+			Active:     l.Code == activeLang,
+		})
+	}
+
 	return tmpl.Data{
-		AppName:   appName,
-		AppDesc:   appDesc,
-		Title:     title,
-		CSRFToken: csrfToken(r),
-		Theme:     "dark",
-		User:      user,
+		AppName:            appName,
+		AppDesc:            appDesc,
+		Title:              title,
+		CSRFToken:          csrfToken(r),
+		Theme:              "dark",
+		Lang:               activeLang,
+		AvailableLanguages: opts,
+		User:               user,
 	}
 }
