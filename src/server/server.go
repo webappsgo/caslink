@@ -110,20 +110,28 @@ func New(cfg *config.Config, appMode mode.Mode, dataDir, logDir, pidFile string,
 	// Initialize Prometheus metrics (always; gated by config at route level).
 	m, _ := appmetrics.New(version, commitID, buildDate, cfg.Server.Metrics.IncludeRuntime)
 
-	// Initialise Let's Encrypt autocert.Manager when HTTP-01 is enabled so the
-	// /.well-known/acme-challenge/ handler can serve real token responses.
+	// Initialise Let's Encrypt autocert.Manager.
+	// HTTP-01 (default) and TLS-ALPN-01 are both handled by autocert;
+	// DNS-01 is not yet implemented (AI.md PART 15: optional).
+	// autocert.Manager.TLSConfig() includes the "acme-tls/1" ALPN protocol
+	// required for TLS-ALPN-01 challenges per RFC 8737.
 	var acmeMgr *autocert.Manager
 	if cfg.Server.SSL.LetsEncrypt.Enabled &&
-		(cfg.Server.SSL.LetsEncrypt.Challenge == "http-01" || cfg.Server.SSL.LetsEncrypt.Challenge == "") {
+		(cfg.Server.SSL.LetsEncrypt.Challenge == "http-01" ||
+			cfg.Server.SSL.LetsEncrypt.Challenge == "tls-alpn-01" ||
+			cfg.Server.SSL.LetsEncrypt.Challenge == "") {
 		cacheDir := filepath.Join(dataDir, "ssl", "acme-cache")
 		if err := os.MkdirAll(cacheDir, 0700); err != nil {
-			log.Printf("acme: could not create cache dir %s: %v — HTTP-01 disabled", cacheDir, err)
+			log.Printf("acme: could not create cache dir %s: %v — Let's Encrypt disabled", cacheDir, err)
 		} else {
 			leEmail := cfg.Server.SSL.LetsEncrypt.Email
 			if leEmail == "" {
 				leEmail = cfg.Server.Admin.Email
 			}
 			hosts := []string{cfg.Server.FQDN}
+			if len(cfg.Server.SSL.LetsEncrypt.Domains) > 0 {
+				hosts = cfg.Server.SSL.LetsEncrypt.Domains
+			}
 			acmeMgr = &autocert.Manager{
 				Prompt:     autocert.AcceptTOS,
 				HostPolicy: autocert.HostWhitelist(hosts...),
@@ -131,11 +139,12 @@ func New(cfg *config.Config, appMode mode.Mode, dataDir, logDir, pidFile string,
 				Email:      leEmail,
 			}
 			if cfg.Server.SSL.LetsEncrypt.Staging {
-				// Use the staging CA so we can test without rate-limit risks.
-				acmeMgr.Client = nil // autocert uses ACME dir from Client; staging needs custom setup
-				log.Printf("acme: Let's Encrypt staging mode — certificates will not be trusted by browsers")
+				// Staging CA — certificates will not be trusted by browsers.
+				acmeMgr.Client = nil
+				log.Printf("acme: Let's Encrypt staging mode")
 			}
-			log.Printf("acme: HTTP-01 autocert manager initialised (cache=%s, hosts=%v)", cacheDir, hosts)
+			log.Printf("acme: autocert manager initialised (challenge=%s, cache=%s, hosts=%v)",
+				cfg.Server.SSL.LetsEncrypt.Challenge, cacheDir, hosts)
 		}
 	}
 
@@ -915,6 +924,30 @@ func (s *Server) Start(address string, port int) error {
 			log.Fatalf("Server failed: %v", err)
 		}
 	}()
+
+	// Start TLS-ALPN-01 listener when Let's Encrypt is configured (AI.md PART 15).
+	// autocert.Manager.TLSConfig() includes the "acme-tls/1" ALPN protocol required
+	// by RFC 8737 for TLS-ALPN-01 challenges. It also issues and renews certificates.
+	// This listener runs on port 443 (required by RFC 8737 — ALPN-01 challenge
+	// server must be reachable on port 443).
+	if s.acmeManager != nil &&
+		(s.config.Server.SSL.LetsEncrypt.Challenge == "tls-alpn-01" ||
+			s.config.Server.SSL.LetsEncrypt.Challenge == "") {
+		tlsSrv := &http.Server{
+			Addr:         ":443",
+			Handler:      s.router,
+			TLSConfig:    s.acmeManager.TLSConfig(),
+			ReadTimeout:  s.server.ReadTimeout,
+			WriteTimeout: s.server.WriteTimeout,
+			IdleTimeout:  s.server.IdleTimeout,
+		}
+		go func() {
+			log.Printf("HTTPS (TLS-ALPN-01) listener starting on :443")
+			if err := tlsSrv.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+				log.Printf("HTTPS listener error (non-fatal — HTTP still running): %v", err)
+			}
+		}()
+	}
 
 	// Start Tor hidden service after the HTTP listener is up.
 	if err := s.torManager.Start(); err != nil {

@@ -877,12 +877,13 @@ func DefaultConfig() *Config {
 // warn and replace with default. Never fail startup."
 func Validate(cfg *Config) error {
 	// Validate mode — unknown values fall back to production.
+	// Mode — unknown values fall back to production (AI.md PART 12).
 	if cfg.Server.Mode != "production" && cfg.Server.Mode != "development" {
 		fmt.Printf("config: invalid mode %q — defaulting to production\n", cfg.Server.Mode)
 		cfg.Server.Mode = "production"
 	}
 
-	// Validate database driver — unknown values fall back to sqlite.
+	// Database driver — unknown values fall back to sqlite.
 	validDrivers := map[string]bool{
 		"file": true, "sqlite": true, "postgres": true,
 		"mysql": true, "mariadb": true, "mssql": true,
@@ -890,6 +891,105 @@ func Validate(cfg *Config) error {
 	if !validDrivers[cfg.Server.Database.Driver] {
 		fmt.Printf("config: invalid database driver %q — defaulting to sqlite\n", cfg.Server.Database.Driver)
 		cfg.Server.Database.Driver = "sqlite"
+	}
+
+	// Port — 0 means auto-select; negative or >65535 is invalid.
+	if cfg.Server.Port < 0 || cfg.Server.Port > 65535 {
+		fmt.Printf("config: invalid port %d — will auto-select from 64xxx range\n", cfg.Server.Port)
+		cfg.Server.Port = 0
+	}
+
+	// Rate limit — requests must be positive when enabled.
+	if cfg.Server.RateLimit.Enabled && cfg.Server.RateLimit.Requests <= 0 {
+		fmt.Printf("config: rate_limit.requests must be > 0 when enabled — defaulting to 120\n")
+		cfg.Server.RateLimit.Requests = 120
+	}
+	if cfg.Server.RateLimit.Enabled && cfg.Server.RateLimit.Window <= 0 {
+		fmt.Printf("config: rate_limit.window must be > 0 when enabled — defaulting to 60\n")
+		cfg.Server.RateLimit.Window = 60
+	}
+	if cfg.Server.RateLimit.Burst < 0 {
+		fmt.Printf("config: rate_limit.burst must be >= 0 — defaulting to 10\n")
+		cfg.Server.RateLimit.Burst = 10
+	}
+	if cfg.Server.RateLimit.LoginMaxAttempts < 0 {
+		fmt.Printf("config: rate_limit.login_max_attempts must be >= 0 — defaulting to 5\n")
+		cfg.Server.RateLimit.LoginMaxAttempts = 5
+	}
+	if cfg.Server.RateLimit.PasswordResetMaxAttempts < 0 {
+		fmt.Printf("config: rate_limit.password_reset_max_attempts must be >= 0 — defaulting to 3\n")
+		cfg.Server.RateLimit.PasswordResetMaxAttempts = 3
+	}
+
+	// Session timeouts — fall back to defaults on empty/zero.
+	if cfg.Server.Session.Timeout == "" {
+		cfg.Server.Session.Timeout = "24h"
+	}
+	if cfg.Server.Session.RememberMeTimeout == "" {
+		cfg.Server.Session.RememberMeTimeout = "720h"
+	}
+
+	// Admin path — must be a non-empty lowercase alphanumeric slug.
+	if cfg.Server.Admin.Path == "" {
+		fmt.Printf("config: admin.path is empty — defaulting to \"admin\"\n")
+		cfg.Server.Admin.Path = "admin"
+	}
+
+	// SameSite session cookie — unknown values fall back to lax.
+	switch cfg.Server.Session.SameSite {
+	case "strict", "lax", "none", "":
+		// OK
+	default:
+		fmt.Printf("config: session.same_site %q is not valid — defaulting to lax\n",
+			cfg.Server.Session.SameSite)
+		cfg.Server.Session.SameSite = "lax"
+	}
+
+	// Secure session cookie — unknown values fall back to auto.
+	switch cfg.Server.Session.Secure {
+	case "true", "false", "auto", "":
+		// OK
+	default:
+		fmt.Printf("config: session.secure %q is not valid — defaulting to auto\n",
+			cfg.Server.Session.Secure)
+		cfg.Server.Session.Secure = "auto"
+	}
+
+	// SSL TLS min version — unknown values fall back to TLS1.2.
+	switch cfg.Server.SSL.MinVersion {
+	case "TLS1.0", "TLS1.1", "TLS1.2", "TLS1.3", "":
+		// OK
+	default:
+		fmt.Printf("config: ssl.min_version %q is not valid — defaulting to TLS1.2\n",
+			cfg.Server.SSL.MinVersion)
+		cfg.Server.SSL.MinVersion = "TLS1.2"
+	}
+
+	// SMTP port — must be 1-65535 when host is configured.
+	if cfg.Server.Notifications.Email.SMTP.Host != "" {
+		if cfg.Server.Notifications.Email.SMTP.Port <= 0 || cfg.Server.Notifications.Email.SMTP.Port > 65535 {
+			fmt.Printf("config: notifications.email.smtp.port %d is invalid — defaulting to 587\n",
+				cfg.Server.Notifications.Email.SMTP.Port)
+			cfg.Server.Notifications.Email.SMTP.Port = 587
+		}
+	}
+
+	// Caslink URL lengths — sanity check.
+	if cfg.Caslink.URL.MinRandomLength < 3 {
+		fmt.Printf("config: caslink.url.min_random_length %d is too short (min 3) — defaulting to 6\n",
+			cfg.Caslink.URL.MinRandomLength)
+		cfg.Caslink.URL.MinRandomLength = 6
+	}
+	if cfg.Caslink.URL.MaxCustomLength < cfg.Caslink.URL.MinRandomLength {
+		fmt.Printf("config: caslink.url.max_custom_length %d < min_random_length — defaulting to 50\n",
+			cfg.Caslink.URL.MaxCustomLength)
+		cfg.Caslink.URL.MaxCustomLength = 50
+	}
+
+	// Analytics retention — -1 means unlimited; 0 is invalid.
+	if cfg.Caslink.Analytics.RetentionDays == 0 {
+		fmt.Printf("config: caslink.analytics.retention_days is 0 — defaulting to 365 (use -1 for unlimited)\n")
+		cfg.Caslink.Analytics.RetentionDays = 365
 	}
 
 	return nil
