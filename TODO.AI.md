@@ -24,18 +24,10 @@ initialized after config. Low priority.
 
 ## PART 28 — CI/CD Workflows
 
-User said "No — leave empty for now" on 2026-06-04. All 6 workflow files
-are now present:
-- `.github/workflows/build-toolchain.yml` ✓
-- `.github/workflows/ci.yml` ✓
-- `.github/workflows/release.yml` ✓
-- `.github/workflows/beta.yml` ✓
-- `.github/workflows/daily.yml` ✓
-- `.github/workflows/docker.yml` ✓
-
-Build image `docker/Dockerfile.build` exists. Next step: trigger
-`build-toolchain.yml` via `workflow_dispatch` to push the `:build`
-image to ghcr.io, then CI will work.
+User said "No — leave empty for now" on 2026-06-04.
+**All workflow files were deleted in commit `39bc9bf174ee`.**
+`.github/workflows/` is intentionally empty — do NOT recreate without
+explicit user instruction.
 
 ---
 
@@ -46,4 +38,24 @@ no discovery or sync. Deferred by design — spec marks federation optional.
 
 ---
 
-Last refreshed: 2026-06-17
+## Bootstrap Status
+
+`.claude/rules/` regenerated from AI.md. All 13 rule files present:
+- `ai-rules.md` (PART 0, 1)
+- `project-rules.md` (PART 2, 3, 4)
+- `config-rules.md` (PART 5, 6, 12)
+- `binary-rules.md` (PART 7, 8, 33)
+- `backend-rules.md` (PART 9, 10, 11, 32)
+- `api-rules.md` (PART 13, 14, 15)
+- `frontend-rules.md` (PART 16, 17)
+- `features-rules.md` (PART 18-23)
+- `service-rules.md` (PART 24, 25)
+- `makefile-rules.md` (PART 26)
+- `docker-rules.md` (PART 27)
+- `cicd-rules.md` (PART 28)
+- `optional-rules.md` (PART 34, 35, 36)
+- `testing-rules.md` (PART 29, 30, 31)
+
+---
+
+Last refreshed: 2026-06-25
