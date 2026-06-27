@@ -115,6 +115,6 @@ On EVERY new conversation or after "context compacted" message:
 - Full spec: `AI.md` (~60k lines) ← **SOURCE OF TRUTH**
 
 ## Current Project State
-- Last read AI.md: 2026-06-23 (PARTS 0-6)
-- Current task: Bootstrap — creating rule files
-- Relevant PARTs: 0-6 (read), 7-36 (reference)
+- Last read AI.md: 2026-06-26 (PARTS 0-36 via agents)
+- Current task: Bootstrap complete
+- Relevant PARTs: All PARTs read; rule files regenerated

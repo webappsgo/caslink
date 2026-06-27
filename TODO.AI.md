@@ -40,7 +40,7 @@ no discovery or sync. Deferred by design — spec marks federation optional.
 
 ## Bootstrap Status
 
-`.claude/rules/` regenerated from AI.md. All 13 rule files present:
+`.claude/rules/` regenerated from AI.md. All 14 rule files present:
 - `ai-rules.md` (PART 0, 1)
 - `project-rules.md` (PART 2, 3, 4)
 - `config-rules.md` (PART 5, 6, 12)
