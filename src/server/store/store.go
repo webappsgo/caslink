@@ -189,18 +189,6 @@ func (s *Store) initServerSchema() error {
 			window_start INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
 			updated_at   INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
 		)`,
-		// Audit log belongs in server.db (spec lines 7879-7906)
-		`CREATE TABLE IF NOT EXISTS audit_log (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user_id INTEGER,
-			user_type TEXT,
-			action TEXT NOT NULL,
-			resource TEXT,
-			details TEXT,
-			ip_address TEXT,
-			user_agent TEXT,
-			created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
-		)`,
 		// Scheduler tables belong in server.db (spec lines 7879-7906)
 		`CREATE TABLE IF NOT EXISTS scheduler_tasks (
 			id          TEXT PRIMARY KEY,
@@ -260,8 +248,6 @@ func (s *Store) initServerSchema() error {
 		`CREATE INDEX IF NOT EXISTS idx_click_daily_stats_date ON click_daily_stats(date)`,
 		`CREATE INDEX IF NOT EXISTS idx_admin_sessions_admin ON admin_sessions(admin_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_sessions(expires_at)`,
-		`CREATE INDEX IF NOT EXISTS idx_audit_log_user_id ON audit_log(user_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits(window_start)`,
 		`CREATE INDEX IF NOT EXISTS idx_scheduler_history_task ON scheduler_history(task_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_scheduler_history_started ON scheduler_history(started_at)`,

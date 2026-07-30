@@ -29,6 +29,17 @@ func realClientIP(r *http.Request) string {
 	return addr
 }
 
+// apiActorID returns the bearer token owner's ID for audit-log attribution
+// on Bearer-authenticated API requests, or nil if unauthenticated.
+func apiActorID(r *http.Request) *int64 {
+	rec, ok := getBearerFromRequest(r)
+	if !ok || rec == nil {
+		return nil
+	}
+	id := rec.OwnerID
+	return &id
+}
+
 // splitFormList splits a comma-separated form field (tags, geo_countries)
 // into a trimmed, non-empty slice.
 func splitFormList(s string) []string {

@@ -156,8 +156,21 @@ Last full audit: 2026-07-30
 
 ## PART 17 — Admin Panel
 
-- [MED] Admin audit-log viewer stubbed ("coming soon. Query the audit_log table
-  directly"). Needs a real paginated viewer. — `handler/admin_config.go` `ConfigLogsAudit`
+- [DONE] Admin audit-log viewer stubbed. Fixed a duplicate `audit_log` table
+  bug (was created in both ServerDB and UsersDB — canonical location is
+  UsersDB per `Store`'s own field doc); added `service.AuditService`
+  (RecordEvent/ListEvents) and wired writes into admin login/login-failed/
+  logout, user suspend/activate, and recovery-key regeneration (session and
+  Bearer-API variants). `ConfigLogsAudit` now renders a real paginated
+  (50/page) table from the audit_log table. — `store/store.go`,
+  `service/audit.go` (new), `handler/admin.go`, `handler/admin_config.go`,
+  `handler/helpers.go`, `server.go`
+- [LOW] Audit-log instrumentation only covers the admin mutation endpoints
+  that currently exist (login/logout, user suspend/activate, recovery-key
+  regen). Most `admin_config.go` config pages (Settings, Branding, SSL,
+  Email, Security, etc.) are still read-only display stubs with no POST/save
+  handlers at all — once those are implemented, wire `h.recordAudit(...)`
+  into each one. — `handler/admin_config.go`
 
 ## PART 18 — Email & Notifications
 

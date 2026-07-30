@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -20,6 +21,7 @@ import (
 type AdminHandler struct {
 	authService      *service.AuthService
 	userAdminService *service.UserAdminService
+	auditService     *service.AuditService
 	version          string
 	mode             string
 	adminPath        string // configurable admin path segment, default "admin"
@@ -32,6 +34,7 @@ type AdminHandler struct {
 func NewAdminHandler(
 	authService *service.AuthService,
 	userAdminService *service.UserAdminService,
+	auditService *service.AuditService,
 	version, mode, adminPath string,
 	cfg *config.Config,
 	st *store.Store,
@@ -43,12 +46,24 @@ func NewAdminHandler(
 	return &AdminHandler{
 		authService:      authService,
 		userAdminService: userAdminService,
+		auditService:     auditService,
 		version:          version,
 		mode:             mode,
 		adminPath:        adminPath,
 		cfg:              cfg,
 		store:            st,
 		getTorManager:    getTorManager,
+	}
+}
+
+// recordAudit is a best-effort audit-log write (AI.md PART 17 "Audit Log").
+// Failures are logged but never block the admin action itself.
+func (h *AdminHandler) recordAudit(r *http.Request, userID *int64, action, resource, details string) {
+	if h.auditService == nil {
+		return
+	}
+	if err := h.auditService.RecordEvent(r.Context(), userID, "admin", action, resource, details, realClientIP(r), r.UserAgent()); err != nil {
+		log.Printf("[audit] failed to record event %q: %v", action, err)
 	}
 }
 
@@ -90,6 +105,7 @@ func (h *AdminHandler) Login(w http.ResponseWriter, r *http.Request) {
 	// Authenticate
 	admin, err := h.authService.AuthenticateAdmin(r.Context(), username, password)
 	if err != nil {
+		h.recordAudit(r, nil, "admin_login_failed", "admin:"+username, "")
 		h.renderLogin(w, username, "Invalid username or password")
 		return
 	}
@@ -100,6 +116,8 @@ func (h *AdminHandler) Login(w http.ResponseWriter, r *http.Request) {
 		h.renderLogin(w, username, "Failed to create session")
 		return
 	}
+
+	h.recordAudit(r, &admin.ID, "admin_login", "admin:"+admin.Username, "")
 
 	// Set session cookie
 	expiration := 30 * 24 * time.Hour
@@ -123,11 +141,17 @@ func (h *AdminHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 // Logout handles GET /admin/logout
 func (h *AdminHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	admin := h.getAdminFromSession(r)
+
 	// Get session ID from cookie
 	cookie, err := r.Cookie("admin_session")
 	if err == nil {
 		// Delete session from database
 		_ = h.authService.DeleteSession(r.Context(), cookie.Value)
+	}
+
+	if admin != nil {
+		h.recordAudit(r, &admin.ID, "admin_logout", "admin:"+admin.Username, "")
 	}
 
 	// Delete cookie
@@ -598,6 +622,7 @@ func (h *AdminHandler) SuspendUser(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to suspend user: %v", err))
 		return
 	}
+	h.recordAudit(r, &admin.ID, "user_suspend", "user:"+strconv.FormatInt(id, 10), reason)
 
 	http.Redirect(w, r, h.basePath()+"/config/users/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
 }
@@ -620,6 +645,7 @@ func (h *AdminHandler) ActivateUser(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to activate user: %v", err))
 		return
 	}
+	h.recordAudit(r, &admin.ID, "user_activate", "user:"+strconv.FormatInt(id, 10), "")
 
 	http.Redirect(w, r, h.basePath()+"/config/users/"+strconv.FormatInt(id, 10), http.StatusSeeOther)
 }
@@ -679,6 +705,7 @@ func (h *AdminHandler) APISuspendUser(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "Failed to suspend user")
 		return
 	}
+	h.recordAudit(r, apiActorID(r), "user_suspend", "user:"+strconv.FormatInt(id, 10), req.Reason)
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "suspended"})
 }
@@ -695,6 +722,7 @@ func (h *AdminHandler) APIActivateUser(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "Failed to activate user")
 		return
 	}
+	h.recordAudit(r, apiActorID(r), "user_activate", "user:"+strconv.FormatInt(id, 10), "")
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "active"})
 }
@@ -712,6 +740,9 @@ func (h *AdminHandler) RegenerateRecoveryKeys(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		http.Error(w, "Failed to regenerate recovery keys", http.StatusInternalServerError)
 		return
+	}
+	if admin := h.getAdminFromSession(r); admin != nil {
+		h.recordAudit(r, &admin.ID, "user_recovery_keys_regenerate", "user:"+strconv.FormatInt(id, 10), "")
 	}
 
 	// Render a simple admin confirmation page showing the new keys once.
@@ -744,6 +775,7 @@ func (h *AdminHandler) APIRegenerateRecoveryKeys(w http.ResponseWriter, r *http.
 		respondError(w, http.StatusInternalServerError, "Failed to regenerate recovery keys")
 		return
 	}
+	h.recordAudit(r, apiActorID(r), "user_recovery_keys_regenerate", "user:"+strconv.FormatInt(id, 10), "")
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"ok":            true,

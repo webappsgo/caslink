@@ -312,6 +312,7 @@ func (s *Server) setupRoutes() {
 	analyticsService := service.NewAnalyticsService(s.store)
 	bulkService := service.NewBulkService(s.store, urlService)
 	userAdminService := service.NewUserAdminService(s.store)
+	auditService := service.NewAuditService(s.store)
 
 	// Token service (needed by user handler and bearer middleware)
 	tokenService := service.NewTokenService(s.store)
@@ -337,7 +338,7 @@ func (s *Server) setupRoutes() {
 	urlHandler := handler.NewURLHandler(urlService, analyticsService, s.renderer, s.config)
 	qrHandler := handler.NewQRHandler(qrService, urlService)
 	bulkHandler := handler.NewBulkHandler(bulkService)
-	adminHandler := handler.NewAdminHandler(authService, userAdminService, s.Version, s.mode.String(), adminPath, s.config, s.store, func() *apktor.TorManager { return s.torManager })
+	adminHandler := handler.NewAdminHandler(authService, userAdminService, auditService, s.Version, s.mode.String(), adminPath, s.config, s.store, func() *apktor.TorManager { return s.torManager })
 	setupHandler := handler.NewSetupHandler(authService, s.config, s.Version)
 	authUserHandler := handler.NewAuthUserHandler(authService, s.renderer, s.config)
 	twoFactorHandler := handler.NewTwoFactorHandler(authService, totpService)

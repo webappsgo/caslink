@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"net/http"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -699,23 +700,75 @@ func (h *AdminHandler) ConfigLogs(w http.ResponseWriter, r *http.Request) {
 
 // ConfigLogsAudit handles GET /server/{adminPath}/config/logs/audit
 func (h *AdminHandler) ConfigLogsAudit(w http.ResponseWriter, r *http.Request) {
-	content := `
+	const pageSize = 50
+
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+
+	var rowsHTML strings.Builder
+	var total int
+	if h.auditService == nil {
+		rowsHTML.WriteString(`<tr><td colspan="6" style="color:#8b949e;text-align:center;padding:20px">Audit service unavailable.</td></tr>`)
+	} else {
+		entries, t, err := h.auditService.ListEvents(r.Context(), page, pageSize)
+		total = t
+		if err != nil {
+			rowsHTML.WriteString(fmt.Sprintf(`<tr><td colspan="6" style="color:#f85149;text-align:center;padding:20px">Failed to load audit log: %s</td></tr>`,
+				template.HTMLEscapeString(err.Error())))
+		} else if len(entries) == 0 {
+			rowsHTML.WriteString(`<tr><td colspan="6" style="color:#8b949e;text-align:center;padding:20px">No audit events recorded yet.</td></tr>`)
+		} else {
+			for _, e := range entries {
+				actor := "-"
+				if e.UserID != nil {
+					actor = fmt.Sprintf("%s #%d", e.UserType, *e.UserID)
+				} else if e.UserType != "" {
+					actor = e.UserType
+				}
+				rowsHTML.WriteString(fmt.Sprintf(
+					"<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>",
+					template.HTMLEscapeString(e.CreatedAt.Format("2006-01-02 15:04:05")),
+					template.HTMLEscapeString(actor),
+					template.HTMLEscapeString(e.Action),
+					template.HTMLEscapeString(e.Resource),
+					template.HTMLEscapeString(e.IPAddress),
+					template.HTMLEscapeString(e.Details),
+				))
+			}
+		}
+	}
+
+	totalPages := 1
+	if total > 0 {
+		totalPages = (total + pageSize - 1) / pageSize
+	}
+
+	pager := ""
+	if totalPages > 1 {
+		if page > 1 {
+			pager += fmt.Sprintf(`<a class="action-link" href="?page=%d">&larr; Prev</a> `, page-1)
+		}
+		pager += fmt.Sprintf(`<span style="color:#8b949e">Page %d of %d</span>`, page, totalPages)
+		if page < totalPages {
+			pager += fmt.Sprintf(` <a class="action-link" href="?page=%d">Next &rarr;</a>`, page+1)
+		}
+	}
+
+	content := fmt.Sprintf(`
 <h1>Audit Log</h1>
 <div class="card">
-  <h2>Recent Audit Events</h2>
+  <h2>Recent Audit Events (%d total)</h2>
   <p style="color:#8b949e;font-size:14px;margin-bottom:16px">
-    All admin actions are recorded in the audit log. The audit log is append-only
-    and stored in <code>users.db</code> (audit_log table).
+    All admin actions are recorded in the append-only audit log.
   </p>
   <table>
-    <thead><tr><th>Time</th><th>Admin</th><th>Action</th><th>Resource</th></tr></thead>
-    <tbody>
-      <tr><td colspan="4" style="color:#8b949e;text-align:center;padding:20px">
-        Audit log viewer coming soon. Query the <code>audit_log</code> table in users.db directly.
-      </td></tr>
-    </tbody>
+    <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Resource</th><th>IP</th><th>Details</th></tr></thead>
+    <tbody>%s</tbody>
   </table>
-</div>`
+  <div style="margin-top:16px">%s</div>
+</div>`, total, rowsHTML.String(), pager)
 	h.adminLayout(w, r, "Audit Log", "/config/logs/audit", template.HTML(content), "", "")
 }
 
