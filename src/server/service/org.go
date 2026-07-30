@@ -415,6 +415,109 @@ func (s *OrgService) TransferOwnership(ctx context.Context, orgID, currentOwnerI
 	return tx.Commit()
 }
 
+// RemoveMember removes a user from an organization. The organization's
+// owner cannot be removed this way — callers must use TransferOwnership
+// first per AI.md PART 35.
+func (s *OrgService) RemoveMember(ctx context.Context, orgID, userID int64) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var role string
+	if err := s.store.UsersDB.QueryRowContext(ctx,
+		`SELECT role FROM org_members WHERE org_id = ? AND user_id = ?`, orgID, userID,
+	).Scan(&role); err == sql.ErrNoRows {
+		return fmt.Errorf("member not found")
+	} else if err != nil {
+		return fmt.Errorf("failed to load member: %w", err)
+	}
+	if role == "owner" {
+		return fmt.Errorf("cannot remove the organization owner — transfer ownership first")
+	}
+
+	if _, err := s.store.UsersDB.ExecContext(ctx,
+		`DELETE FROM org_members WHERE org_id = ? AND user_id = ?`, orgID, userID,
+	); err != nil {
+		return fmt.Errorf("failed to remove member: %w", err)
+	}
+
+	return nil
+}
+
+// ChangeMemberRole updates a member's role. Only "member" and "admin" are
+// valid targets here — promoting to "owner" must go through
+// TransferOwnership so organizations.owner_id stays consistent.
+func (s *OrgService) ChangeMemberRole(ctx context.Context, orgID, userID int64, newRole string) error {
+	if newRole != "member" && newRole != "admin" {
+		return fmt.Errorf("invalid role %q — must be \"member\" or \"admin\"", newRole)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var currentRole string
+	if err := s.store.UsersDB.QueryRowContext(ctx,
+		`SELECT role FROM org_members WHERE org_id = ? AND user_id = ?`, orgID, userID,
+	).Scan(&currentRole); err == sql.ErrNoRows {
+		return fmt.Errorf("member not found")
+	} else if err != nil {
+		return fmt.Errorf("failed to load member: %w", err)
+	}
+	if currentRole == "owner" {
+		return fmt.Errorf("cannot change the owner's role — transfer ownership first")
+	}
+
+	if _, err := s.store.UsersDB.ExecContext(ctx,
+		`UPDATE org_members SET role = ? WHERE org_id = ? AND user_id = ?`,
+		newRole, orgID, userID,
+	); err != nil {
+		return fmt.Errorf("failed to change member role: %w", err)
+	}
+
+	return nil
+}
+
+// AddMemberByEmail looks up an existing user account by email and adds them
+// directly to the organization. Returns an error if no account exists with
+// that email (token-based email invitations for accounts that don't yet
+// exist are tracked separately — see TODO.AI.md PART 35) or if the user is
+// already a member.
+func (s *OrgService) AddMemberByEmail(ctx context.Context, orgID int64, email, role string) error {
+	if role != "member" && role != "admin" {
+		role = "member"
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var userID int64
+	if err := s.store.UsersDB.QueryRowContext(ctx,
+		`SELECT id FROM users WHERE email = ?`, email,
+	).Scan(&userID); err == sql.ErrNoRows {
+		return fmt.Errorf("no account found with email %q", email)
+	} else if err != nil {
+		return fmt.Errorf("failed to look up user: %w", err)
+	}
+
+	var existingRole string
+	err := s.store.UsersDB.QueryRowContext(ctx,
+		`SELECT role FROM org_members WHERE org_id = ? AND user_id = ?`, orgID, userID,
+	).Scan(&existingRole)
+	if err == nil {
+		return fmt.Errorf("user is already a member of this organization")
+	} else if err != sql.ErrNoRows {
+		return fmt.Errorf("failed to check existing membership: %w", err)
+	}
+
+	if _, err := s.store.UsersDB.ExecContext(ctx,
+		`INSERT INTO org_members (org_id, user_id, role, joined_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
+		orgID, userID, role,
+	); err != nil {
+		return fmt.Errorf("failed to add member: %w", err)
+	}
+
+	return nil
+}
+
 // generateSlug generates a URL-friendly slug from a name
 func generateSlug(name string) string {
 	// Convert to lowercase

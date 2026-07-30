@@ -262,7 +262,13 @@ func (h *OrgHandler) OrgMembers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slug := chi.URLParam(r, "slug")
+	h.renderMembersPage(w, r, user, slug, nil)
+}
 
+// renderMembersPage loads the organization + members for slug and renders
+// the members page, optionally with a one-shot flash message. Shared by
+// OrgMembers (GET) and OrgMembersAction (POST, after performing an action).
+func (h *OrgHandler) renderMembersPage(w http.ResponseWriter, r *http.Request, user *service.User, slug string, flash *tmpl.Flash) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
@@ -305,8 +311,88 @@ func (h *OrgHandler) OrgMembers(w http.ResponseWriter, r *http.Request) {
 		Members:        memberViews,
 		IsAdminOrOwner: isAdminOrOwner,
 	}
+	data.Data.Flash = flash
 
 	h.renderer.Render(w, "template/page/orgs/members.html", data)
+}
+
+// OrgMembersAction handles POST /orgs/{slug}/members — member management
+// actions (remove / change_role / invite) per AI.md PART 35. Only org
+// admins/owners may perform these actions; the result is a re-render of the
+// members page with a flash message (the app has no cross-redirect flash
+// persistence, so we render directly rather than redirect-after-post).
+func (h *OrgHandler) OrgMembersAction(w http.ResponseWriter, r *http.Request) {
+	user, ok := getUserFromRequest(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	slug := chi.URLParam(r, "slug")
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	org, err := h.orgService.GetOrganizationBySlug(ctx, slug)
+	if err != nil {
+		http.Error(w, "Organization not found", http.StatusNotFound)
+		return
+	}
+
+	_, userRole, _ := h.orgService.IsMember(ctx, org.ID, user.ID)
+	if userRole != "admin" && userRole != "owner" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	action := r.FormValue("action")
+	var flash *tmpl.Flash
+
+	switch action {
+	case "remove":
+		targetID, err := strconv.ParseInt(r.FormValue("user_id"), 10, 64)
+		if err != nil {
+			flash = &tmpl.Flash{Type: "danger", Message: "Invalid member"}
+			break
+		}
+		if err := h.orgService.RemoveMember(ctx, org.ID, targetID); err != nil {
+			flash = &tmpl.Flash{Type: "danger", Message: err.Error()}
+		} else {
+			flash = &tmpl.Flash{Type: "success", Message: "Member removed"}
+		}
+
+	case "change_role":
+		targetID, err := strconv.ParseInt(r.FormValue("user_id"), 10, 64)
+		if err != nil {
+			flash = &tmpl.Flash{Type: "danger", Message: "Invalid member"}
+			break
+		}
+		newRole := r.FormValue("role")
+		if err := h.orgService.ChangeMemberRole(ctx, org.ID, targetID, newRole); err != nil {
+			flash = &tmpl.Flash{Type: "danger", Message: err.Error()}
+		} else {
+			flash = &tmpl.Flash{Type: "success", Message: "Role updated"}
+		}
+
+	case "invite":
+		email := r.FormValue("email")
+		role := r.FormValue("role")
+		if err := h.orgService.AddMemberByEmail(ctx, org.ID, email, role); err != nil {
+			flash = &tmpl.Flash{Type: "danger", Message: err.Error()}
+		} else {
+			flash = &tmpl.Flash{Type: "success", Message: "Member added"}
+		}
+
+	default:
+		flash = &tmpl.Flash{Type: "danger", Message: "Unknown action"}
+	}
+
+	h.renderMembersPage(w, r, user, slug, flash)
 }
 
 // APIListOrgs returns the user's organizations as JSON.

@@ -245,9 +245,6 @@ Last full audit: 2026-07-30
 
 ## PART 35 — Organizations
 
-- [HIGH] Member management backend missing — `members.html` POSTs
-  `action=remove/change_role` but `OrgMembers` is GET-only; no AddMember/RemoveMember/
-  ChangeRole/Invite. Forms are dead. — `src/server/service/org.go`, `handler/org.go`, `server.go`
 - [MED] Member invite flow missing (no generation/redemption despite `allow_invites`/
   invite modes). — org service/handler + new invite table
 - [MED] `org_preferences` table missing (spec maps `default_role`/`require_2fa`/

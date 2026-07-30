@@ -493,6 +493,7 @@ func (s *Server) setupRoutes() {
 			sr.Get("/", orgHandler.OrgDashboard)
 			sr.Get("/settings", orgHandler.OrgSettings)
 			sr.Get("/members", orgHandler.OrgMembers)
+			sr.Post("/members", orgHandler.OrgMembersAction)
 
 			// Custom domain management per PART 35
 			sr.Get("/domains", domainHandler.ListOrgDomains)
