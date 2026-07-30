@@ -57,8 +57,14 @@ func (s *DomainService) AddDomain(ctx context.Context, ownerType string, ownerID
 		return nil, fmt.Errorf("domain already exists")
 	}
 
-	// Determine if apex or subdomain
-	isApex := !strings.Contains(domain, ".")
+	// Determine if apex or subdomain. An apex (registrable root) domain has
+	// exactly one dot, e.g. "example.com" (2 labels); anything with more dots,
+	// e.g. "www.example.com", is a subdomain. This is a heuristic — it
+	// misclassifies second-level-TLD apexes like "example.co.uk" (2 dots) as
+	// a subdomain — but is materially more correct than the prior check
+	// (`!strings.Contains(domain, ".")`), which only matched single-label
+	// strings like "localhost" and treated every real domain as non-apex.
+	isApex := strings.Count(domain, ".") == 1
 
 	// Insert domain
 	query := `INSERT INTO custom_domains (
@@ -313,7 +319,21 @@ func (s *DomainService) VerifyDomain(ctx context.Context, domainID int64) error 
 			domain.Domain, resolvedStrs)
 	}
 
-	// Mark domain as verified and active.
+	// Mark domain as verified and active. Non-wildcard domains become
+	// eligible for automatic Let's Encrypt issuance the moment they go
+	// active (see IsDomainVerifiedActive / server.go's autocert HostPolicy),
+	// so flip ssl_status from "none" to "pending" here rather than leaving it
+	// permanently "none" — the cert itself is obtained lazily on first HTTPS
+	// handshake by autocert.Manager, not by this method. Wildcard domains
+	// require DNS-01, which is not implemented (TODO.AI.md PART 36), so their
+	// ssl_status is left untouched.
+	sslStatus := domain.SSLStatus
+	sslEnabled := domain.SSLEnabled
+	if !domain.IsWildcard && sslStatus == "none" {
+		sslStatus = "pending"
+		sslEnabled = true
+	}
+
 	_, err = s.store.UsersDB.ExecContext(ctx,
 		`UPDATE custom_domains
 		 SET verification_status = 'verified',
@@ -322,13 +342,33 @@ func (s *DomainService) VerifyDomain(ctx context.Context, domainID int64) error 
 		     last_check_at = ?,
 		     check_count = check_count + 1,
 		     status = 'active',
+		     ssl_enabled = ?,
+		     ssl_status = ?,
 		     updated_at = ?
 		 WHERE id = ?`,
-		now, matchedIP, now, now, domainID,
+		now, matchedIP, now, sslEnabled, sslStatus, now, domainID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update domain: %w", err)
 	}
 
 	return nil
+}
+
+// IsDomainVerifiedActive reports whether host is a verified, active,
+// non-wildcard custom domain — the set of domains autocert.Manager's dynamic
+// HostPolicy (server.go) permits automatic ACME issuance for. Wildcard
+// domains are excluded: HTTP-01 and TLS-ALPN-01 cannot issue wildcard certs
+// (RFC 8555 requires DNS-01), and DNS-01 is not implemented.
+func (s *DomainService) IsDomainVerifiedActive(ctx context.Context, host string) (bool, error) {
+	var count int
+	err := s.store.UsersDB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM custom_domains
+		 WHERE domain = ? AND verification_status = 'verified' AND status = 'active' AND is_wildcard = 0`,
+		host,
+	).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("failed to check domain SSL eligibility: %w", err)
+	}
+	return count > 0, nil
 }

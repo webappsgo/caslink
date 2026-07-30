@@ -133,11 +133,36 @@ func New(cfg *config.Config, appMode mode.Mode, dataDir, logDir, pidFile string,
 			if len(cfg.Server.SSL.LetsEncrypt.Domains) > 0 {
 				hosts = cfg.Server.SSL.LetsEncrypt.Domains
 			}
+			// HostPolicy must stay dynamic, not the static
+			// autocert.HostWhitelist(hosts...): custom domains (PART 36) are
+			// added and DNS-verified by users at runtime, long after this
+			// autocert.Manager is constructed, so a whitelist frozen at
+			// startup could never authorize ACME issuance for them. Every
+			// TLS handshake re-checks the configured hosts first (no DB hit
+			// for the common case), then falls back to the custom-domains
+			// table for verified, active, non-wildcard domains.
+			domainSvc := service.NewDomainService(db)
+			staticHosts := make(map[string]bool, len(hosts))
+			for _, h := range hosts {
+				staticHosts[h] = true
+			}
 			acmeMgr = &autocert.Manager{
-				Prompt:     autocert.AcceptTOS,
-				HostPolicy: autocert.HostWhitelist(hosts...),
-				Cache:      autocert.DirCache(cacheDir),
-				Email:      leEmail,
+				Prompt: autocert.AcceptTOS,
+				HostPolicy: func(ctx context.Context, host string) error {
+					if staticHosts[host] {
+						return nil
+					}
+					ok, err := domainSvc.IsDomainVerifiedActive(ctx, host)
+					if err != nil {
+						return fmt.Errorf("acme/autocert: host policy check failed for %q: %w", host, err)
+					}
+					if !ok {
+						return fmt.Errorf("acme/autocert: host %q not permitted", host)
+					}
+					return nil
+				},
+				Cache: autocert.DirCache(cacheDir),
+				Email: leEmail,
 			}
 			if cfg.Server.SSL.LetsEncrypt.Staging {
 				// Staging CA — certificates will not be trusted by browsers.

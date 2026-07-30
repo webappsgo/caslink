@@ -257,13 +257,37 @@ Last full audit: 2026-07-30
 
 ## PART 36 — Custom Domains
 
-- [HIGH] Automatic Let's Encrypt SSL for custom domains not implemented. Domains created
-  with `ssl_status "none"`; no per-domain ACME issuance (`src/ssl/ssl.go` handles only the
-  primary cert). — `src/server/service/domain.go` + ssl integration
+- [HIGH] Automatic HTTP-01/TLS-ALPN-01 Let's Encrypt issuance for verified custom domains
+  now works (2026-07-30): `server.go`'s `autocert.Manager.HostPolicy` is a dynamic function
+  (`DomainService.IsDomainVerifiedActive`) instead of a startup-frozen
+  `autocert.HostWhitelist`, so any domain that passes DNS verification and goes `active` is
+  automatically issued a cert on first HTTPS handshake — no separate issuance code needed
+  since autocert already does this natively. `VerifyDomain` now flips `ssl_status`
+  `none`→`pending`/`ssl_enabled` on successful verification. Remaining gaps below are real
+  but separate in scope from "SSL issuance is unimplemented":
+  - [HIGH] Verification method does not match spec: AI.md PART 36 requires a `_verify.{domain}`
+    **TXT record** proving ownership (works behind CDNs/proxies); the actual implementation
+    (`VerifyDomain`) instead does an A/AAAA DNS lookup and matches against the server's own
+    public IP. This also means `verification_token`/`dns_instructions` (spec fields) don't
+    exist. — `src/server/service/domain.go`
+  - [MED] `ssl_status` never advances past `pending` to `active`/`error` — nothing observes
+    autocert's on-disk cert cache (or hooks its issuance) to record success/failure, so the
+    dashboard's SSL status is stale once a cert is actually issued. — `src/server/service/domain.go`
+  - [MED] DNS-01 challenge (wildcard domains, DNS-provider credentials, `ssl_provider`/
+    `ssl_credentials` columns) is entirely unimplemented — wildcard domains are excluded from
+    the new `IsDomainVerifiedActive` eligibility check for this reason.
+  - [MED] `ssl_cert_pem`/`ssl_key_pem` columns and the `/ssl`, `/ssl/renew`, `/dns` API/web
+    routes from AI.md PART 36 don't exist — no way to view SSL status or force renewal.
+  - [LOW] `custom_domain_audit` table exists in schema but nothing ever writes to it — no
+    audit trail for create/verify/ssl_issued/suspend/delete actions.
+  - [LOW] No admin suspend/unsuspend/force-delete endpoints (`/server/{admin_path}/config/domains/...`).
 - [MED] No scheduled DNS re-verification with exponential backoff (verification is manual
-  `POST /verify` only; scheduler has no domain-verify job). — `src/scheduler/scheduler.go`, domain service
-- [LOW] `IsApex` detection buggy — `service/domain.go:61` uses
-  `!strings.Contains(domain, ".")`, so `example.com` is misclassified as non-apex. — `src/server/service/domain.go`
+  `POST /verify` only; scheduler has no domain-verify job), and no `custom_domain_ssl_renewal`/
+  `custom_domain_cleanup` scheduled tasks per spec. — `src/scheduler/scheduler.go`, domain service
+- [LOW] `IsApex` detection fixed (2026-07-30): was `!strings.Contains(domain, ".")` (misclassified
+  every real domain as non-apex); now `strings.Count(domain, ".") == 1`. Still a heuristic — two-part
+  TLDs like `example.co.uk` are misclassified as non-apex since public-suffix rules aren't applied.
+  — `src/server/service/domain.go`
 
 ---
 
