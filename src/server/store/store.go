@@ -652,6 +652,7 @@ func (s *Store) initUsersSchema() error {
 	// These are silently ignored when the column already exists (duplicate column error).
 	addColumnQueries := []string{
 		`ALTER TABLE api_tokens ADD COLUMN token_prefix TEXT`,
+		`ALTER TABLE totp_secrets ADD COLUMN key_version INTEGER NOT NULL DEFAULT 0`,
 	}
 	for _, q := range addColumnQueries {
 		ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)

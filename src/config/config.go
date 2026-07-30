@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/casjaysdevdocker/caslink/src/common/crypto"
 )
 
 // Config represents the complete application configuration
@@ -91,6 +93,17 @@ type SecurityConfig struct {
 	Password  PasswordPolicyConfig `yaml:"password"`
 	Blocklist BlocklistConfig      `yaml:"blocklist"`
 	CVE       CVEConfig            `yaml:"cve"`
+
+	// EncryptionKey is the canonical at-rest AES-256-GCM key per AI.md
+	// PART 11 ("Cryptographic Keys"): base64-encoded 32 random bytes,
+	// auto-generated on first run and persisted to server.yml. Used for
+	// 2FA secrets and any other data the spec calls out as "encrypted at
+	// rest" (security report bodies fall back to this key when no PGP
+	// keypair exists).
+	EncryptionKey string `yaml:"encryption_key"`
+	// EncryptionKeyVersion is incremented on every "Rotate Encryption Key"
+	// admin action; starts at 1.
+	EncryptionKeyVersion int `yaml:"encryption_key_version"`
 }
 
 // BlocklistConfig holds IP/domain blocklist source configuration per AI.md PART 19.
@@ -476,6 +489,9 @@ func Load(configDir string) (*Config, error) {
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		// Create default config
 		cfg := DefaultConfig()
+		if err := ensureEncryptionKey(cfg); err != nil {
+			return nil, err
+		}
 		if err := Save(configDir, cfg); err != nil {
 			return nil, fmt.Errorf("failed to create default config: %w", err)
 		}
@@ -500,10 +516,38 @@ func Load(configDir string) (*Config, error) {
 		return nil, fmt.Errorf("invalid config: %w", err)
 	}
 
+	// First-run / upgrade path: generate server.security.encryption_key if
+	// this config predates it (AI.md PART 11 "Cryptographic Keys"), then
+	// persist it so it survives a restart.
+	if cfg.Server.Security.EncryptionKey == "" {
+		if err := ensureEncryptionKey(&cfg); err != nil {
+			return nil, err
+		}
+		if err := Save(configDir, &cfg); err != nil {
+			return nil, fmt.Errorf("failed to persist generated encryption key: %w", err)
+		}
+	}
+
 	// Apply environment variable overrides (PART 26 precedence: env > config > default).
 	applyEnvOverrides(&cfg)
 
 	return &cfg, nil
+}
+
+// ensureEncryptionKey generates server.security.encryption_key when absent,
+// per AI.md PART 11: "auto-generated on first run", starting
+// encryption_key_version at 1.
+func ensureEncryptionKey(cfg *Config) error {
+	if cfg.Server.Security.EncryptionKey != "" {
+		return nil
+	}
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		return fmt.Errorf("failed to generate encryption key: %w", err)
+	}
+	cfg.Server.Security.EncryptionKey = key
+	cfg.Server.Security.EncryptionKeyVersion = 1
+	return nil
 }
 
 // applyEnvOverrides overlays environment variables on top of the loaded config.

@@ -11,19 +11,66 @@ import (
 	"strings"
 	"time"
 
+	appcrypto "github.com/casjaysdevdocker/caslink/src/common/crypto"
 	"github.com/casjaysdevdocker/caslink/src/server/store"
 )
 
 // TOTPService handles Two-Factor Authentication (TOTP)
 type TOTPService struct {
 	store *store.Store
+
+	// encryptionKey is server.security.encryption_key (32 bytes, decoded),
+	// used to encrypt/decrypt TOTP secrets at rest per AI.md PART 11.
+	// May be nil if no key is configured, in which case new secrets are
+	// stored in plaintext (should not happen after config.Load's first-run
+	// key generation, but is handled defensively).
+	encryptionKey        []byte
+	encryptionKeyVersion int
 }
 
-// NewTOTPService creates a new TOTP service
-func NewTOTPService(st *store.Store) *TOTPService {
+// NewTOTPService creates a new TOTP service. encryptionKey must be the
+// decoded 32-byte server.security.encryption_key (via crypto.DecodeKey);
+// pass nil if no key is configured. keyVersion is the current
+// server.security.encryption_key_version.
+func NewTOTPService(st *store.Store, encryptionKey []byte, keyVersion int) *TOTPService {
 	return &TOTPService{
-		store: st,
+		store:                st,
+		encryptionKey:        encryptionKey,
+		encryptionKeyVersion: keyVersion,
 	}
+}
+
+// encryptSecret encrypts a TOTP secret with AES-256-GCM per AI.md PART 11
+// ("2FA secrets | Always encrypted | AES-256-GCM (server key)"). Returns the
+// stored value and the key_version to persist alongside it. When no
+// encryption key is configured, falls back to plaintext storage with
+// key_version 0 rather than failing 2FA enrollment.
+func (s *TOTPService) encryptSecret(plaintext string) (stored string, keyVersion int, err error) {
+	if len(s.encryptionKey) == 0 {
+		return plaintext, 0, nil
+	}
+	ciphertext, err := appcrypto.EncryptGCM(s.encryptionKey, []byte(plaintext))
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to encrypt TOTP secret: %w", err)
+	}
+	return ciphertext, s.encryptionKeyVersion, nil
+}
+
+// decryptSecret reverses encryptSecret. key_version 0 means the row predates
+// at-rest encryption (or no key was configured when it was written) and is
+// returned as-is.
+func (s *TOTPService) decryptSecret(stored string, keyVersion int) (string, error) {
+	if keyVersion == 0 {
+		return stored, nil
+	}
+	if len(s.encryptionKey) == 0 {
+		return "", fmt.Errorf("TOTP secret is encrypted but no encryption key is configured")
+	}
+	plaintext, err := appcrypto.DecryptGCM(s.encryptionKey, stored)
+	if err != nil {
+		return "", fmt.Errorf("failed to decrypt TOTP secret: %w", err)
+	}
+	return string(plaintext), nil
 }
 
 // GenerateTOTPSecret generates a new TOTP secret per PART 23
@@ -163,23 +210,28 @@ func (s *TOTPService) EnableTOTP(userID int64, secret string) ([]string, error) 
 		hashedKeys[i] = hashed
 	}
 	
-	// Note: Secret stored in plaintext for now.
-	// Future enhancement: Encrypt with AES-256-GCM using server-generated key per PART 23 line 18723
-	
+	// Encrypt the secret at rest with AES-256-GCM per AI.md PART 11
+	// ("2FA secrets | Always encrypted | AES-256-GCM (server key)").
+	storedSecret, keyVersion, err := s.encryptSecret(secret)
+	if err != nil {
+		return nil, err
+	}
+
 	// Convert hashed keys to JSON for storage
 	// Format: ["hash1", "hash2", ...]
 	backupCodesJSON := fmt.Sprintf("[\"%s\"]", strings.Join(hashedKeys, "\",\""))
-	
+
 	// Store TOTP secret and recovery keys in database per PART 23 line 7010-7021
-	query := `INSERT INTO totp_secrets (user_type, user_id, secret, enabled, backup_codes, created_at)
-	          VALUES ('user', ?, ?, 1, ?, strftime('%s', 'now'))
+	query := `INSERT INTO totp_secrets (user_type, user_id, secret, enabled, backup_codes, created_at, key_version)
+	          VALUES ('user', ?, ?, 1, ?, strftime('%s', 'now'), ?)
 	          ON CONFLICT(user_type, user_id) DO UPDATE SET
 	          secret = excluded.secret,
 	          enabled = 1,
 	          backup_codes = excluded.backup_codes,
-	          created_at = strftime('%s', 'now')`
-	
-	_, err = s.store.UsersDB.Exec(query, userID, secret, backupCodesJSON)
+	          created_at = strftime('%s', 'now'),
+	          key_version = excluded.key_version`
+
+	_, err = s.store.UsersDB.Exec(query, userID, storedSecret, backupCodesJSON, keyVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to store TOTP secret: %w", err)
 	}
@@ -279,22 +331,24 @@ func (s *TOTPService) GetRemainingRecoveryKeyCount(userID int64) (int, error) {
 	return len(hashes), nil
 }
 
-// GetTOTPSecret retrieves the TOTP secret for a user
+// GetTOTPSecret retrieves the TOTP secret for a user, decrypting it if it
+// was stored encrypted (key_version > 0).
 func (s *TOTPService) GetTOTPSecret(userID int64) (string, error) {
 	var secret string
 	var enabled int
-	query := `SELECT secret, enabled FROM totp_secrets WHERE user_type = 'user' AND user_id = ?`
-	
-	err := s.store.UsersDB.QueryRow(query, userID).Scan(&secret, &enabled)
+	var keyVersion int
+	query := `SELECT secret, enabled, key_version FROM totp_secrets WHERE user_type = 'user' AND user_id = ?`
+
+	err := s.store.UsersDB.QueryRow(query, userID).Scan(&secret, &enabled, &keyVersion)
 	if err != nil {
 		return "", fmt.Errorf("no TOTP secret found")
 	}
-	
+
 	if enabled != 1 {
 		return "", fmt.Errorf("TOTP not enabled")
 	}
-	
-	return secret, nil
+
+	return s.decryptSecret(secret, keyVersion)
 }
 
 // HasTOTP checks if a user has TOTP enabled

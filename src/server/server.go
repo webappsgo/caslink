@@ -21,6 +21,7 @@ import (
 
 	"net/http/pprof"
 
+	appcrypto "github.com/casjaysdevdocker/caslink/src/common/crypto"
 	"github.com/casjaysdevdocker/caslink/src/common/i18n"
 	"github.com/casjaysdevdocker/caslink/src/config"
 	"github.com/casjaysdevdocker/caslink/src/geoip"
@@ -272,7 +273,13 @@ func (s *Server) setupRoutes() {
 	urlService := service.NewURLService(s.store)
 	urlService.SetGeoIP(s.geoip)
 	authService := service.NewAuthService(s.store)
-	totpService := service.NewTOTPService(s.store)
+	var encryptionKey []byte
+	if k, err := appcrypto.DecodeKey(s.config.Server.Security.EncryptionKey); err == nil {
+		encryptionKey = k
+	} else {
+		log.Printf("Warning: server.security.encryption_key is not configured/valid — TOTP secrets will be stored in plaintext: %v", err)
+	}
+	totpService := service.NewTOTPService(s.store, encryptionKey, s.config.Server.Security.EncryptionKeyVersion)
 	emailService := service.NewEmailService(s.config)
 	qrService := service.NewQRService(s.store)
 	orgService := service.NewOrgService(s.store)
