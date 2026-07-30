@@ -10,8 +10,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/casjaysdevdocker/caslink/src/config"
 	"github.com/casjaysdevdocker/caslink/src/server/model"
 	"github.com/casjaysdevdocker/caslink/src/server/service"
+	"github.com/casjaysdevdocker/caslink/src/server/tmpl"
 )
 
 // clickRecordWorkers caps the number of concurrent goroutines used to
@@ -25,13 +27,17 @@ var clickRecordWorkers = make(chan struct{}, 64)
 type URLHandler struct {
 	urlService       *service.URLService
 	analyticsService *service.AnalyticsService
+	renderer         *tmpl.Renderer
+	cfg              *config.Config
 }
 
 // NewURLHandler creates a new URL handler
-func NewURLHandler(urlService *service.URLService, analyticsService *service.AnalyticsService) *URLHandler {
+func NewURLHandler(urlService *service.URLService, analyticsService *service.AnalyticsService, renderer *tmpl.Renderer, cfg *config.Config) *URLHandler {
 	return &URLHandler{
 		urlService:       urlService,
 		analyticsService: analyticsService,
+		renderer:         renderer,
+		cfg:              cfg,
 	}
 }
 
@@ -360,6 +366,118 @@ func (h *URLHandler) Stats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, stats)
+}
+
+// ownedURLForUser fetches a URL by code and verifies the given user owns it
+// (mirrors checkURLOwnership's rules but for session-authenticated web
+// requests instead of Bearer tokens). Returns (nil, false) after writing a
+// 404 when the code does not exist or belongs to someone else.
+func (h *URLHandler) ownedURLForUser(w http.ResponseWriter, r *http.Request, code string, userID int64) (*model.URL, bool) {
+	existing, err := h.urlService.GetURLByCodeAny(r.Context(), code)
+	if err != nil {
+		http.NotFound(w, r)
+		return nil, false
+	}
+	if existing.UserID == nil || *existing.UserID != userID {
+		http.NotFound(w, r)
+		return nil, false
+	}
+	return existing, true
+}
+
+// WebURLManage handles GET/POST /users/urls/{code} — the per-link
+// management page: stats, QR code display, an edit form, and a delete
+// form. Everything works without JavaScript (PART 16 progressive
+// enhancement); GET renders the page, POST re-renders it in place with a
+// Flash after applying the requested action (update or delete).
+func (h *URLHandler) WebURLManage(w http.ResponseWriter, r *http.Request) {
+	user, ok := getUserFromRequest(r)
+	if !ok {
+		http.Redirect(w, r, "/server/auth/login", http.StatusFound)
+		return
+	}
+	code := chi.URLParam(r, "code")
+	if code == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		if _, ok := h.ownedURLForUser(w, r, code, user.ID); !ok {
+			return
+		}
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Invalid form data", http.StatusBadRequest)
+			return
+		}
+		switch r.PostFormValue("action") {
+		case "delete":
+			if err := h.urlService.DeleteURL(r.Context(), code); err != nil {
+				h.renderURLManage(w, r, user, code, &tmpl.Flash{Type: "danger", Message: "Failed to delete link."})
+				return
+			}
+			http.Redirect(w, r, "/users/dashboard?deleted="+code, http.StatusSeeOther)
+			return
+
+		default: // "update"
+			req := &model.UpdateURLRequest{}
+			if v := strings.TrimSpace(r.PostFormValue("long_url")); v != "" {
+				req.LongURL = &v
+			}
+			title := strings.TrimSpace(r.PostFormValue("title"))
+			req.Title = &title
+			desc := strings.TrimSpace(r.PostFormValue("description"))
+			req.Description = &desc
+			password := r.PostFormValue("password")
+			if r.PostFormValue("clear_password") == "1" {
+				empty := ""
+				req.Password = &empty
+			} else if password != "" {
+				req.Password = &password
+			}
+			if r.PostFormValue("clear_expiry") == "1" {
+				var zero time.Time
+				req.ExpiresAt = &zero
+			} else if v := r.PostFormValue("expires_at"); v != "" {
+				if t, err := time.Parse("2006-01-02T15:04", v); err == nil {
+					req.ExpiresAt = &t
+				}
+			}
+
+			if _, err := h.urlService.UpdateURL(r.Context(), code, req); err != nil {
+				h.renderURLManage(w, r, user, code, &tmpl.Flash{Type: "danger", Message: "Failed to update link: " + err.Error()})
+				return
+			}
+			h.renderURLManage(w, r, user, code, &tmpl.Flash{Type: "success", Message: "Link updated."})
+			return
+		}
+	}
+
+	h.renderURLManage(w, r, user, code, nil)
+}
+
+// renderURLManage loads the URL (with an ownership check), its stats, and
+// renders the manage page. Writes 404 itself when the link does not exist
+// or is not owned by user.
+func (h *URLHandler) renderURLManage(w http.ResponseWriter, r *http.Request, user *service.User, code string, flash *tmpl.Flash) {
+	url, ok := h.ownedURLForUser(w, r, code, user.ID)
+	if !ok {
+		return
+	}
+	stats, _ := h.analyticsService.GetURLStats(r.Context(), code)
+
+	base := newPageData(h.cfg, r, "Manage "+code, user)
+	base.Flash = flash
+	data := struct {
+		tmpl.Data
+		URL   *model.URL
+		Stats *service.URLStats
+	}{
+		Data:  base,
+		URL:   url,
+		Stats: stats,
+	}
+	h.renderer.Render(w, "template/page/url_manage.html", data)
 }
 
 // respondJSON and respondError are defined in helpers.go and shared across

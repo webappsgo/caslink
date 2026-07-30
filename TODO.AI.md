@@ -36,6 +36,13 @@ Last full audit: 2026-07-30
 - [LOW] First-run port not randomized. main.go hardcodes `Port=64580` when port==0
   instead of a random unused 64000–64999 port (`selectRandomPort()` bypassed on the
   config-save path). — `src/main.go`
+- [LOW] `NO_COLOR` env var can be silently bypassed by an explicit `--color=yes`
+  flag: `main()` pre-sets `colorMode="no"` from `NO_COLOR` before `flag.Parse()`,
+  but the flag's own default ("auto") then overwrites it, and the post-parse
+  re-check only re-applies `NO_COLOR` when `colorMode == "auto"` — so
+  `--color=yes` with `NO_COLOR` set still enables color, but the spec
+  (https://no-color.org/) requires `NO_COLOR` to disable color unconditionally
+  when set (found by `go-lint`, 2026-07-30). — `src/main.go`
 
 ## PART 9 / 12 — Caching & Compression
 
@@ -61,6 +68,15 @@ Last full audit: 2026-07-30
   `{security_id}` HMAC token, PGP keypair mgmt, encrypted report bodies,
   `/server/contact?security_id=` mode, `/.well-known/pgp-key.asc`. — new `src/security/`, `handler/pages.go`
 - [LOW] `/.well-known/llms.txt` not served (security.txt + change-password are). — `src/server/server.go`
+- [LOW] `BulkHandler.Import`'s 5 MB body-size check runs too late to matter:
+  `r.FormFile`/`ParseMultipartForm` (called by the CSRF middleware and/or the
+  handler itself) already buffers or spools the entire multipart body to
+  memory/temp files before the handler's `io.LimitReader` check ever runs, so
+  an oversized upload is not actually rejected before being fully read.
+  Needs `http.MaxBytesReader(w, r.Body, maxBodyBytes)` wrapped around the
+  request body before any form parsing (found 2026-07-30 while wiring the
+  session-authenticated bulk-import route). — `src/server/handler/bulk.go`,
+  `src/server/middleware.go` `CSRFMiddleware`
 
 ## PART 13 — Health & Versioning
 
@@ -106,12 +122,25 @@ Last full audit: 2026-07-30
   DeleteURL ownership check (2026-07-30) therefore only recognizes per-user
   ownership — org-token API callers get 404 on any link mutation, even for
   links belonging to their org. — `src/server/model/url.go`, `service/url.go`
-- [HIGH] Link-management frontend beyond create is absent: no per-link stats page,
-  no edit/delete UI, no web QR-display page, no bulk import/export forms (QR/stats/
-  bulk exist only as API). — new templates + web routes
+- [DONE 2026-07-30] Link-management frontend beyond create: added per-link
+  manage page (stats, QR display, edit form, delete with confirm), bulk
+  import/export page, `WebURLManage` GET+POST handler, `/users/urls/{code}`,
+  `/users/urls/bulk`, `/users/urls/export`, `/users/urls/import` routes;
+  `BulkHandler.Import` now redirects (PRG) for form submissions instead of
+  always returning JSON; fixed a CSRF-middleware bug where multipart form
+  bodies were never parsed for the `_csrf` field. — `handler/url.go`,
+  `handler/user.go`, `handler/bulk.go`, `service/url.go`, `middleware.go`,
+  `server.go`, `template/page/url_manage.html`, `template/page/url_bulk.html`
 - [MED] Link options under-modeled. `model.URL` supports password + expiration only;
   geo-restriction, device targeting, UTM passthrough, tags, public/private visibility
   (all in IDEA.md) not modeled or exposed. — `src/server/model/url.go`, create form
+- [LOW] Per-page `{{define "inline-js"}}` blocks (e.g. in some page templates)
+  are dead code: `tmpl.go` overwrites the global `"inline-js"` template name
+  with `static/js/app.js` content after walking all page templates, so any
+  page-specific inline-js block is silently discarded and never rendered.
+  Needs either removing the misleading per-page blocks or renaming/rendering
+  them under a per-page-unique template name. — `src/server/tmpl/tmpl.go`,
+  `src/server/tmpl/template/layout/base.html`
 
 ## PART 17 — Admin Panel
 

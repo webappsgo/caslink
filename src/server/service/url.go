@@ -168,9 +168,16 @@ func (s *URLService) UpdateURL(ctx context.Context, shortCode string, req *model
 		}
 	}
 
+	// A non-nil pointer to the zero time.Time is the sentinel for "clear the
+	// expiration" (a link can never legitimately expire in year 1), since
+	// nil already means "leave expires_at unchanged".
 	expiresAt := existing.ExpiresAt
 	if req.ExpiresAt != nil {
-		expiresAt = req.ExpiresAt
+		if req.ExpiresAt.IsZero() {
+			expiresAt = nil
+		} else {
+			expiresAt = req.ExpiresAt
+		}
 	}
 
 	query := `UPDATE urls SET long_url = ?, title = ?, description = ?, password_hash = ?, expires_at = ?, updated_at = CURRENT_TIMESTAMP

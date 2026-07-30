@@ -390,12 +390,51 @@ func (h *UserHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 
 	urls, _ := h.urlService.ListByUser(ctx, user.ID, 50)
 
+	base := newPageData(h.cfg, r, "Dashboard", user)
+	// Surface feedback from the WebCreateURL/WebURLManage PRG redirects
+	// (works without JavaScript per AI.md PART 16).
+	if code := r.URL.Query().Get("created"); code != "" {
+		base.Flash = &tmpl.Flash{Type: "success", Message: "Short link created: /" + code}
+	} else if code := r.URL.Query().Get("deleted"); code != "" {
+		base.Flash = &tmpl.Flash{Type: "success", Message: "Link deleted: " + code}
+	}
+
 	data := struct {
 		tmpl.Data
 		URLs interface{}
 	}{
-		Data: newPageData(h.cfg, r, "Dashboard", user),
+		Data: base,
 		URLs: urls,
 	}
 	h.renderer.Render(w, "template/page/dashboard.html", data)
+}
+
+// Bulk renders the bulk import/export page — links to CSV/JSON export and a
+// file-upload import form. Reuses the existing BulkHandler.Export/Import
+// (session-authenticated, registered alongside this route in server.go).
+func (h *UserHandler) Bulk(w http.ResponseWriter, r *http.Request) {
+	user, ok := getUserFromRequest(r)
+	if !ok {
+		http.Redirect(w, r, "/server/auth/login", http.StatusFound)
+		return
+	}
+	base := newPageData(h.cfg, r, "Bulk Import/Export", user)
+	q := r.URL.Query()
+	switch {
+	case q.Get("import_error") != "":
+		base.Flash = &tmpl.Flash{Type: "danger", Message: q.Get("import_error")}
+	case q.Get("imported") != "":
+		errCount := q.Get("errors")
+		msg := "Imported " + q.Get("success") + " link(s)."
+		if errCount != "" && errCount != "0" {
+			msg += " " + errCount + " row(s) failed."
+		}
+		base.Flash = &tmpl.Flash{Type: "success", Message: msg}
+	}
+	data := struct {
+		tmpl.Data
+	}{
+		Data: base,
+	}
+	h.renderer.Render(w, "template/page/url_bulk.html", data)
 }

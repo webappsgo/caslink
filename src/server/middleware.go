@@ -356,9 +356,17 @@ func CSRFMiddleware() func(http.Handler) http.Handler {
 
 			submitted := r.Header.Get(csrfHeaderName)
 			if submitted == "" {
-				if err2 := r.ParseForm(); err2 == nil {
-					submitted = r.FormValue(csrfFormField)
-				}
+				// ParseForm alone never reads a multipart/form-data body (only
+				// application/x-www-form-urlencoded), so a plain <form
+				// enctype="multipart/form-data"> (e.g. file-upload forms)
+				// would never have its "_csrf" field seen here. Use
+				// ParseMultipartForm instead — it parses the URL query and
+				// urlencoded bodies exactly like ParseForm, and additionally
+				// parses multipart bodies; for non-multipart requests it
+				// just returns http.ErrNotMultipart, which is ignored the
+				// same way a ParseForm error already was.
+				_ = r.ParseMultipartForm(32 << 20)
+				submitted = r.FormValue(csrfFormField)
 			}
 
 			if submitted == "" || submitted != cookie.Value {

@@ -6,6 +6,10 @@
     <span class="text-muted text-sm">Logged in as {{.User.Username}}</span>
   </div>
 
+  {{if .Flash}}
+  <div class="alert alert-{{.Flash.Type}}" data-autohide="4000">{{.Flash.Message}}</div>
+  {{end}}
+
   <div class="card mb-4">
     <h2 class="card-title">Create Short Link</h2>
     <form method="POST" action="/urls" id="create-form">
@@ -33,7 +37,10 @@
 
   {{if .URLs}}
   <div class="card">
-    <h2 class="card-title">Your Links</h2>
+    <div class="flex-between">
+      <h2 class="card-title">Your Links</h2>
+      <a href="/users/urls/bulk" class="btn btn-outline btn-sm">Bulk import/export</a>
+    </div>
     <div class="table-wrap">
       <table>
         <thead>
@@ -41,6 +48,7 @@
             <th>Short Code</th>
             <th>Destination</th>
             <th>Created</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -52,6 +60,7 @@
             </td>
             <td class="break-all text-muted text-sm">{{.LongURL}}</td>
             <td class="text-muted text-sm">{{.CreatedAt}}</td>
+            <td><a href="/users/urls/{{.ShortCode}}" class="btn btn-outline btn-sm">Manage</a></td>
           </tr>
           {{end}}
         </tbody>
@@ -61,6 +70,7 @@
   {{else}}
   <div class="card text-muted">
     <p>No links yet. Create your first short link above.</p>
+    <p><a href="/users/urls/bulk" class="btn btn-outline btn-sm">Bulk import/export</a></p>
   </div>
   {{end}}
 </div>

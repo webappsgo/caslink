@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 
 	"github.com/casjaysdevdocker/caslink/src/server/service"
 )
@@ -73,15 +75,27 @@ func (h *BulkHandler) Import(w http.ResponseWriter, r *http.Request) {
 	contentType := r.Header.Get("Content-Type")
 	var rawData []byte
 	var format string
+	isForm := len(contentType) >= 19 && contentType[:19] == "multipart/form-data"
 
-	if len(contentType) >= 19 && contentType[:19] == "multipart/form-data" {
+	// fail redirects to the bulk page with an error, for browser form
+	// submissions (progressive enhancement — no JS required); API/raw-body
+	// callers keep getting the JSON error envelope.
+	fail := func(status int, message string) {
+		if isForm {
+			http.Redirect(w, r, "/users/urls/bulk?import_error="+url.QueryEscape(message), http.StatusSeeOther)
+			return
+		}
+		respondError(w, status, message)
+	}
+
+	if isForm {
 		if err := r.ParseMultipartForm(maxBodyBytes); err != nil {
-			respondError(w, http.StatusBadRequest, "Failed to parse multipart form")
+			fail(http.StatusBadRequest, "Failed to parse multipart form")
 			return
 		}
 		file, fh, err := r.FormFile("file")
 		if err != nil {
-			respondError(w, http.StatusBadRequest, "Missing file field")
+			fail(http.StatusBadRequest, "Missing file field")
 			return
 		}
 		defer file.Close()
@@ -89,11 +103,11 @@ func (h *BulkHandler) Import(w http.ResponseWriter, r *http.Request) {
 		limited := io.LimitReader(file, maxBodyBytes+1)
 		rawData, err = io.ReadAll(limited)
 		if err != nil {
-			respondError(w, http.StatusBadRequest, "Failed to read file")
+			fail(http.StatusBadRequest, "Failed to read file")
 			return
 		}
 		if len(rawData) > maxBodyBytes {
-			respondError(w, http.StatusRequestEntityTooLarge, "File exceeds 5 MB limit")
+			fail(http.StatusRequestEntityTooLarge, "File exceeds 5 MB limit")
 			return
 		}
 
@@ -108,11 +122,11 @@ func (h *BulkHandler) Import(w http.ResponseWriter, r *http.Request) {
 		var err error
 		rawData, err = io.ReadAll(limited)
 		if err != nil {
-			respondError(w, http.StatusBadRequest, "Failed to read body")
+			fail(http.StatusBadRequest, "Failed to read body")
 			return
 		}
 		if len(rawData) > maxBodyBytes {
-			respondError(w, http.StatusRequestEntityTooLarge, "Body exceeds 5 MB limit")
+			fail(http.StatusRequestEntityTooLarge, "Body exceeds 5 MB limit")
 			return
 		}
 		if contentType == "text/csv" || contentType == "application/csv" {
@@ -139,7 +153,12 @@ func (h *BulkHandler) Import(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		fail(http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if isForm {
+		http.Redirect(w, r, fmt.Sprintf("/users/urls/bulk?imported=1&success=%d&errors=%d", successCount, len(errorRows)), http.StatusSeeOther)
 		return
 	}
 

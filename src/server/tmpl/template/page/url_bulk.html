@@ -1,0 +1,31 @@
+{{template "base" .}}
+{{define "content"}}
+<div class="container">
+  <div class="flex-between mb-4">
+    <h1>Bulk Import / Export</h1>
+    <a href="/users/dashboard" class="btn btn-outline btn-sm">Back to dashboard</a>
+  </div>
+
+  <div class="card mb-4">
+    <h2 class="card-title">Export your links</h2>
+    <p class="text-muted">Download every link you own.</p>
+    <p>
+      <a class="btn btn-outline btn-sm" href="/users/urls/export?format=csv">Export CSV</a>
+      <a class="btn btn-outline btn-sm" href="/users/urls/export?format=json">Export JSON</a>
+    </p>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">Import links</h2>
+    <p class="text-muted">Upload a CSV or JSON file of links to create in bulk.</p>
+    <form method="POST" action="/users/urls/import" enctype="multipart/form-data">
+      <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+      <div class="form-group">
+        <label for="file">File</label>
+        <input class="form-control" type="file" id="file" name="file" accept=".csv,.json" required>
+      </div>
+      <button type="submit" class="btn btn-primary">Import</button>
+    </form>
+  </div>
+</div>
+{{end}}

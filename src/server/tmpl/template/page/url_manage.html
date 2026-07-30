@@ -1,0 +1,106 @@
+{{template "base" .}}
+{{define "content"}}
+<div class="container">
+  <div class="flex-between mb-4">
+    <h1>Manage /{{.URL.ShortCode}}</h1>
+    <a href="/users/dashboard" class="btn btn-outline btn-sm">Back to dashboard</a>
+  </div>
+
+  <div class="card mb-4">
+    <h2 class="card-title">Link</h2>
+    <p><a href="/{{.URL.ShortCode}}" target="_blank" class="break-all">/{{.URL.ShortCode}}</a></p>
+    <p class="text-muted break-all">Destination: {{.URL.LongURL}}</p>
+    <p class="text-muted text-sm">
+      Created {{.URL.CreatedAt}}
+      {{if .URL.ExpiresAt}} &middot; Expires {{.URL.ExpiresAt}}{{end}}
+      {{if .URL.PasswordHash}} &middot; Password protected{{end}}
+    </p>
+  </div>
+
+  <div class="card mb-4">
+    <h2 class="card-title">Stats</h2>
+    {{if .Stats}}
+    <div class="table-wrap">
+      <table>
+        <tbody>
+          <tr><th>Total clicks</th><td>{{.Stats.TotalClicks}}</td></tr>
+          <tr><th>Unique visitors</th><td>{{.Stats.UniqueIPs}}</td></tr>
+          <tr><th>Last 24h</th><td>{{.Stats.Last24h}}</td></tr>
+          <tr><th>Last 7d</th><td>{{.Stats.Last7d}}</td></tr>
+          <tr><th>Last 30d</th><td>{{.Stats.Last30d}}</td></tr>
+        </tbody>
+      </table>
+    </div>
+    {{if .Stats.TopReferers}}
+    <h3 class="card-title">Top referrers</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Referrer</th><th>Clicks</th></tr></thead>
+        <tbody>
+          {{range .Stats.TopReferers}}
+          <tr><td class="break-all">{{if .Referer}}{{.Referer}}{{else}}(direct){{end}}</td><td>{{.Clicks}}</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{end}}
+    {{else}}
+    <p class="text-muted">No stats available yet.</p>
+    {{end}}
+  </div>
+
+  <div class="card mb-4">
+    <h2 class="card-title">QR Code</h2>
+    <p><img src="/qr/{{.URL.ShortCode}}?format=svg&amp;size=200" alt="QR code for /{{.URL.ShortCode}}" width="200" height="200"></p>
+    <p class="text-sm">
+      <a href="/qr/{{.URL.ShortCode}}?format=svg">Download SVG</a>
+      &middot;
+      <a href="/qr/{{.URL.ShortCode}}?format=png&amp;size=400">Download PNG</a>
+    </p>
+  </div>
+
+  <div class="card mb-4">
+    <h2 class="card-title">Edit link</h2>
+    <form method="POST" action="/users/urls/{{.URL.ShortCode}}">
+      <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+      <input type="hidden" name="action" value="update">
+      <div class="form-group">
+        <label for="long_url">Destination URL</label>
+        <input class="form-control" type="url" id="long_url" name="long_url" value="{{.URL.LongURL}}" required>
+      </div>
+      <div class="form-group">
+        <label for="title">Title <span class="text-muted">(optional)</span></label>
+        <input class="form-control" type="text" id="title" name="title" maxlength="255" value="{{if .URL.Title}}{{.URL.Title}}{{end}}">
+      </div>
+      <div class="form-group">
+        <label for="description">Description <span class="text-muted">(optional)</span></label>
+        <textarea class="form-control" id="description" name="description" maxlength="500">{{if .URL.Description}}{{.URL.Description}}{{end}}</textarea>
+      </div>
+      <div class="form-group">
+        <label for="password">New password <span class="text-muted">(leave blank to keep current)</span></label>
+        <input class="form-control" type="password" id="password" name="password">
+      </div>
+      <div class="form-group">
+        <label><input type="checkbox" name="clear_password" value="1"> Remove password protection</label>
+      </div>
+      <div class="form-group">
+        <label for="expires_at">New expiration <span class="text-muted">(leave blank to keep current)</span></label>
+        <input class="form-control" type="datetime-local" id="expires_at" name="expires_at">
+      </div>
+      <div class="form-group">
+        <label><input type="checkbox" name="clear_expiry" value="1"> Remove expiration (never expire)</label>
+      </div>
+      <button type="submit" class="btn btn-primary">Save changes</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">Danger zone</h2>
+    <form method="POST" action="/users/urls/{{.URL.ShortCode}}" data-confirm="Delete this link? This cannot be undone.">
+      <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+      <input type="hidden" name="action" value="delete">
+      <button type="submit" class="btn btn-danger">Delete link</button>
+    </form>
+  </div>
+</div>
+{{end}}

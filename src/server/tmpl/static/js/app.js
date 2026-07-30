@@ -116,6 +116,20 @@
     });
   });
 
+  // ---- Confirm-before-submit forms -----------------------------------
+  // Progressive enhancement only: without JS the form just submits
+  // directly (server still enforces the action), per AI.md PART 16.
+
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('form[data-confirm]').forEach(function (form) {
+      form.addEventListener('submit', function (e) {
+        if (!window.confirm(form.getAttribute('data-confirm'))) {
+          e.preventDefault();
+        }
+      });
+    });
+  });
+
   // ---- Flash message auto-dismiss -----------------------------------
 
   document.addEventListener('DOMContentLoaded', function () {

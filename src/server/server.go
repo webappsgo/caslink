@@ -334,7 +334,7 @@ func (s *Server) setupRoutes() {
 	}
 
 	// Create handlers
-	urlHandler := handler.NewURLHandler(urlService, analyticsService)
+	urlHandler := handler.NewURLHandler(urlService, analyticsService, s.renderer, s.config)
 	qrHandler := handler.NewQRHandler(qrService, urlService)
 	bulkHandler := handler.NewBulkHandler(bulkService)
 	adminHandler := handler.NewAdminHandler(authService, userAdminService, s.Version, s.mode.String(), adminPath, s.config, s.store, func() *apktor.TorManager { return s.torManager })
@@ -476,6 +476,16 @@ func (s *Server) setupRoutes() {
 		r.Use(CSRFMiddleware())
 
 		r.Get("/dashboard", userHandler.Dashboard)
+
+		// Per-link management (stats, QR display, edit, delete) and bulk
+		// import/export forms — PART 16 "link-management frontend beyond
+		// create". Works fully without JavaScript.
+		r.Get("/urls/{code}", urlHandler.WebURLManage)
+		r.Post("/urls/{code}", urlHandler.WebURLManage)
+		r.Get("/urls/bulk", userHandler.Bulk)
+		r.Get("/urls/export", bulkHandler.Export)
+		r.Post("/urls/import", bulkHandler.Import)
+
 		r.Get("/profile", userHandler.Profile)
 		r.Get("/settings", userHandler.Settings)
 		r.Get("/tokens", userHandler.Tokens)
