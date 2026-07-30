@@ -47,6 +47,43 @@ type ServerConfig struct {
 	Metrics        MetricsConfig        `yaml:"metrics"`
 	GeoIP          GeoIPConfig          `yaml:"geoip"`
 	Tor            TorConfig            `yaml:"tor"`
+	Backup         BackupConfig         `yaml:"backup"`
+	Compliance     ComplianceConfig     `yaml:"compliance"`
+}
+
+// BackupConfig holds backup encryption/retention configuration per AI.md
+// PART 22. The encryption password itself is NEVER stored here — only
+// whether one has been set (Encryption.Enabled).
+type BackupConfig struct {
+	Encryption BackupEncryptionConfig `yaml:"encryption"`
+	Retention  BackupRetentionConfig  `yaml:"retention"`
+}
+
+// BackupEncryptionConfig tracks whether a backup password has been
+// configured. Enabled is set true when an admin sets a password via the
+// WebUI/API/setup wizard; the password itself is prompted on-demand and
+// never persisted to server.yml.
+type BackupEncryptionConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+// BackupRetentionConfig controls how many backups are kept per AI.md
+// PART 22 "Backup Retention". MaxTotalSize accepts a percentage ("10%"),
+// an absolute size ("50G"), or a falsey value ("0", "false", "off", ...)
+// to disable the cap.
+type BackupRetentionConfig struct {
+	MaxBackups   int    `yaml:"max_backups"`
+	KeepWeekly   int    `yaml:"keep_weekly"`
+	KeepMonthly  int    `yaml:"keep_monthly"`
+	KeepYearly   int    `yaml:"keep_yearly"`
+	MaxTotalSize string `yaml:"max_total_size"`
+}
+
+// ComplianceConfig enables compliance mode (HIPAA, SOC2, etc.) per AI.md
+// PART 22. When Enabled, Server.Backup.Encryption.Enabled MUST be true or
+// backups are blocked until an encryption password is set.
+type ComplianceConfig struct {
+	Enabled bool `yaml:"enabled"`
 }
 
 // GeoIPConfig holds GeoIP database configuration per AI.md PART 20.
@@ -991,6 +1028,21 @@ func DefaultConfig() *Config {
 				MaxMonthlyBandwidth:       "100 GB",
 				NumIntroPoints:            3,
 				VirtualPort:               80,
+			},
+			Backup: BackupConfig{
+				Encryption: BackupEncryptionConfig{
+					Enabled: false,
+				},
+				Retention: BackupRetentionConfig{
+					MaxBackups:   1,
+					KeepWeekly:   0,
+					KeepMonthly:  0,
+					KeepYearly:   0,
+					MaxTotalSize: "10%",
+				},
+			},
+			Compliance: ComplianceConfig{
+				Enabled: false,
 			},
 		},
 		Web: WebConfig{

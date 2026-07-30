@@ -143,12 +143,38 @@ Last full audit: 2026-07-30
 
 ## PART 22 — Backup & Restore
 
-- [HIGH] Backup encryption missing: no AES-256-GCM, no Argon2id key derivation, no
-  `.tar.gz.enc` output, no compliance-mode enforcement (only plain `.tar.gz`). — `src/backup/backup.go`
-- [MED] Backup manifest not written. SHA-256 checksum computed then discarded; no
-  `manifest.json` (checksum/encrypted/method). — `src/backup/backup.go`
+- [DONE 2026-07-30] Backup encryption: AES-256-GCM with an Argon2id-derived key
+  (same parameters as `src/server/service/password.go`), random per-backup salt,
+  `.tar.gz.enc` output, compliance-mode enforcement (`Server.Compliance.Enabled` +
+  `backup.Options.ComplianceRequired` blocks unencrypted backups via
+  `ErrCompliancePasswordRequired`). Archive is built fully in memory before
+  optional encryption, per spec. `--maintenance backup/restore` accept
+  `--password <value>` and prompt (masked, via `golang.org/x/term`) when needed;
+  the scheduled `backup_daily` task reads the password from
+  `CASLINK_BACKUP_PASSWORD` (never stored in config) and skips with a logged
+  warning if compliance requires encryption and no password is set. —
+  `src/backup/backup.go`, `src/backup/crypto.go`, `src/config/config.go`,
+  `src/main.go`, `src/maintenance.go`, `src/scheduler/scheduler.go`
+- [DONE 2026-07-30] Backup manifest: `manifest.json` sidecar file
+  (`{archive}.manifest.json`) written with version/created_at/created_by/
+  app_version/contents/encrypted/encryption_method/checksum; `Verify` now reads
+  it and fails the checksum check (fatal, deletes the corrupt file) instead of
+  discarding the computed hash. — `src/backup/manifest.go`, `src/backup/backup.go`
 - [MED] Retention weekly/monthly/yearly + `max_total_size` cap not implemented
-  (`keep_weekly`/`keep_monthly`/`keep_yearly`). — `src/backup/backup.go`
+  (`keep_weekly`/`keep_monthly`/`keep_yearly`); `BackupRetentionConfig` now exists
+  in `src/config/config.go` with spec defaults but nothing in `backup.go` reads
+  or acts on it yet. — `src/backup/backup.go`
+- [LOW] No admin API/WebUI route to set/change/remove the backup encryption
+  password (`/server/{admin_path}/config/backup`) or to trigger a backup with a
+  password over the API (`POST .../config/backup {"password": ...}`) — only the
+  CLI path (`--maintenance backup --password`) and the env-var-driven scheduled
+  path exist. `BackupEncryptionConfig.Enabled` is defined but nothing sets it to
+  true yet since there's no UI/API to set a password. — `src/server/handler`
+- [LOW] No disk-space check before scheduled backup creation (spec: abort with
+  `backup.skipped_disk_full` if free space < 2× last backup size or disk usage
+  > 90%). — `src/scheduler/scheduler.go`
+- [LOW] No "encryption not configured" warning banner (WebUI) on first backup /
+  config/backup page, and no backup password hint field. — `src/server/handler`
 
 ## PART 23 — Update Command
 

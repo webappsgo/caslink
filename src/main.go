@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/casjaysdevdocker/caslink/src/backup"
 	"github.com/casjaysdevdocker/caslink/src/common/i18n"
 	"github.com/casjaysdevdocker/caslink/src/config"
 	"github.com/casjaysdevdocker/caslink/src/logger"
@@ -403,25 +405,46 @@ Examples:
 		fmt.Printf("Mode set to: %s\nRestart the server for changes to take effect.\n", m)
 		os.Exit(0)
 	case "backup":
-		// Offline backup: pack config + data into a tar.gz. The server may or
-		// may not be running — for SQLite, callers should stop the service
-		// first (warning printed). For external DBs (Postgres/MySQL/MSSQL)
-		// this only captures the filesystem state; DB dumps are out of scope
-		// for this offline path and remain the admin-panel job.
+		// Offline backup: pack config + data into a tar.gz[.enc]. The server
+		// may or may not be running — for SQLite, callers should stop the
+		// service first (warning printed). For external DBs (Postgres/MySQL/
+		// MSSQL) this only captures the filesystem state; DB dumps are out of
+		// scope for this offline path and remain the admin-panel job.
+		password, rest := extractPasswordFlag(args)
 		dst := ""
-		if len(args) > 0 {
-			dst = args[0]
+		if len(rest) > 0 {
+			dst = rest[0]
 		}
-		if err := runOfflineBackup(configDir, dataDir, backupDir, dst); err != nil {
-			fmt.Fprintf(os.Stderr, "Backup failed: %v\n", err)
+		cfg, cfgErr := config.Load(configDir)
+		complianceRequired := cfgErr == nil && cfg.Server.Compliance.Enabled
+		if password == "" && complianceRequired {
+			password = promptBackupPassword("Compliance mode requires an encrypted backup.\nBackup password: ")
+		}
+		opts := backup.Options{
+			Password:           password,
+			ComplianceRequired: complianceRequired,
+			CreatedBy:          "administrator",
+			AppVersion:         Version,
+		}
+		if err := runOfflineBackup(configDir, dataDir, backupDir, dst, opts); err != nil {
+			if errors.Is(err, backup.ErrCompliancePasswordRequired) {
+				fmt.Fprintf(os.Stderr, "Backup failed: %v\nSet a backup encryption password first (admin panel: /server/{admin_path}/config/backup) or pass --password.\n", err)
+			} else {
+				fmt.Fprintf(os.Stderr, "Backup failed: %v\n", err)
+			}
 			os.Exit(1)
 		}
 	case "restore":
-		if len(args) == 0 {
-			fmt.Fprintf(os.Stderr, "Usage: %s --maintenance restore <file>\n", binaryName)
+		password, rest := extractPasswordFlag(args)
+		if len(rest) == 0 {
+			fmt.Fprintf(os.Stderr, "Usage: %s --maintenance restore <file> [--password <password>]\n", binaryName)
 			os.Exit(1)
 		}
-		if err := runOfflineRestore(args[0], configDir, dataDir); err != nil {
+		src := rest[0]
+		if password == "" && strings.HasSuffix(src, ".enc") {
+			password = promptBackupPassword("Backup password: ")
+		}
+		if err := runOfflineRestore(src, configDir, dataDir, password); err != nil {
 			fmt.Fprintf(os.Stderr, "Restore failed: %v\n", err)
 			os.Exit(1)
 		}

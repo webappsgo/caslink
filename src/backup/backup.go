@@ -7,9 +7,9 @@ package backup
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
-	"crypto/sha256"
-	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -18,18 +18,47 @@ import (
 	"time"
 )
 
+// ErrCompliancePasswordRequired is returned when compliance mode is enabled
+// but no backup encryption password is available, per AI.md PART 22
+// "Compliance Mode Enforcement": backups must not run unencrypted.
+var ErrCompliancePasswordRequired = errors.New("backup encryption password required: compliance mode is enabled and no backup is allowed unencrypted")
+
+// Options controls how a backup is created per AI.md PART 22.
+type Options struct {
+	// Password encrypts the archive with AES-256-GCM using an Argon2id-derived
+	// key when non-empty. It is never persisted anywhere.
+	Password string
+	// ComplianceRequired blocks the backup entirely when Password is empty.
+	ComplianceRequired bool
+	// CreatedBy is recorded in manifest.json ("administrator", a username, etc.).
+	CreatedBy string
+	// AppVersion is recorded in manifest.json.
+	AppVersion string
+}
+
+func (o Options) validate() error {
+	if o.ComplianceRequired && o.Password == "" {
+		return ErrCompliancePasswordRequired
+	}
+	return nil
+}
+
 // RunBackup packs configDir + dataDir into a dated full backup per AI.md PART 22.
 //
-// When explicitDst is non-empty it is used verbatim (absolute or CWD-relative).
-// Otherwise the file is named caslink_backup_YYYY-MM-DD.tar.gz under backupDir.
-// Returns the path of the created file.
-func RunBackup(configDir, dataDir, backupDir, explicitDst string) error {
-	dst, err := createArchive(configDir, dataDir, backupDir, explicitDst)
+// When explicitDst is non-empty it is used verbatim (absolute or CWD-relative);
+// a ".enc" suffix is appended automatically when opts.Password is set. Otherwise
+// the file is named caslink_backup_YYYY-MM-DD.tar.gz[.enc] under backupDir.
+func RunBackup(configDir, dataDir, backupDir, explicitDst string, opts Options) error {
+	if err := opts.validate(); err != nil {
+		return err
+	}
+	dst, err := createArchive(configDir, dataDir, backupDir, explicitDst, opts)
 	if err != nil {
 		return err
 	}
-	if err := Verify(dst); err != nil {
+	if err := Verify(dst, opts.Password); err != nil {
 		_ = os.Remove(dst)
+		_ = os.Remove(manifestPath(dst))
 		return fmt.Errorf("backup verification failed — deleted corrupt file %s: %w", dst, err)
 	}
 	fmt.Printf("Backup written and verified: %s\n", dst)
@@ -37,46 +66,63 @@ func RunBackup(configDir, dataDir, backupDir, explicitDst string) error {
 }
 
 // RunDailyBackup creates the dated full backup AND the fixed-name daily
-// incremental file (caslink-daily.tar.gz) per AI.md PART 22.
+// incremental file (caslink-daily.tar.gz[.enc]) per AI.md PART 22.
 // Both files are verified after creation; a verification failure deletes
 // only the failed file and does not touch the other.
-func RunDailyBackup(configDir, dataDir, backupDir string) error {
+func RunDailyBackup(configDir, dataDir, backupDir string, opts Options) error {
+	if err := opts.validate(); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(backupDir, 0o750); err != nil {
 		return fmt.Errorf("create backup dir: %w", err)
 	}
 
 	// Create dated full backup.
-	fullPath, err := createArchive(configDir, dataDir, backupDir, "")
+	fullPath, err := createArchive(configDir, dataDir, backupDir, "", opts)
 	if err != nil {
 		return fmt.Errorf("create full backup: %w", err)
 	}
-	if err := Verify(fullPath); err != nil {
+	if err := Verify(fullPath, opts.Password); err != nil {
 		_ = os.Remove(fullPath)
+		_ = os.Remove(manifestPath(fullPath))
 		return fmt.Errorf("full backup verification failed — deleted %s: %w", fullPath, err)
 	}
 
-	// Create/overwrite the fixed-name daily incremental.
-	dailyPath := filepath.Join(backupDir, "caslink-daily.tar.gz")
-	dailyTmp := dailyPath + ".tmp"
-	if _, err := createArchive(configDir, dataDir, backupDir, dailyTmp); err != nil {
+	// Create/overwrite the fixed-name daily incremental. createArchive appends
+	// ".enc" itself when opts.Password is set, so the base name stays bare here.
+	dailyBase := filepath.Join(backupDir, "caslink-daily.tar.gz")
+	dailyTmp := dailyBase + ".tmp"
+	dailyPath := dailyBase
+	if opts.Password != "" {
+		dailyPath += ".enc"
+	}
+	createdTmp, err := createArchive(configDir, dataDir, backupDir, dailyTmp, opts)
+	if err != nil {
 		return fmt.Errorf("create daily incremental: %w", err)
 	}
-	if err := Verify(dailyTmp); err != nil {
-		_ = os.Remove(dailyTmp)
+	if err := Verify(createdTmp, opts.Password); err != nil {
+		_ = os.Remove(createdTmp)
+		_ = os.Remove(manifestPath(createdTmp))
 		return fmt.Errorf("daily incremental verification failed — deleted tmp: %w", err)
 	}
-	if err := os.Rename(dailyTmp, dailyPath); err != nil {
-		_ = os.Remove(dailyTmp)
+	if err := os.Rename(createdTmp, dailyPath); err != nil {
+		_ = os.Remove(createdTmp)
+		_ = os.Remove(manifestPath(createdTmp))
 		return fmt.Errorf("rename daily incremental: %w", err)
+	}
+	if err := os.Rename(manifestPath(createdTmp), manifestPath(dailyPath)); err != nil {
+		return fmt.Errorf("rename daily incremental manifest: %w", err)
 	}
 
 	fmt.Printf("Backup complete: %s (full) + %s (daily)\n", fullPath, dailyPath)
 	return nil
 }
 
-// Verify checks that dst is a non-empty, readable tar.gz file.
-// Returns nil when all checks pass; a descriptive error otherwise.
-func Verify(dst string) error {
+// Verify checks that dst is a non-empty, readable backup, per AI.md PART 22's
+// verification checklist: file exists, size > 0, checksum matches manifest,
+// decrypt test (if encrypted), manifest readable, content extraction test.
+// Password is required to decrypt a ".enc" file; ignored otherwise.
+func Verify(dst, password string) error {
 	info, err := os.Stat(dst)
 	if err != nil {
 		return fmt.Errorf("file not found: %w", err)
@@ -85,24 +131,52 @@ func Verify(dst string) error {
 		return fmt.Errorf("file is empty")
 	}
 
-	// Verify the archive can be fully read and decompressed.
-	f, err := os.Open(dst)
+	m, err := readManifest(dst)
 	if err != nil {
-		return fmt.Errorf("cannot open: %w", err)
+		return fmt.Errorf("manifest not readable: %w", err)
 	}
-	defer f.Close()
 
-	h := sha256.New()
-	tr, err := func() (*tar.Reader, error) {
-		gz, err := gzip.NewReader(io.TeeReader(f, h))
-		if err != nil {
-			return nil, fmt.Errorf("gzip reader: %w", err)
+	raw, err := os.ReadFile(dst)
+	if err != nil {
+		return fmt.Errorf("cannot read: %w", err)
+	}
+
+	plain := raw
+	if m.Encrypted {
+		if password == "" {
+			return fmt.Errorf("decrypt test failed: file is encrypted but no password supplied")
 		}
-		return tar.NewReader(gz), nil
-	}()
+		plain, err = decryptArchive(raw, password)
+		if err != nil {
+			return fmt.Errorf("decrypt test failed: %w", err)
+		}
+	}
+
+	if got := sha256Hex(plain); got != m.Checksum {
+		return fmt.Errorf("checksum mismatch: manifest says %q, archive is %q", m.Checksum, got)
+	}
+
+	// Content extraction test: fully decompress and walk every tar entry.
+	entries, err := countTarEntries(plain)
 	if err != nil {
 		return err
 	}
+	if entries == 0 {
+		return fmt.Errorf("archive contains no entries")
+	}
+
+	return nil
+}
+
+// countTarEntries decompresses and walks every entry of a tar.gz byte slice,
+// discarding file contents, to confirm the archive is fully readable.
+func countTarEntries(gzData []byte) (int, error) {
+	gz, err := gzip.NewReader(bytes.NewReader(gzData))
+	if err != nil {
+		return 0, fmt.Errorf("gzip reader: %w", err)
+	}
+	defer gz.Close()
+	tr := tar.NewReader(gz)
 
 	var entries int
 	for {
@@ -111,33 +185,38 @@ func Verify(dst string) error {
 			break
 		}
 		if err != nil {
-			return fmt.Errorf("corrupt tar entry after %d files: %w", entries, err)
+			return entries, fmt.Errorf("corrupt tar entry after %d files: %w", entries, err)
 		}
 		if hdr.Typeflag == tar.TypeReg {
 			if _, err := io.Copy(io.Discard, tr); err != nil {
-				return fmt.Errorf("read entry %q: %w", hdr.Name, err)
+				return entries, fmt.Errorf("read entry %q: %w", hdr.Name, err)
 			}
 		}
 		entries++
 	}
-	if entries == 0 {
-		return fmt.Errorf("archive contains no entries")
-	}
-
-	_ = hex.EncodeToString(h.Sum(nil)) // SHA-256 computed; available for manifest writes when added
-	return nil
+	return entries, nil
 }
 
 // RunRestore extracts src into configDir/dataDir, mirroring the directory map
-// written by RunBackup. Path traversal attempts inside the archive are rejected.
-func RunRestore(src, configDir, dataDir string) error {
-	in, err := os.Open(src)
+// written by RunBackup. Path traversal attempts inside the archive are
+// rejected. password decrypts a ".tar.gz.enc" source; ignored otherwise.
+func RunRestore(src, configDir, dataDir, password string) error {
+	raw, err := os.ReadFile(src)
 	if err != nil {
 		return fmt.Errorf("open %q: %w", src, err)
 	}
-	defer in.Close()
 
-	gz, err := gzip.NewReader(in)
+	if strings.HasSuffix(src, ".enc") {
+		if password == "" {
+			return fmt.Errorf("%q is encrypted: a password is required to restore", src)
+		}
+		raw, err = decryptArchive(raw, password)
+		if err != nil {
+			return fmt.Errorf("decrypt %q: %w", src, err)
+		}
+	}
+
+	gz, err := gzip.NewReader(bytes.NewReader(raw))
 	if err != nil {
 		return fmt.Errorf("gzip: %w", err)
 	}
@@ -207,10 +286,15 @@ func RunRestore(src, configDir, dataDir string) error {
 	return nil
 }
 
-// createArchive packs configDir + dataDir into a single tar.gz.
+// createArchive packs configDir + dataDir into a tar.gz built entirely in
+// memory, optionally encrypts it (AES-256-GCM, Argon2id-derived key) per
+// AI.md PART 22 ("archive is created in memory... unencrypted archive never
+// touches disk"), then writes the final file plus its manifest.json sidecar.
+//
 // dst is the output file path; when empty, a dated name is auto-generated.
-// Returns the final output path.
-func createArchive(configDir, dataDir, backupDir, dst string) (string, error) {
+// A ".enc" suffix is appended automatically when opts.Password is set.
+// Returns the final output path (including any ".enc" suffix applied).
+func createArchive(configDir, dataDir, backupDir, dst string, opts Options) (string, error) {
 	if err := os.MkdirAll(backupDir, 0o750); err != nil {
 		return "", fmt.Errorf("create backup dir: %w", err)
 	}
@@ -220,23 +304,20 @@ func createArchive(configDir, dataDir, backupDir, dst string) (string, error) {
 		date := time.Now().UTC().Format("2006-01-02")
 		dst = filepath.Join(backupDir, fmt.Sprintf("caslink_backup_%s.tar.gz", date))
 	}
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return "", fmt.Errorf("create %q: %w", dst, err)
+	if opts.Password != "" && !strings.HasSuffix(dst, ".enc") {
+		dst += ".enc"
 	}
-	defer out.Close()
 
-	gz := gzip.NewWriter(out)
-	defer gz.Close()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gz)
-	defer tw.Close()
 
 	// Map each source dir to a stable archive prefix so restore can reverse it.
 	sources := map[string]string{
 		"config": configDir,
 		"data":   dataDir,
 	}
+	var contents []string
 	for prefix, root := range sources {
 		if root == "" {
 			continue
@@ -247,6 +328,57 @@ func createArchive(configDir, dataDir, backupDir, dst string) (string, error) {
 		if err := addTreeToTar(tw, root, prefix); err != nil {
 			return "", fmt.Errorf("archive %s: %w", prefix, err)
 		}
+		contents = append(contents, prefix+"/")
+	}
+	if err := tw.Close(); err != nil {
+		return "", fmt.Errorf("close tar writer: %w", err)
+	}
+	if err := gz.Close(); err != nil {
+		return "", fmt.Errorf("close gzip writer: %w", err)
+	}
+
+	plain := buf.Bytes()
+	checksum := sha256Hex(plain)
+
+	final := plain
+	encrypted := opts.Password != ""
+	if encrypted {
+		enc, err := encryptArchive(plain, opts.Password)
+		if err != nil {
+			return "", err
+		}
+		final = enc
+	}
+
+	if err := os.WriteFile(dst, final, 0o640); err != nil {
+		return "", fmt.Errorf("write %q: %w", dst, err)
+	}
+
+	createdBy := opts.CreatedBy
+	if createdBy == "" {
+		createdBy = "administrator"
+	}
+	appVersion := opts.AppVersion
+	if appVersion == "" {
+		appVersion = "dev"
+	}
+	method := ""
+	if encrypted {
+		method = EncryptionMethod
+	}
+	m := Manifest{
+		Version:          "1.0.0",
+		CreatedAt:        time.Now().UTC().Format(time.RFC3339),
+		CreatedBy:        createdBy,
+		AppVersion:       appVersion,
+		Contents:         contents,
+		Encrypted:        encrypted,
+		EncryptionMethod: method,
+		Checksum:         checksum,
+	}
+	if err := writeManifest(dst, m); err != nil {
+		_ = os.Remove(dst)
+		return "", err
 	}
 
 	return dst, nil

@@ -101,7 +101,7 @@ func New(cfg *config.Config, appMode mode.Mode, dataDir, logDir, pidFile string,
 		}
 	}
 
-	sched := scheduler.New(db, logDir, configDir, dataDir, backupDir, geoSvc, cfg.Server.Security)
+	sched := scheduler.New(db, logDir, configDir, dataDir, backupDir, geoSvc, cfg.Server.Security, cfg.Server.Compliance.Enabled)
 
 	renderer, err := tmpl.New()
 	if err != nil {

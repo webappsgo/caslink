@@ -39,6 +39,7 @@ type Scheduler struct {
 	torChecker       torHealthChecker       // optional; nil → tor_health is a no-op
 	blocklistSources []config.BlocklistSource // empty → blocklist_update is a no-op
 	cveSources       []config.CVESource       // empty → cve_update is a no-op
+	complianceRequired bool                   // true → scheduled backups must be encrypted or are skipped
 }
 
 // New creates a new scheduler bound to the given store.
@@ -47,18 +48,22 @@ type Scheduler struct {
 // task — pass "" for backupDir to disable automatic backups. geoSvc is
 // optional — when nil the geoip_update task logs and skips.
 // sec carries blocklist and CVE source configuration; pass a zero value to
-// leave both update tasks as no-ops.
-func New(st *store.Store, logDir, configDir, dataDir, backupDir string, geoSvc *geoip.Service, sec config.SecurityConfig) *Scheduler {
+// leave both update tasks as no-ops. complianceRequired mirrors
+// cfg.Server.Compliance.Enabled per AI.md PART 22: when true, the scheduled
+// daily backup only runs encrypted (password from CASLINK_BACKUP_PASSWORD)
+// and skips with a logged warning otherwise — it is never stored in config.
+func New(st *store.Store, logDir, configDir, dataDir, backupDir string, geoSvc *geoip.Service, sec config.SecurityConfig, complianceRequired bool) *Scheduler {
 	return &Scheduler{
-		cron:             cron.New(),
-		store:            st,
-		logDir:           logDir,
-		geoip:            geoSvc,
-		configDir:        configDir,
-		dataDir:          dataDir,
-		backupDir:        backupDir,
-		blocklistSources: sec.Blocklist.Sources,
-		cveSources:       sec.CVE.Sources,
+		cron:               cron.New(),
+		store:              st,
+		logDir:             logDir,
+		geoip:              geoSvc,
+		configDir:          configDir,
+		dataDir:            dataDir,
+		backupDir:          backupDir,
+		blocklistSources:   sec.Blocklist.Sources,
+		cveSources:         sec.CVE.Sources,
+		complianceRequired: complianceRequired,
 	}
 }
 
@@ -414,12 +419,25 @@ func (s *Scheduler) updateGeoIP() {
 
 // runDailyBackup creates a dated full backup + the fixed-name daily incremental
 // per AI.md PART 22. Both files are verified after creation.
-// Silently skips when backupDir is not configured.
+// Silently skips when backupDir is not configured. When compliance mode is
+// enabled, the backup password is read from CASLINK_BACKUP_PASSWORD (never
+// stored in config); if compliance requires encryption and no password is
+// available, the run is skipped with an audit-log warning rather than failed.
 func (s *Scheduler) runDailyBackup() {
 	if s.backupDir == "" {
 		return
 	}
-	if err := backup.RunDailyBackup(s.configDir, s.dataDir, s.backupDir); err != nil {
+	password := os.Getenv("CASLINK_BACKUP_PASSWORD")
+	if s.complianceRequired && password == "" {
+		log.Printf("[scheduler] backup_daily: skipped — compliance mode requires an encrypted backup and CASLINK_BACKUP_PASSWORD is not set")
+		return
+	}
+	opts := backup.Options{
+		Password:           password,
+		ComplianceRequired: s.complianceRequired,
+		CreatedBy:          "scheduler",
+	}
+	if err := backup.RunDailyBackup(s.configDir, s.dataDir, s.backupDir, opts); err != nil {
 		log.Printf("[scheduler] backup_daily: %v", err)
 		return
 	}
