@@ -160,10 +160,18 @@ Last full audit: 2026-07-30
   app_version/contents/encrypted/encryption_method/checksum; `Verify` now reads
   it and fails the checksum check (fatal, deletes the corrupt file) instead of
   discarding the computed hash. — `src/backup/manifest.go`, `src/backup/backup.go`
-- [MED] Retention weekly/monthly/yearly + `max_total_size` cap not implemented
-  (`keep_weekly`/`keep_monthly`/`keep_yearly`); `BackupRetentionConfig` now exists
-  in `src/config/config.go` with spec defaults but nothing in `backup.go` reads
-  or acts on it yet. — `src/backup/backup.go`
+- [DONE 2026-07-30] Backup retention: `ApplyRetention` sweeps dated full
+  backups (`caslink_backup_YYYY-MM-DD.tar.gz[.enc]`, never the fixed-name
+  daily incremental) — keeps the `max_backups` most recent, one snapshot per
+  Sunday/1st-of-month/Jan-1st bucket up to `keep_weekly`/`keep_monthly`/
+  `keep_yearly`, and evicts oldest-first (never below 1 survivor) when total
+  size exceeds `max_total_size` (percentage of disk capacity via
+  cross-platform `diskCapacity()`, absolute size like `50G`, or a falsey
+  value to disable). Wired into `scheduler.runDailyBackup()` to run after a
+  successful backup+verify. — `src/backup/retention.go`,
+  `src/backup/disk_unix.go`, `src/backup/disk_windows.go`,
+  `src/backup/retention_test.go`, `src/scheduler/scheduler.go`,
+  `src/server/server.go`
 - [LOW] No admin API/WebUI route to set/change/remove the backup encryption
   password (`/server/{admin_path}/config/backup`) or to trigger a backup with a
   password over the API (`POST .../config/backup {"password": ...}`) — only the

@@ -40,6 +40,7 @@ type Scheduler struct {
 	blocklistSources []config.BlocklistSource // empty → blocklist_update is a no-op
 	cveSources       []config.CVESource       // empty → cve_update is a no-op
 	complianceRequired bool                   // true → scheduled backups must be encrypted or are skipped
+	retention        config.BackupRetentionConfig // applied to backupDir after a successful backup_daily run
 }
 
 // New creates a new scheduler bound to the given store.
@@ -52,7 +53,9 @@ type Scheduler struct {
 // cfg.Server.Compliance.Enabled per AI.md PART 22: when true, the scheduled
 // daily backup only runs encrypted (password from CASLINK_BACKUP_PASSWORD)
 // and skips with a logged warning otherwise — it is never stored in config.
-func New(st *store.Store, logDir, configDir, dataDir, backupDir string, geoSvc *geoip.Service, sec config.SecurityConfig, complianceRequired bool) *Scheduler {
+// retention is cfg.Server.Backup.Retention, applied after every successful
+// backup_daily run.
+func New(st *store.Store, logDir, configDir, dataDir, backupDir string, geoSvc *geoip.Service, sec config.SecurityConfig, complianceRequired bool, retention config.BackupRetentionConfig) *Scheduler {
 	return &Scheduler{
 		cron:               cron.New(),
 		store:              st,
@@ -64,6 +67,7 @@ func New(st *store.Store, logDir, configDir, dataDir, backupDir string, geoSvc *
 		blocklistSources:   sec.Blocklist.Sources,
 		cveSources:         sec.CVE.Sources,
 		complianceRequired: complianceRequired,
+		retention:          retention,
 	}
 }
 
@@ -442,6 +446,19 @@ func (s *Scheduler) runDailyBackup() {
 		return
 	}
 	log.Printf("[scheduler] backup_daily: backup_daily complete (full + daily incremental written and verified)")
+
+	// Retention is only applied after every verification above has passed,
+	// per AI.md PART 22 "Backup Creation Flow" step 7.
+	retention := backup.Retention{
+		MaxBackups:   s.retention.MaxBackups,
+		KeepWeekly:   s.retention.KeepWeekly,
+		KeepMonthly:  s.retention.KeepMonthly,
+		KeepYearly:   s.retention.KeepYearly,
+		MaxTotalSize: s.retention.MaxTotalSize,
+	}
+	if err := backup.ApplyRetention(s.backupDir, retention); err != nil {
+		log.Printf("[scheduler] backup_daily: retention sweep failed: %v", err)
+	}
 }
 
 // updateBlocklist downloads updated IP/domain blocklists from configured
