@@ -77,6 +77,40 @@
         <textarea class="form-control" id="description" name="description" maxlength="500">{{if .URL.Description}}{{.URL.Description}}{{end}}</textarea>
       </div>
       <div class="form-group">
+        <label for="tags">Tags <span class="text-muted">(comma-separated)</span></label>
+        <input class="form-control" type="text" id="tags" name="tags" value="{{if .URL.Tags}}{{join .URL.Tags}}{{end}}">
+      </div>
+      <div class="form-group">
+        <label for="visibility">Visibility</label>
+        <select class="form-control" id="visibility" name="visibility">
+          <option value="public" {{if ne .URL.Visibility "private"}}selected{{end}}>Public</option>
+          <option value="private" {{if eq .URL.Visibility "private"}}selected{{end}}>Private (stats/details only visible to you)</option>
+        </select>
+      </div>
+      <fieldset class="form-group">
+        <legend>UTM passthrough <span class="text-muted">(appended to the destination when not already present)</span></legend>
+        <input class="form-control mb-2" type="text" name="utm_source" placeholder="utm_source" value="{{if .URL.UTMSource}}{{.URL.UTMSource}}{{end}}">
+        <input class="form-control mb-2" type="text" name="utm_medium" placeholder="utm_medium" value="{{if .URL.UTMMedium}}{{.URL.UTMMedium}}{{end}}">
+        <input class="form-control mb-2" type="text" name="utm_campaign" placeholder="utm_campaign" value="{{if .URL.UTMCampaign}}{{.URL.UTMCampaign}}{{end}}">
+        <input class="form-control mb-2" type="text" name="utm_term" placeholder="utm_term" value="{{if .URL.UTMTerm}}{{.URL.UTMTerm}}{{end}}">
+        <input class="form-control" type="text" name="utm_content" placeholder="utm_content" value="{{if .URL.UTMContent}}{{.URL.UTMContent}}{{end}}">
+      </fieldset>
+      <fieldset class="form-group">
+        <legend>Geo-restriction <span class="text-muted">(ISO country codes, comma-separated)</span></legend>
+        <select class="form-control mb-2" name="geo_mode">
+          <option value="none" {{if or (not .URL.GeoMode) (eq .URL.GeoMode "none")}}selected{{end}}>No restriction</option>
+          <option value="allow" {{if eq .URL.GeoMode "allow"}}selected{{end}}>Allow only listed countries</option>
+          <option value="deny" {{if eq .URL.GeoMode "deny"}}selected{{end}}>Deny listed countries</option>
+        </select>
+        <input class="form-control" type="text" name="geo_countries" placeholder="US, CA, GB" value="{{if .URL.GeoCountries}}{{join .URL.GeoCountries}}{{end}}">
+      </fieldset>
+      <fieldset class="form-group">
+        <legend>Device targeting <span class="text-muted">(overrides the destination per device; leave blank to use the default)</span></legend>
+        <input class="form-control mb-2" type="url" name="mobile_url" placeholder="Mobile destination" value="{{if .URL.MobileURL}}{{.URL.MobileURL}}{{end}}">
+        <input class="form-control mb-2" type="url" name="tablet_url" placeholder="Tablet destination" value="{{if .URL.TabletURL}}{{.URL.TabletURL}}{{end}}">
+        <input class="form-control" type="url" name="desktop_url" placeholder="Desktop destination" value="{{if .URL.DesktopURL}}{{.URL.DesktopURL}}{{end}}">
+      </fieldset>
+      <div class="form-group">
         <label for="password">New password <span class="text-muted">(leave blank to keep current)</span></label>
         <input class="form-control" type="password" id="password" name="password">
       </div>

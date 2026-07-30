@@ -81,6 +81,18 @@ func (s *Store) initServerSchema() error {
 			custom_code BOOLEAN DEFAULT 0,
 			password_hash TEXT,
 			expires_at DATETIME,
+			visibility TEXT NOT NULL DEFAULT 'public',
+			tags TEXT,
+			utm_source TEXT,
+			utm_medium TEXT,
+			utm_campaign TEXT,
+			utm_term TEXT,
+			utm_content TEXT,
+			geo_mode TEXT NOT NULL DEFAULT 'none',
+			geo_countries TEXT,
+			mobile_url TEXT,
+			desktop_url TEXT,
+			tablet_url TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
@@ -262,6 +274,30 @@ func (s *Store) initServerSchema() error {
 		if err != nil {
 			return fmt.Errorf("failed to apply schema update: %w", err)
 		}
+	}
+
+	// Column additions for the urls table (link options — geo-restriction,
+	// device targeting, UTM passthrough, tags, visibility). SQLite has no
+	// IF NOT EXISTS for ADD COLUMN, so failures (column already exists) are
+	// silently ignored, mirroring initUsersSchema's addColumnQueries below.
+	serverAddColumnQueries := []string{
+		`ALTER TABLE urls ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'`,
+		`ALTER TABLE urls ADD COLUMN tags TEXT`,
+		`ALTER TABLE urls ADD COLUMN utm_source TEXT`,
+		`ALTER TABLE urls ADD COLUMN utm_medium TEXT`,
+		`ALTER TABLE urls ADD COLUMN utm_campaign TEXT`,
+		`ALTER TABLE urls ADD COLUMN utm_term TEXT`,
+		`ALTER TABLE urls ADD COLUMN utm_content TEXT`,
+		`ALTER TABLE urls ADD COLUMN geo_mode TEXT NOT NULL DEFAULT 'none'`,
+		`ALTER TABLE urls ADD COLUMN geo_countries TEXT`,
+		`ALTER TABLE urls ADD COLUMN mobile_url TEXT`,
+		`ALTER TABLE urls ADD COLUMN desktop_url TEXT`,
+		`ALTER TABLE urls ADD COLUMN tablet_url TEXT`,
+	}
+	for _, q := range serverAddColumnQueries {
+		ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
+		_, _ = s.ServerDB.ExecContext(ctx, q)
+		cancel()
 	}
 
 	return nil

@@ -93,12 +93,21 @@ func (s *URLService) CreateURL(ctx context.Context, req *model.CreateURLRequest)
 		expiresAt = &exp
 	}
 
+	opts, err := buildLinkOptions(req)
+	if err != nil {
+		return nil, err
+	}
+
 	// Insert into database
-	query := `INSERT INTO urls (short_code, long_url, title, description, user_id, custom_code, password_hash, expires_at)
-	          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO urls (short_code, long_url, title, description, user_id, custom_code, password_hash, expires_at,
+	          visibility, tags, utm_source, utm_medium, utm_campaign, utm_term, utm_content, geo_mode, geo_countries,
+	          mobile_url, desktop_url, tablet_url)
+	          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	result, err := s.store.ServerDB.ExecContext(ctx, query,
-		shortCode, req.LongURL, req.Title, req.Description, nil, isCustom, passwordHash, expiresAt)
+		shortCode, req.LongURL, req.Title, req.Description, nil, isCustom, passwordHash, expiresAt,
+		opts.visibility, opts.tags, opts.utmSource, opts.utmMedium, opts.utmCampaign, opts.utmTerm, opts.utmContent,
+		opts.geoMode, opts.geoCountries, opts.mobileURL, opts.desktopURL, opts.tabletURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert URL: %w", err)
 	}
@@ -110,17 +119,18 @@ func (s *URLService) CreateURL(ctx context.Context, req *model.CreateURLRequest)
 
 	// Return created URL
 	urlRecord := &model.URL{
-		ID:          id,
-		ShortCode:   shortCode,
-		LongURL:     req.LongURL,
-		Title:       req.Title,
-		Description: req.Description,
-		CustomCode:  isCustom,
+		ID:           id,
+		ShortCode:    shortCode,
+		LongURL:      req.LongURL,
+		Title:        req.Title,
+		Description:  req.Description,
+		CustomCode:   isCustom,
 		PasswordHash: passwordHash,
-		ExpiresAt:   expiresAt,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		ExpiresAt:    expiresAt,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
 	}
+	opts.applyTo(urlRecord)
 
 	return urlRecord, nil
 }
@@ -180,10 +190,75 @@ func (s *URLService) UpdateURL(ctx context.Context, shortCode string, req *model
 		}
 	}
 
-	query := `UPDATE urls SET long_url = ?, title = ?, description = ?, password_hash = ?, expires_at = ?, updated_at = CURRENT_TIMESTAMP
+	visibility := existing.Visibility
+	if req.Visibility != nil {
+		visibility = *req.Visibility
+	}
+
+	tagsCSV := joinCSV(existing.Tags)
+	if req.Tags != nil {
+		tagsCSV = joinCSV(cleanStrings(*req.Tags))
+	}
+
+	geoMode := existing.GeoMode
+	if req.GeoMode != nil {
+		geoMode = *req.GeoMode
+	}
+
+	geoCountriesCSV := joinCSV(existing.GeoCountries)
+	if req.GeoCountries != nil {
+		codes, err := normalizeCountryCodes(*req.GeoCountries)
+		if err != nil {
+			return nil, err
+		}
+		geoCountriesCSV = joinCSV(codes)
+	}
+	if geoMode != "none" && geoCountriesCSV == "" {
+		return nil, fmt.Errorf("geo_countries is required when geo_mode is not none")
+	}
+
+	utmSource := existing.UTMSource
+	if req.UTMSource != nil {
+		utmSource = req.UTMSource
+	}
+	utmMedium := existing.UTMMedium
+	if req.UTMMedium != nil {
+		utmMedium = req.UTMMedium
+	}
+	utmCampaign := existing.UTMCampaign
+	if req.UTMCampaign != nil {
+		utmCampaign = req.UTMCampaign
+	}
+	utmTerm := existing.UTMTerm
+	if req.UTMTerm != nil {
+		utmTerm = req.UTMTerm
+	}
+	utmContent := existing.UTMContent
+	if req.UTMContent != nil {
+		utmContent = req.UTMContent
+	}
+
+	mobileURL := existing.MobileURL
+	if req.MobileURL != nil {
+		mobileURL = req.MobileURL
+	}
+	desktopURL := existing.DesktopURL
+	if req.DesktopURL != nil {
+		desktopURL = req.DesktopURL
+	}
+	tabletURL := existing.TabletURL
+	if req.TabletURL != nil {
+		tabletURL = req.TabletURL
+	}
+
+	query := `UPDATE urls SET long_url = ?, title = ?, description = ?, password_hash = ?, expires_at = ?,
+	          visibility = ?, tags = ?, utm_source = ?, utm_medium = ?, utm_campaign = ?, utm_term = ?, utm_content = ?,
+	          geo_mode = ?, geo_countries = ?, mobile_url = ?, desktop_url = ?, tablet_url = ?, updated_at = CURRENT_TIMESTAMP
 	          WHERE short_code = ?`
 	if _, err := s.store.ServerDB.ExecContext(ctx, query,
-		longURL, title, description, passwordHash, expiresAt, shortCode); err != nil {
+		longURL, title, description, passwordHash, expiresAt,
+		visibility, tagsCSV, utmSource, utmMedium, utmCampaign, utmTerm, utmContent,
+		geoMode, geoCountriesCSV, mobileURL, desktopURL, tabletURL, shortCode); err != nil {
 		return nil, fmt.Errorf("failed to update URL: %w", err)
 	}
 
@@ -231,17 +306,68 @@ func (s *URLService) GetURLByCodeAny(ctx context.Context, shortCode string) (*mo
 	return s.getURLByCodeRaw(ctx, shortCode)
 }
 
-func (s *URLService) getURLByCodeRaw(ctx context.Context, shortCode string) (*model.URL, error) {
-	query := `SELECT id, short_code, long_url, title, description, user_id, org_id, custom_code, password_hash, expires_at, created_at, updated_at
-	          FROM urls WHERE short_code = ?`
+// urlSelectColumns is the shared column list for reading a full urls row,
+// used by getURLByCodeRaw, ListByUserPage, and ListByOrgPage.
+const urlSelectColumns = `id, short_code, long_url, title, description, user_id, org_id, custom_code, password_hash, expires_at,
+	          visibility, tags, utm_source, utm_medium, utm_campaign, utm_term, utm_content, geo_mode, geo_countries,
+	          mobile_url, desktop_url, tablet_url, created_at, updated_at`
 
+// rowScanner is satisfied by both *sql.Row and *sql.Rows.
+type rowScanner interface {
+	Scan(dest ...interface{}) error
+}
+
+// scanURLRow scans one urls row (using urlSelectColumns' column order) into a
+// model.URL, converting the nullable link-option columns.
+func scanURLRow(row rowScanner) (*model.URL, error) {
 	var u model.URL
-	err := s.store.ServerDB.QueryRowContext(ctx, query, shortCode).Scan(
+	var tags, utmSource, utmMedium, utmCampaign, utmTerm, utmContent, geoCountries, mobileURL, desktopURL, tabletURL sql.NullString
+
+	err := row.Scan(
 		&u.ID, &u.ShortCode, &u.LongURL, &u.Title, &u.Description,
 		&u.UserID, &u.OrgID, &u.CustomCode, &u.PasswordHash, &u.ExpiresAt,
+		&u.Visibility, &tags, &utmSource, &utmMedium, &utmCampaign, &utmTerm, &utmContent,
+		&u.GeoMode, &geoCountries, &mobileURL, &desktopURL, &tabletURL,
 		&u.CreatedAt, &u.UpdatedAt,
 	)
+	if err != nil {
+		return nil, err
+	}
 
+	u.Tags = splitCSV(tags.String)
+	if utmSource.Valid && utmSource.String != "" {
+		u.UTMSource = strPtr(utmSource.String)
+	}
+	if utmMedium.Valid && utmMedium.String != "" {
+		u.UTMMedium = strPtr(utmMedium.String)
+	}
+	if utmCampaign.Valid && utmCampaign.String != "" {
+		u.UTMCampaign = strPtr(utmCampaign.String)
+	}
+	if utmTerm.Valid && utmTerm.String != "" {
+		u.UTMTerm = strPtr(utmTerm.String)
+	}
+	if utmContent.Valid && utmContent.String != "" {
+		u.UTMContent = strPtr(utmContent.String)
+	}
+	u.GeoCountries = splitCSV(geoCountries.String)
+	if mobileURL.Valid && mobileURL.String != "" {
+		u.MobileURL = strPtr(mobileURL.String)
+	}
+	if desktopURL.Valid && desktopURL.String != "" {
+		u.DesktopURL = strPtr(desktopURL.String)
+	}
+	if tabletURL.Valid && tabletURL.String != "" {
+		u.TabletURL = strPtr(tabletURL.String)
+	}
+
+	return &u, nil
+}
+
+func (s *URLService) getURLByCodeRaw(ctx context.Context, shortCode string) (*model.URL, error) {
+	query := `SELECT ` + urlSelectColumns + ` FROM urls WHERE short_code = ?`
+
+	u, err := scanURLRow(s.store.ServerDB.QueryRowContext(ctx, query, shortCode))
 	if err == sql.ErrNoRows {
 		return nil, model.ErrURLNotFound
 	}
@@ -249,7 +375,7 @@ func (s *URLService) getURLByCodeRaw(ctx context.Context, shortCode string) (*mo
 		return nil, fmt.Errorf("failed to query URL: %w", err)
 	}
 
-	return &u, nil
+	return u, nil
 }
 
 // RecordClick records a click/visit to a URL. When the GeoIP service is
@@ -269,15 +395,33 @@ func (s *URLService) RecordClick(ctx context.Context, urlID int64, ipAddress, us
 		}
 	}
 
-	query := `INSERT INTO clicks (url_id, ip_hash, country, city, user_agent, referrer)
-	          VALUES (?, ?, ?, ?, ?, ?)`
+	device := DetectDeviceType(userAgent)
 
-	_, err := s.store.ServerDB.ExecContext(ctx, query, urlID, ipHash, country, city, userAgent, referrer)
+	query := `INSERT INTO clicks (url_id, ip_hash, country, city, user_agent, referrer, device)
+	          VALUES (?, ?, ?, ?, ?, ?, ?)`
+
+	_, err := s.store.ServerDB.ExecContext(ctx, query, urlID, ipHash, country, city, userAgent, referrer, device)
 	if err != nil {
 		return fmt.Errorf("failed to record click: %w", err)
 	}
 
 	return nil
+}
+
+// LookupCountry resolves ipAddress to an ISO 3166-1 alpha-2 country code
+// using the same GeoIP service RecordClick uses for analytics, for
+// per-link geo-restriction enforcement at redirect time. Returns "" when
+// GeoIP is disabled, the address is unparseable, or it is a private/
+// loopback/link-local address (never blocked, per AI.md PART 20).
+func (s *URLService) LookupCountry(ipAddress string) string {
+	if s.geo == nil || !s.geo.Enabled() {
+		return ""
+	}
+	ip := net.ParseIP(ipAddress)
+	if ip == nil || ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() {
+		return ""
+	}
+	return s.geo.LookupCountry(ip)
 }
 
 // CreateURLForUser creates a shortened URL owned by the given userID.
@@ -319,11 +463,20 @@ func (s *URLService) CreateURLForUser(ctx context.Context, userID int64, req *mo
 		expiresAt = &exp
 	}
 
-	query := `INSERT INTO urls (short_code, long_url, title, description, user_id, custom_code, expires_at)
-	          VALUES (?, ?, ?, ?, ?, ?, ?)`
+	opts, err := buildLinkOptions(req)
+	if err != nil {
+		return nil, err
+	}
+
+	query := `INSERT INTO urls (short_code, long_url, title, description, user_id, custom_code, expires_at,
+	          visibility, tags, utm_source, utm_medium, utm_campaign, utm_term, utm_content, geo_mode, geo_countries,
+	          mobile_url, desktop_url, tablet_url)
+	          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	result, err := s.store.ServerDB.ExecContext(ctx, query,
-		shortCode, req.LongURL, req.Title, req.Description, userID, isCustom, expiresAt)
+		shortCode, req.LongURL, req.Title, req.Description, userID, isCustom, expiresAt,
+		opts.visibility, opts.tags, opts.utmSource, opts.utmMedium, opts.utmCampaign, opts.utmTerm, opts.utmContent,
+		opts.geoMode, opts.geoCountries, opts.mobileURL, opts.desktopURL, opts.tabletURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert URL: %w", err)
 	}
@@ -333,17 +486,19 @@ func (s *URLService) CreateURLForUser(ctx context.Context, userID int64, req *mo
 		return nil, fmt.Errorf("failed to get insert ID: %w", err)
 	}
 
-	return &model.URL{
-		ID:        id,
-		ShortCode: shortCode,
-		LongURL:   req.LongURL,
-		Title:     req.Title,
-		UserID:    &userID,
+	urlRecord := &model.URL{
+		ID:         id,
+		ShortCode:  shortCode,
+		LongURL:    req.LongURL,
+		Title:      req.Title,
+		UserID:     &userID,
 		CustomCode: isCustom,
-		ExpiresAt: expiresAt,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}, nil
+		ExpiresAt:  expiresAt,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}
+	opts.applyTo(urlRecord)
+	return urlRecord, nil
 }
 
 // CreateURLForOrg creates a shortened URL owned by the given org (used by
@@ -387,11 +542,20 @@ func (s *URLService) CreateURLForOrg(ctx context.Context, orgID int64, req *mode
 		expiresAt = &exp
 	}
 
-	query := `INSERT INTO urls (short_code, long_url, title, description, org_id, custom_code, expires_at)
-	          VALUES (?, ?, ?, ?, ?, ?, ?)`
+	opts, err := buildLinkOptions(req)
+	if err != nil {
+		return nil, err
+	}
+
+	query := `INSERT INTO urls (short_code, long_url, title, description, org_id, custom_code, expires_at,
+	          visibility, tags, utm_source, utm_medium, utm_campaign, utm_term, utm_content, geo_mode, geo_countries,
+	          mobile_url, desktop_url, tablet_url)
+	          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	result, err := s.store.ServerDB.ExecContext(ctx, query,
-		shortCode, req.LongURL, req.Title, req.Description, orgID, isCustom, expiresAt)
+		shortCode, req.LongURL, req.Title, req.Description, orgID, isCustom, expiresAt,
+		opts.visibility, opts.tags, opts.utmSource, opts.utmMedium, opts.utmCampaign, opts.utmTerm, opts.utmContent,
+		opts.geoMode, opts.geoCountries, opts.mobileURL, opts.desktopURL, opts.tabletURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert URL: %w", err)
 	}
@@ -401,7 +565,7 @@ func (s *URLService) CreateURLForOrg(ctx context.Context, orgID int64, req *mode
 		return nil, fmt.Errorf("failed to get insert ID: %w", err)
 	}
 
-	return &model.URL{
+	urlRecord := &model.URL{
 		ID:         id,
 		ShortCode:  shortCode,
 		LongURL:    req.LongURL,
@@ -411,7 +575,9 @@ func (s *URLService) CreateURLForOrg(ctx context.Context, orgID int64, req *mode
 		ExpiresAt:  expiresAt,
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
-	}, nil
+	}
+	opts.applyTo(urlRecord)
+	return urlRecord, nil
 }
 
 // ListByUser returns the most recent URLs created by a user (up to limit).
@@ -428,8 +594,7 @@ func (s *URLService) ListByUserPage(ctx context.Context, userID int64, limit, of
 	if offset < 0 {
 		offset = 0
 	}
-	query := `SELECT id, short_code, long_url, title, description, user_id, org_id, custom_code, password_hash, expires_at, created_at, updated_at
-	          FROM urls WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	query := `SELECT ` + urlSelectColumns + ` FROM urls WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
 
 	rows, err := s.store.ServerDB.QueryContext(ctx, query, userID, limit, offset)
 	if err != nil {
@@ -439,15 +604,11 @@ func (s *URLService) ListByUserPage(ctx context.Context, userID int64, limit, of
 
 	var urls []*model.URL
 	for rows.Next() {
-		var u model.URL
-		if err := rows.Scan(
-			&u.ID, &u.ShortCode, &u.LongURL, &u.Title, &u.Description,
-			&u.UserID, &u.OrgID, &u.CustomCode, &u.PasswordHash, &u.ExpiresAt,
-			&u.CreatedAt, &u.UpdatedAt,
-		); err != nil {
+		u, err := scanURLRow(rows)
+		if err != nil {
 			return nil, fmt.Errorf("failed to scan URL row: %w", err)
 		}
-		urls = append(urls, &u)
+		urls = append(urls, u)
 	}
 	return urls, rows.Err()
 }
@@ -472,8 +633,7 @@ func (s *URLService) ListByOrgPage(ctx context.Context, orgID int64, limit, offs
 	if offset < 0 {
 		offset = 0
 	}
-	query := `SELECT id, short_code, long_url, title, description, user_id, org_id, custom_code, password_hash, expires_at, created_at, updated_at
-	          FROM urls WHERE org_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
+	query := `SELECT ` + urlSelectColumns + ` FROM urls WHERE org_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
 
 	rows, err := s.store.ServerDB.QueryContext(ctx, query, orgID, limit, offset)
 	if err != nil {
@@ -483,15 +643,11 @@ func (s *URLService) ListByOrgPage(ctx context.Context, orgID int64, limit, offs
 
 	var urls []*model.URL
 	for rows.Next() {
-		var u model.URL
-		if err := rows.Scan(
-			&u.ID, &u.ShortCode, &u.LongURL, &u.Title, &u.Description,
-			&u.UserID, &u.OrgID, &u.CustomCode, &u.PasswordHash, &u.ExpiresAt,
-			&u.CreatedAt, &u.UpdatedAt,
-		); err != nil {
+		u, err := scanURLRow(rows)
+		if err != nil {
 			return nil, fmt.Errorf("failed to scan URL row: %w", err)
 		}
-		urls = append(urls, &u)
+		urls = append(urls, u)
 	}
 	return urls, rows.Err()
 }
@@ -587,6 +743,291 @@ func (s *URLService) generateRandomCode(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("failed to generate unique code after %d retries", maxRetries)
 }
 
+
+// linkOptions holds the parsed/validated per-link option fields shared by
+// CreateURL, CreateURLForUser, and CreateURLForOrg (IDEA.md line 25/37 link
+// options: tags, visibility, UTM passthrough, geo-restriction, device
+// targeting). Optional fields are *string/nil so they bind as SQL NULL.
+type linkOptions struct {
+	visibility   string
+	tags         *string
+	utmSource    *string
+	utmMedium    *string
+	utmCampaign  *string
+	utmTerm      *string
+	utmContent   *string
+	geoMode      string
+	geoCountries *string
+	mobileURL    *string
+	desktopURL   *string
+	tabletURL    *string
+}
+
+// applyTo copies the parsed options onto a URL record, e.g. after an insert
+// whose returned struct is built by hand rather than re-queried.
+func (o linkOptions) applyTo(u *model.URL) {
+	u.Visibility = o.visibility
+	u.Tags = splitCSV(derefStr(o.tags))
+	u.UTMSource = o.utmSource
+	u.UTMMedium = o.utmMedium
+	u.UTMCampaign = o.utmCampaign
+	u.UTMTerm = o.utmTerm
+	u.UTMContent = o.utmContent
+	u.GeoMode = o.geoMode
+	u.GeoCountries = splitCSV(derefStr(o.geoCountries))
+	u.MobileURL = o.mobileURL
+	u.DesktopURL = o.desktopURL
+	u.TabletURL = o.tabletURL
+}
+
+// buildLinkOptions validates and normalizes the link-option fields of a
+// create request. GeoMode defaults to "none" and visibility to "public" per
+// AI.md PART 20's allow/deny terminology mirrored at the link level.
+func buildLinkOptions(req *model.CreateURLRequest) (linkOptions, error) {
+	opts := linkOptions{visibility: "public", geoMode: "none"}
+	if req.Visibility != "" {
+		opts.visibility = req.Visibility
+	}
+	if req.GeoMode != "" {
+		opts.geoMode = req.GeoMode
+	}
+	if tags := cleanStrings(req.Tags); len(tags) > 0 {
+		opts.tags = strPtr(joinCSV(tags))
+	}
+	if len(req.GeoCountries) > 0 {
+		codes, err := normalizeCountryCodes(req.GeoCountries)
+		if err != nil {
+			return opts, err
+		}
+		opts.geoCountries = strPtr(joinCSV(codes))
+	}
+	if opts.geoMode != "none" && opts.geoCountries == nil {
+		return opts, fmt.Errorf("geo_countries is required when geo_mode is not none")
+	}
+	if req.UTMSource != "" {
+		opts.utmSource = strPtr(req.UTMSource)
+	}
+	if req.UTMMedium != "" {
+		opts.utmMedium = strPtr(req.UTMMedium)
+	}
+	if req.UTMCampaign != "" {
+		opts.utmCampaign = strPtr(req.UTMCampaign)
+	}
+	if req.UTMTerm != "" {
+		opts.utmTerm = strPtr(req.UTMTerm)
+	}
+	if req.UTMContent != "" {
+		opts.utmContent = strPtr(req.UTMContent)
+	}
+	if req.MobileURL != "" {
+		if _, err := url.ParseRequestURI(req.MobileURL); err != nil {
+			return opts, fmt.Errorf("invalid mobile_url: %w", err)
+		}
+		opts.mobileURL = strPtr(req.MobileURL)
+	}
+	if req.DesktopURL != "" {
+		if _, err := url.ParseRequestURI(req.DesktopURL); err != nil {
+			return opts, fmt.Errorf("invalid desktop_url: %w", err)
+		}
+		opts.desktopURL = strPtr(req.DesktopURL)
+	}
+	if req.TabletURL != "" {
+		if _, err := url.ParseRequestURI(req.TabletURL); err != nil {
+			return opts, fmt.Errorf("invalid tablet_url: %w", err)
+		}
+		opts.tabletURL = strPtr(req.TabletURL)
+	}
+	return opts, nil
+}
+
+// normalizeCountryCodes upper-cases, trims, validates (ISO 3166-1 alpha-2:
+// exactly 2 letters), and de-duplicates a list of country codes.
+func normalizeCountryCodes(codes []string) ([]string, error) {
+	out := make([]string, 0, len(codes))
+	seen := make(map[string]bool, len(codes))
+	for _, c := range codes {
+		c = strings.ToUpper(strings.TrimSpace(c))
+		if c == "" {
+			continue
+		}
+		if len(c) != 2 || !isAlphaUpper(c) {
+			return nil, fmt.Errorf("invalid country code %q (expected ISO 3166-1 alpha-2)", c)
+		}
+		if !seen[c] {
+			seen[c] = true
+			out = append(out, c)
+		}
+	}
+	return out, nil
+}
+
+func isAlphaUpper(s string) bool {
+	for _, ch := range s {
+		if ch < 'A' || ch > 'Z' {
+			return false
+		}
+	}
+	return true
+}
+
+// cleanStrings trims and drops empty entries from a string slice.
+func cleanStrings(vals []string) []string {
+	out := make([]string, 0, len(vals))
+	for _, v := range vals {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func joinCSV(vals []string) string {
+	return strings.Join(vals, ",")
+}
+
+// splitCSV splits a stored comma-separated column back into a slice,
+// dropping empties. Returns nil (not an empty slice) for "" so
+// `omitempty` on the JSON tag hides the field when unset.
+func splitCSV(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func strPtr(s string) *string { return &s }
+
+func derefStr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+// DetectDeviceType classifies a User-Agent string as "mobile", "tablet", or
+// "desktop" using simple substring heuristics (no external UA-parsing
+// dependency is vendored — see TODO.AI.md). Used both for per-link device
+// targeting (RedirectURL) and to populate clicks.device for analytics.
+func DetectDeviceType(userAgent string) string {
+	ua := strings.ToLower(userAgent)
+	switch {
+	case strings.Contains(ua, "ipad") ||
+		strings.Contains(ua, "tablet") ||
+		(strings.Contains(ua, "android") && !strings.Contains(ua, "mobile")):
+		return "tablet"
+	case strings.Contains(ua, "mobi") ||
+		strings.Contains(ua, "iphone") ||
+		strings.Contains(ua, "ipod") ||
+		strings.Contains(ua, "android"):
+		return "mobile"
+	default:
+		return "desktop"
+	}
+}
+
+// SelectDestination returns the link's device-targeted override URL for
+// deviceType ("mobile"/"tablet"/"desktop"), falling back to u.LongURL when no
+// override is set for that device (IDEA.md line 25/37 device targeting).
+func SelectDestination(u *model.URL, deviceType string) string {
+	switch deviceType {
+	case "mobile":
+		if u.MobileURL != nil && *u.MobileURL != "" {
+			return *u.MobileURL
+		}
+	case "tablet":
+		if u.TabletURL != nil && *u.TabletURL != "" {
+			return *u.TabletURL
+		}
+	case "desktop":
+		if u.DesktopURL != nil && *u.DesktopURL != "" {
+			return *u.DesktopURL
+		}
+	}
+	return u.LongURL
+}
+
+// ApplyUTM appends the link's static UTM query parameters to dest, without
+// overwriting any UTM param the destination URL already carries (IDEA.md
+// line 25/37 UTM passthrough). Returns dest unchanged (including on parse
+// failure) when the link has no UTM fields set.
+func ApplyUTM(dest string, u *model.URL) string {
+	if u.UTMSource == nil && u.UTMMedium == nil && u.UTMCampaign == nil && u.UTMTerm == nil && u.UTMContent == nil {
+		return dest
+	}
+	parsed, err := url.Parse(dest)
+	if err != nil {
+		return dest
+	}
+	q := parsed.Query()
+	setIfAbsent := func(key string, val *string) {
+		if val != nil && *val != "" && q.Get(key) == "" {
+			q.Set(key, *val)
+		}
+	}
+	setIfAbsent("utm_source", u.UTMSource)
+	setIfAbsent("utm_medium", u.UTMMedium)
+	setIfAbsent("utm_campaign", u.UTMCampaign)
+	setIfAbsent("utm_term", u.UTMTerm)
+	setIfAbsent("utm_content", u.UTMContent)
+	parsed.RawQuery = q.Encode()
+	return parsed.String()
+}
+
+// GeoAllowed reports whether a visitor from countryCode (ISO 3166-1 alpha-2,
+// empty when unknown) may follow this link, per its geo_mode/geo_countries
+// (IDEA.md line 25/37 geo-restriction, mirroring AI.md PART 20's server-level
+// country_mode/allow_countries/deny_countries terminology at link scope).
+// An empty countryCode (GeoIP unavailable/private IP) always passes — GeoIP
+// is a redirect gate here only when it positively identifies the country,
+// consistent with IDEA.md's "GeoIP is a risk signal, not identity" caution.
+func GeoAllowed(u *model.URL, countryCode string) bool {
+	if u.GeoMode == "" || u.GeoMode == "none" || countryCode == "" {
+		return true
+	}
+	countryCode = strings.ToUpper(countryCode)
+	inList := false
+	for _, c := range u.GeoCountries {
+		if strings.EqualFold(c, countryCode) {
+			inList = true
+			break
+		}
+	}
+	switch u.GeoMode {
+	case "allow":
+		return inList
+	case "deny":
+		return !inList
+	default:
+		return true
+	}
+}
+
+// CanView reports whether the given Bearer/session caller may read a
+// "private" link's details/stats. Admins and the owning user/org always can;
+// "public" links (the default) are readable by anyone, matching the prior
+// open-by-code behavior (IDEA.md line 25/37 visibility).
+func CanView(u *model.URL, isAdmin bool, ownerType string, ownerID int64) bool {
+	if u.Visibility != "private" {
+		return true
+	}
+	if isAdmin {
+		return true
+	}
+	if strings.EqualFold(ownerType, "org") {
+		return u.OrgID != nil && *u.OrgID == ownerID
+	}
+	return u.UserID != nil && *u.UserID == ownerID
+}
 
 // hashIP hashes an IP address for privacy (per SPEC PART 36)
 func hashIP(ip string) string {

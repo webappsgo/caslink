@@ -3,12 +3,47 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/casjaysdevdocker/caslink/src/common/i18n"
 	"github.com/casjaysdevdocker/caslink/src/config"
 	"github.com/casjaysdevdocker/caslink/src/server/service"
 	"github.com/casjaysdevdocker/caslink/src/server/tmpl"
 )
+
+// realClientIP extracts the real client IP, respecting X-Forwarded-For /
+// X-Real-IP ahead of a trusted reverse proxy (mirrors server.realIP, which
+// this package cannot import directly without an import cycle).
+func realClientIP(r *http.Request) string {
+	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+		parts := strings.SplitN(fwd, ",", 2)
+		return strings.TrimSpace(parts[0])
+	}
+	if real := r.Header.Get("X-Real-IP"); real != "" {
+		return real
+	}
+	addr := r.RemoteAddr
+	if idx := strings.LastIndex(addr, ":"); idx != -1 {
+		return addr[:idx]
+	}
+	return addr
+}
+
+// splitFormList splits a comma-separated form field (tags, geo_countries)
+// into a trimmed, non-empty slice.
+func splitFormList(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
 
 // APIResponse is the canonical envelope for all JSON responses per
 // AI.md PART 9 ("Response Format") and IDEA.md "API surface".

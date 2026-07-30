@@ -62,6 +62,18 @@ func (h *URLHandler) CreateURL(w http.ResponseWriter, r *http.Request) {
 		}
 		req.CustomCode = r.FormValue("custom_code")
 		req.Password = r.FormValue("password")
+		req.Visibility = r.FormValue("visibility")
+		req.Tags = splitFormList(r.FormValue("tags"))
+		req.UTMSource = r.FormValue("utm_source")
+		req.UTMMedium = r.FormValue("utm_medium")
+		req.UTMCampaign = r.FormValue("utm_campaign")
+		req.UTMTerm = r.FormValue("utm_term")
+		req.UTMContent = r.FormValue("utm_content")
+		req.GeoMode = r.FormValue("geo_mode")
+		req.GeoCountries = splitFormList(r.FormValue("geo_countries"))
+		req.MobileURL = r.FormValue("mobile_url")
+		req.DesktopURL = r.FormValue("desktop_url")
+		req.TabletURL = r.FormValue("tablet_url")
 	} else {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			respondError(w, http.StatusBadRequest, "Invalid request body")
@@ -224,11 +236,30 @@ func (h *URLHandler) GetURL(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, "Failed to get URL")
 		return
 	}
+	if !h.canViewURL(r, url) {
+		respondError(w, http.StatusNotFound, "URL not found")
+		return
+	}
 
 	respondJSON(w, http.StatusOK, url)
 }
 
-// RedirectURL handles GET /{code} - redirects to the long URL
+// canViewURL reports whether the caller may read a "private" link's details/
+// stats (GetURL, Stats): admins and the owning user/org may; anyone may read
+// a "public" link (the default), matching the prior open-by-code behavior
+// (IDEA.md line 25/37 visibility).
+func (h *URLHandler) canViewURL(r *http.Request, url *model.URL) bool {
+	rec, ok := getBearerFromRequest(r)
+	if !ok {
+		return service.CanView(url, false, "", 0)
+	}
+	return service.CanView(url, strings.EqualFold(rec.OwnerType, "admin"), rec.OwnerType, rec.OwnerID)
+}
+
+// RedirectURL handles GET /{code} - redirects to the long URL. Applies the
+// link's options (IDEA.md line 25/37): geo-restriction may block the
+// redirect entirely, device targeting picks the destination, and UTM
+// passthrough is appended to whichever destination is chosen.
 func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
 	code := chi.URLParam(r, "code")
 	if code == "" {
@@ -246,13 +277,28 @@ func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ipAddress := realClientIP(r)
+	userAgent := r.UserAgent()
+	referrer := r.Referer()
+
+	// Geo-restriction: only enforced when the caller's country is positively
+	// known; an unresolved lookup (GeoIP disabled, private/loopback IP) never
+	// blocks, per IDEA.md's "GeoIP is a risk signal, not identity" caution.
+	if url.GeoMode != "" && url.GeoMode != "none" {
+		country := h.urlService.LookupCountry(ipAddress)
+		if !service.GeoAllowed(url, country) {
+			http.NotFound(w, r)
+			return
+		}
+	}
+
+	dest := service.SelectDestination(url, service.DetectDeviceType(userAgent))
+	dest = service.ApplyUTM(dest, url)
+
 	// Record click (async - don't block redirect). Cap concurrency with a
 	// semaphore so a flood of redirects cannot spawn unbounded goroutines,
 	// and use a detached context with a deadline so the database write is
 	// not cancelled the moment the response completes.
-	ipAddress := r.RemoteAddr
-	userAgent := r.UserAgent()
-	referrer := r.Referer()
 	urlID := url.ID
 	select {
 	case clickRecordWorkers <- struct{}{}:
@@ -267,8 +313,8 @@ func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
 		// redirect or queue indefinitely. Analytics are best-effort.
 	}
 
-	// Redirect to long URL
-	http.Redirect(w, r, url.LongURL, http.StatusFound)
+	// Redirect to the (possibly device-targeted, UTM-tagged) destination
+	http.Redirect(w, r, dest, http.StatusFound)
 }
 
 // checkURLOwnership verifies the Bearer-authenticated caller is allowed to
@@ -377,6 +423,16 @@ func (h *URLHandler) Stats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	url, err := h.urlService.GetURLByCodeAny(r.Context(), code)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "URL not found")
+		return
+	}
+	if !h.canViewURL(r, url) {
+		respondError(w, http.StatusNotFound, "URL not found")
+		return
+	}
+
 	stats, err := h.analyticsService.GetURLStats(r.Context(), code)
 	if err != nil {
 		respondError(w, http.StatusNotFound, "URL not found or no stats available")
@@ -460,6 +516,41 @@ func (h *URLHandler) WebURLManage(w http.ResponseWriter, r *http.Request) {
 				if t, err := time.Parse("2006-01-02T15:04", v); err == nil {
 					req.ExpiresAt = &t
 				}
+			}
+
+			if v := r.PostFormValue("visibility"); v != "" {
+				req.Visibility = &v
+			}
+			tags := splitFormList(r.PostFormValue("tags"))
+			req.Tags = &tags
+			if v := strings.TrimSpace(r.PostFormValue("utm_source")); v != "" || r.Form.Has("utm_source") {
+				req.UTMSource = &v
+			}
+			if v := strings.TrimSpace(r.PostFormValue("utm_medium")); v != "" || r.Form.Has("utm_medium") {
+				req.UTMMedium = &v
+			}
+			if v := strings.TrimSpace(r.PostFormValue("utm_campaign")); v != "" || r.Form.Has("utm_campaign") {
+				req.UTMCampaign = &v
+			}
+			if v := strings.TrimSpace(r.PostFormValue("utm_term")); v != "" || r.Form.Has("utm_term") {
+				req.UTMTerm = &v
+			}
+			if v := strings.TrimSpace(r.PostFormValue("utm_content")); v != "" || r.Form.Has("utm_content") {
+				req.UTMContent = &v
+			}
+			if v := r.PostFormValue("geo_mode"); v != "" {
+				req.GeoMode = &v
+			}
+			geoCountries := splitFormList(r.PostFormValue("geo_countries"))
+			req.GeoCountries = &geoCountries
+			if v := strings.TrimSpace(r.PostFormValue("mobile_url")); v != "" || r.Form.Has("mobile_url") {
+				req.MobileURL = &v
+			}
+			if v := strings.TrimSpace(r.PostFormValue("desktop_url")); v != "" || r.Form.Has("desktop_url") {
+				req.DesktopURL = &v
+			}
+			if v := strings.TrimSpace(r.PostFormValue("tablet_url")); v != "" || r.Form.Has("tablet_url") {
+				req.TabletURL = &v
 			}
 
 			if _, err := h.urlService.UpdateURL(r.Context(), code, req); err != nil {

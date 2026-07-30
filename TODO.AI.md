@@ -134,9 +134,18 @@ Last full audit: 2026-07-30
   bodies were never parsed for the `_csrf` field. — `handler/url.go`,
   `handler/user.go`, `handler/bulk.go`, `service/url.go`, `middleware.go`,
   `server.go`, `template/page/url_manage.html`, `template/page/url_bulk.html`
-- [MED] Link options under-modeled. `model.URL` supports password + expiration only;
-  geo-restriction, device targeting, UTM passthrough, tags, public/private visibility
-  (all in IDEA.md) not modeled or exposed. — `src/server/model/url.go`, create form
+- [DONE] Link options under-modeled. Added visibility (public/private), tags,
+  UTM passthrough (source/medium/campaign/term/content), geo-restriction
+  (allow/deny by ISO country, GeoIP-based, empty lookup always passes),
+  and device targeting (mobile/desktop/tablet override URLs) to the `urls`
+  schema and model; `CreateURL`/`UpdateURL` accept and validate all fields;
+  `RedirectURL` enforces geo/device/UTM; `GetURL`/`Stats` gate on visibility.
+  — `store/store.go`, `model/url.go`, `service/url.go`, `handler/url.go`,
+  `handler/helpers.go`, `tmpl/tmpl.go`, `template/page/url_manage.html`,
+  `service/url_test.go`
+- [LOW] `clicks.browser`/`clicks.os` columns remain unpopulated (only
+  `clicks.device` is now populated, as part of the link-options work above).
+  — `service/url.go` RecordClick
 - [LOW] Per-page `{{define "inline-js"}}` blocks (e.g. in some page templates)
   are dead code: `tmpl.go` overwrites the global `"inline-js"` template name
   with `static/js/app.js` content after walking all page templates, so any

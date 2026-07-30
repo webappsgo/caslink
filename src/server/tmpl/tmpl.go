@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -37,6 +38,9 @@ func New() (*Renderer, error) {
 	t := template.New("").Funcs(template.FuncMap{
 		// inc returns n+1; used in range loops for 1-based display indices.
 		"inc": func(n int) int { return n + 1 },
+		// join renders a []string (e.g. URL.Tags, URL.GeoCountries) as a
+		// comma-separated string for pre-filling an editable text input.
+		"join": func(vals []string) string { return strings.Join(vals, ", ") },
 	})
 
 	// Walk and parse all *.html files.
