@@ -101,7 +101,7 @@ func New(cfg *config.Config, appMode mode.Mode, dataDir, logDir, pidFile string,
 		}
 	}
 
-	sched := scheduler.New(db, logDir, configDir, dataDir, backupDir, geoSvc, cfg.Server.Security, cfg.Server.Compliance.Enabled, cfg.Server.Backup.Retention)
+	sched := scheduler.New(db, logDir, configDir, dataDir, backupDir, version, geoSvc, cfg.Server.Security, cfg.Server.Compliance.Enabled, cfg.Server.Backup.Retention, cfg.Server.Scheduler)
 
 	renderer, err := tmpl.New()
 	if err != nil {
@@ -313,6 +313,7 @@ func (s *Server) setupRoutes() {
 	bulkService := service.NewBulkService(s.store, urlService)
 	userAdminService := service.NewUserAdminService(s.store)
 	auditService := service.NewAuditService(s.store)
+	s.scheduler.SetAuditService(auditService)
 
 	// Token service (needed by user handler and bearer middleware)
 	tokenService := service.NewTokenService(s.store)

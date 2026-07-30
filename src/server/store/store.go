@@ -612,46 +612,11 @@ func (s *Store) initUsersSchema() error {
 			expires_at INTEGER NOT NULL
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_partial_sessions_expires ON partial_sessions(expires_at)`,
-		// Scheduler task tracking (AI.md PART 10/19)
-		`CREATE TABLE IF NOT EXISTS scheduler_tasks (
-			id          TEXT PRIMARY KEY,
-			name        TEXT NOT NULL,
-			task_type   TEXT NOT NULL DEFAULT 'global',
-			enabled     INTEGER NOT NULL DEFAULT 1,
-			schedule    TEXT NOT NULL,
-			last_run    INTEGER,
-			next_run    INTEGER,
-			last_status TEXT,
-			last_error  TEXT,
-			run_count   INTEGER NOT NULL DEFAULT 0,
-			fail_count  INTEGER NOT NULL DEFAULT 0,
-			locked_by   TEXT,
-			locked_at   INTEGER
-		)`,
-		`CREATE TABLE IF NOT EXISTS scheduler_history (
-			id          INTEGER PRIMARY KEY AUTOINCREMENT,
-			task_id     TEXT NOT NULL,
-			started_at  INTEGER NOT NULL,
-			finished_at INTEGER,
-			status      TEXT NOT NULL,
-			error       TEXT,
-			duration_ms INTEGER
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_scheduler_history_task ON scheduler_history(task_id)`,
-		`CREATE INDEX IF NOT EXISTS idx_scheduler_history_started ON scheduler_history(started_at)`,
-		// Backup history (AI.md PART 10/22)
-		`CREATE TABLE IF NOT EXISTS backups (
-			id           INTEGER PRIMARY KEY AUTOINCREMENT,
-			filename     TEXT NOT NULL,
-			size_bytes   INTEGER,
-			checksum     TEXT,
-			encrypted    INTEGER NOT NULL DEFAULT 0,
-			status       TEXT NOT NULL DEFAULT 'pending',
-			error        TEXT,
-			created_at   INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
-			completed_at INTEGER
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_backups_created_at ON backups(created_at)`,
+		// Scheduler task tracking and backup history live in server.db —
+		// see initServerSchema (scheduler_tasks/scheduler_history/backups
+		// tables). This file previously duplicated all three here, which
+		// was a bug (same pattern as the audit_log duplication fixed
+		// separately) — server.db's copies are the single source of truth.
 		// DB-backed rate limits — supplement in-memory limiter (AI.md PART 10)
 		`CREATE TABLE IF NOT EXISTS rate_limits (
 			key          TEXT PRIMARY KEY,

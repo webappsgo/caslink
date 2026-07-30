@@ -363,12 +363,26 @@ type RateLimitConfig struct {
 	PasswordResetMaxAttempts int  `yaml:"password_reset_max_attempts"`
 }
 
-// SchedulerConfig holds scheduler settings.
-// Per-task cron expressions mirror the hardcoded defaults in scheduler.go;
-// the scheduler currently uses its built-in schedules, but storing them here
-// allows future runtime override via the admin panel.
+// SchedulerConfig holds scheduler settings per AI.md PART 19. Per-task cron
+// expressions are the live, authoritative schedules — the scheduler package
+// reads these directly (no hardcoded fallbacks) so the admin panel and
+// server.yml are the single source of truth for "Task Configuration".
 type SchedulerConfig struct {
 	Enabled bool `yaml:"enabled"`
+
+	// Timezone used to evaluate cron expressions (PART 19 "Core Requirements").
+	// Empty or invalid falls back to UTC.
+	Timezone string `yaml:"timezone"`
+
+	// CatchUpWindow: run missed tasks on startup if the missed next_run falls
+	// within this duration of now (PART 19 "Startup Behavior"). Duration
+	// string, e.g. "1h".
+	CatchUpWindow string `yaml:"catch_up_window"`
+
+	// MaxRetries/RetryDelay are the default retry policy (PART 19 "Retry
+	// Policy"); backoff is always exponential (retry_delay, *2, *4, ...).
+	MaxRetries int    `yaml:"max_retries"`
+	RetryDelay string `yaml:"retry_delay"`
 
 	SessionCleanupCron string `yaml:"session_cleanup_cron"`
 	SessionCleanupEnabled bool `yaml:"session_cleanup_enabled"`
@@ -385,6 +399,9 @@ type SchedulerConfig struct {
 	BackupCron string `yaml:"backup_cron"`
 	BackupEnabled bool `yaml:"backup_enabled"`
 
+	BackupHourlyCron string `yaml:"backup_hourly_cron"`
+	BackupHourlyEnabled bool `yaml:"backup_hourly_enabled"`
+
 	SSLRenewalCron string `yaml:"ssl_renewal_cron"`
 	SSLRenewalEnabled bool `yaml:"ssl_renewal_enabled"`
 
@@ -397,11 +414,25 @@ type SchedulerConfig struct {
 	CVEUpdateCron string `yaml:"cve_update_cron"`
 	CVEUpdateEnabled bool `yaml:"cve_update_enabled"`
 
+	// UpdateCheck* implement the `update_check` task (PART 19): notify-only
+	// unless UpdateAutoInstall is true; UpdateDeferDays delays install after
+	// a release is first observed.
+	UpdateCheckCron    string `yaml:"update_check_cron"`
+	UpdateCheckEnabled bool   `yaml:"update_check_enabled"`
+	UpdateBranch       string `yaml:"update_branch"`
+	UpdateAutoInstall  bool   `yaml:"update_auto_install"`
+	UpdateDeferDays    int    `yaml:"update_defer_days"`
+
 	HealthcheckCron string `yaml:"healthcheck_cron"`
 	HealthcheckEnabled bool `yaml:"healthcheck_enabled"`
 
 	TorHealthCron string `yaml:"tor_health_cron"`
 	TorHealthEnabled bool `yaml:"tor_health_enabled"`
+
+	// ClusterHeartbeatCron/Enabled implement `cluster_heartbeat` (PART 19);
+	// the task is a no-op when the node is not running in cluster mode.
+	ClusterHeartbeatCron    string `yaml:"cluster_heartbeat_cron"`
+	ClusterHeartbeatEnabled bool   `yaml:"cluster_heartbeat_enabled"`
 }
 
 // WebConfig holds web frontend settings
@@ -892,6 +923,10 @@ func DefaultConfig() *Config {
 			},
 			Scheduler: SchedulerConfig{
 				Enabled:                true,
+				Timezone:               "America/New_York",
+				CatchUpWindow:          "1h",
+				MaxRetries:             3,
+				RetryDelay:             "5m",
 				SessionCleanupCron:     "@every 15m",
 				SessionCleanupEnabled:  true,
 				TokenCleanupCron:       "@every 15m",
@@ -900,20 +935,29 @@ func DefaultConfig() *Config {
 				ExpireURLsEnabled:      true,
 				LogRotationCron:        "0 0 * * *",
 				LogRotationEnabled:     true,
-				BackupCron:             "0 1 * * *",
+				BackupCron:             "0 2 * * *",
 				BackupEnabled:          true,
+				BackupHourlyCron:       "@hourly",
+				BackupHourlyEnabled:    false,
 				SSLRenewalCron:         "0 3 * * *",
 				SSLRenewalEnabled:      true,
 				GeoIPUpdateCron:        "0 3 * * 0",
 				GeoIPUpdateEnabled:     true,
 				BlocklistUpdateCron:    "0 4 * * *",
 				BlocklistUpdateEnabled: true,
-				CVEUpdateCron:          "0 5 * * 0",
+				CVEUpdateCron:          "0 5 * * *",
 				CVEUpdateEnabled:       true,
+				UpdateCheckCron:        "0 6 * * *",
+				UpdateCheckEnabled:     true,
+				UpdateBranch:           "stable",
+				UpdateAutoInstall:      false,
+				UpdateDeferDays:        0,
 				HealthcheckCron:        "@every 5m",
 				HealthcheckEnabled:     true,
 				TorHealthCron:          "@every 10m",
 				TorHealthEnabled:       true,
+				ClusterHeartbeatCron:    "@every 30s",
+				ClusterHeartbeatEnabled: true,
 			},
 			Features: FeaturesConfig{
 				Users: UsersConfig{

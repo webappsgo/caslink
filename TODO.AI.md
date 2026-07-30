@@ -180,17 +180,57 @@ Last full audit: 2026-07-30
 
 ## PART 19 — Scheduler
 
-- [MED] `update_check` job (daily 06:00) not registered — no updater tie-in (links to
-  missing update emails + `defer_days`/`auto_install`). — `src/scheduler/scheduler.go`
-- [MED] `cluster_heartbeat` job (30s, cluster mode) not registered. — `src/scheduler/scheduler.go`
-- [MED] Task status/history not persisted. `scheduler_tasks`/`scheduler_history` tables
-  exist but jobs never write `last_run`/`last_status`/`run_count`/`fail_count`/
-  `next_run`, so admin scheduler status shows no real data. — `src/scheduler/scheduler.go`
-- [LOW] Retry/backoff (`max_retries`, `retry_delay`, exponential backoff) not
-  implemented. — `src/scheduler/scheduler.go`
-- [HIGH] External cron library `github.com/robfig/cron/v3` in use — CLAUDE.md
-  NEVER-do #5 requires an internal scheduler, not a third-party cron package
-  (found by `go-lint` pass, 2026-07-30). — `src/scheduler/scheduler.go` line 15
+- [DONE 2026-07-30] Replaced `github.com/robfig/cron/v3` with a self-contained
+  cron-expression engine (5-field cron, `@every`/`@hourly`/`@daily`/`@weekly`/
+  `@monthly`) built on `time.Ticker` per CLAUDE.md NEVER-do #5 / AI.md PART 19
+  "Exceptions (NONE)". Dropped from `go.mod`/`go.sum` via `go mod tidy`. —
+  `src/scheduler/cronexpr.go` (new), `src/scheduler/cronexpr_test.go` (new),
+  `src/scheduler/scheduler.go`
+- [DONE 2026-07-30] `update_check` (daily 06:00, global) and `cluster_heartbeat`
+  (every 30s, local) tasks registered. `update_check` calls
+  `updater.CheckForUpdate`, notify-only unless `update_auto_install: true`,
+  honors `update_defer_days` via an in-memory first-seen-per-release-tag map
+  (not persisted across restarts — follow-up below). Auto-install installs the
+  new binary but does not force a self-restart (would drop in-flight
+  connections) — a manual/coordinated restart is required; true node-by-node
+  cluster rollout is not implemented (no cluster peer tracking exists yet).
+  `cluster_heartbeat` is a registered no-op until cluster mode exists. —
+  `src/scheduler/scheduler.go`
+- [DONE 2026-07-30] Task status/history now persisted: every run upserts
+  `scheduler_tasks` (`last_run`/`last_status`/`last_error`/`next_run`/
+  `run_count`/`fail_count`/`locked_by`/`locked_at`) and inserts a
+  `scheduler_history` row (`started_at`/`finished_at`/`status`/`error`/
+  `duration_ms`). Startup catch-up (missed `next_run` within
+  `catch_up_window` runs immediately; older misses are skipped and
+  rescheduled) and cluster-safe locking (5-minute staleness timeout, no-op
+  advantage on a single node) both implemented per AI.md PART 19 "Startup
+  Behavior" / "Task Locking". — `src/scheduler/scheduler.go`,
+  `src/server/store/store.go` (removed a duplicate `scheduler_tasks`/
+  `scheduler_history`/`backups` table definition that existed in both
+  `initServerSchema` and `initUsersSchema` — server.db is now the sole
+  source of truth for all three)
+- [DONE 2026-07-30] Retry/backoff implemented: configurable `max_retries`
+  (default 3) / `retry_delay` (default 5m) with exponential backoff
+  (5m/10m/20m) for tasks that opt in (`backup_daily`, `ssl_renewal`,
+  `geoip_update`, `blocklist_update`, `cve_update`); `session_cleanup`,
+  `token_cleanup`, `expire_urls`, `log_rotation`, `healthcheck_self`,
+  `tor_health`, `update_check`, `cluster_heartbeat`, `backup_hourly` retry
+  immediately on the normal schedule instead (no backoff configured). —
+  `src/scheduler/scheduler.go`, `src/config/config.go` (`SchedulerConfig`
+  expanded with per-task `*_cron`/`*_enabled` fields, `timezone`,
+  `catch_up_window`, `max_retries`, `retry_delay`)
+- [MED] `update_defer_days` tracking is in-memory only (a
+  release-tag → first-seen-time map) and resets on every restart — a release
+  observed just before a restart will be treated as newly-seen again. Needs a
+  persisted column (e.g. on `scheduler_tasks` or a new small table) to survive
+  restarts. — `src/scheduler/scheduler.go`
+- [LOW] Full PART 19 admin panel (Task List/Detail, Run Now, Enable/Disable,
+  History — last 100 executions) and its API endpoints (GET/PATCH task,
+  POST run/enable/disable, GET history) are not implemented; the existing
+  `ConfigScheduler` handler is a read-only view built from
+  `cfg.Server.Scheduler`, not the persisted `scheduler_tasks`/
+  `scheduler_history` state (its stale "robfig/cron" wording was corrected
+  as part of the 2026-07-30 rewrite). — `src/server/handler/admin_config.go`
 
 ## PART 20 — GeoIP
 

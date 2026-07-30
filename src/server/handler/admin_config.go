@@ -531,7 +531,7 @@ func (h *AdminHandler) ConfigScheduler(w http.ResponseWriter, r *http.Request) {
 <div class="card">
   <h2>Scheduled Tasks</h2>
   <p style="color:#8b949e;font-size:14px;margin-bottom:16px">
-    Built-in cron scheduler (robfig/cron). Schedules use standard cron syntax.
+    Built-in scheduler (no external cron dependency). Schedules use standard cron syntax.
     Changes require editing <code>server.yml</code> and restarting.
   </p>
   <table>
