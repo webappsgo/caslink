@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -133,6 +134,59 @@ func (h *URLHandler) WebCreateURL(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/users/dashboard?created="+url.ShortCode, http.StatusSeeOther)
 }
 
+// urlListResponse is the paginated envelope for GET /api/v1/urls.
+type urlListResponse struct {
+	URLs  []*model.URL `json:"urls"`
+	Page  int          `json:"page"`
+	Limit int          `json:"limit"`
+	Total int          `json:"total"`
+}
+
+// ListURLs handles GET /api/v1/urls per AI.md PART 14 (current Bearer-
+// authenticated user's own links, paginated via ?page&limit). Only
+// user-owned tokens have a meaningful "own links" list; admin/org tokens
+// are rejected since PART 14 scopes /users/* to the current user's
+// resources — admins list all links via the admin config API instead.
+func (h *URLHandler) ListURLs(w http.ResponseWriter, r *http.Request) {
+	rec, ok := getBearerFromRequest(r)
+	if !ok || !strings.EqualFold(rec.OwnerType, "user") {
+		respondError(w, http.StatusUnauthorized, "Bearer user token required")
+		return
+	}
+
+	page := 1
+	if v := r.URL.Query().Get("page"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			page = n
+		}
+	}
+	limit := 50
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 200 {
+			limit = n
+		}
+	}
+	offset := (page - 1) * limit
+
+	urls, err := h.urlService.ListByUserPage(r.Context(), rec.OwnerID, limit, offset)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to list URLs")
+		return
+	}
+	total, err := h.urlService.CountByUser(r.Context(), rec.OwnerID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to count URLs")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, urlListResponse{
+		URLs:  urls,
+		Page:  page,
+		Limit: limit,
+		Total: total,
+	})
+}
+
 // GetURL handles GET /api/v1/urls/{code}
 func (h *URLHandler) GetURL(w http.ResponseWriter, r *http.Request) {
 	code := chi.URLParam(r, "code")
@@ -233,9 +287,10 @@ func (h *URLHandler) checkURLOwnership(w http.ResponseWriter, r *http.Request, c
 	return true
 }
 
-// UpdateURL handles PUT /api/v1/urls/{code} per AI.md PART 16
-// (`PUT /api/{api_version}/links/{code}`). Bearer callers may only mutate
-// links they own (see checkURLOwnership).
+// UpdateURL handles PATCH /api/v1/urls/{code}. Uses PATCH (not PUT) per
+// AI.md PART 14's partial-update convention (e.g. `PATCH /api/{api_version}/
+// users`) — callers only send the fields they want changed. Bearer callers
+// may only mutate links they own (see checkURLOwnership).
 func (h *URLHandler) UpdateURL(w http.ResponseWriter, r *http.Request) {
 	code := chi.URLParam(r, "code")
 	if code == "" {

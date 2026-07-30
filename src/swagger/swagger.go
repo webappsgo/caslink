@@ -98,6 +98,38 @@ func generateOpenAPISpec(version string) map[string]interface{} {
 				},
 			},
 			"/urls": map[string]interface{}{
+				"get": map[string]interface{}{
+					"summary":     "List my URLs",
+					"description": "Lists the authenticated Bearer user's own shortened URLs, newest first",
+					"parameters": []map[string]interface{}{
+						{
+							"name":        "page",
+							"in":          "query",
+							"required":    false,
+							"description": "Page number (default 1)",
+							"schema": map[string]interface{}{
+								"type": "integer",
+							},
+						},
+						{
+							"name":        "limit",
+							"in":          "query",
+							"required":    false,
+							"description": "Results per page (default 50, max 200)",
+							"schema": map[string]interface{}{
+								"type": "integer",
+							},
+						},
+					},
+					"responses": map[string]interface{}{
+						"200": map[string]interface{}{
+							"description": "Paginated list of URLs",
+						},
+						"401": map[string]interface{}{
+							"description": "Bearer user token required",
+						},
+					},
+				},
 				"post": map[string]interface{}{
 					"summary":     "Create short URL",
 					"description": "Creates a new shortened URL",
@@ -161,6 +193,52 @@ func generateOpenAPISpec(version string) map[string]interface{} {
 						},
 						"410": map[string]interface{}{
 							"description": "URL has expired",
+						},
+					},
+				},
+				"patch": map[string]interface{}{
+					"summary":     "Update a URL",
+					"description": "Partially updates a shortened URL owned by the Bearer-authenticated caller",
+					"parameters": []map[string]interface{}{
+						{
+							"name":        "code",
+							"in":          "path",
+							"required":    true,
+							"description": "Short code",
+							"schema": map[string]interface{}{
+								"type": "string",
+							},
+						},
+					},
+					"responses": map[string]interface{}{
+						"200": map[string]interface{}{
+							"description": "URL updated successfully",
+						},
+						"404": map[string]interface{}{
+							"description": "URL not found",
+						},
+					},
+				},
+				"delete": map[string]interface{}{
+					"summary":     "Delete a URL",
+					"description": "Deletes a shortened URL owned by the Bearer-authenticated caller",
+					"parameters": []map[string]interface{}{
+						{
+							"name":        "code",
+							"in":          "path",
+							"required":    true,
+							"description": "Short code",
+							"schema": map[string]interface{}{
+								"type": "string",
+							},
+						},
+					},
+					"responses": map[string]interface{}{
+						"204": map[string]interface{}{
+							"description": "URL deleted successfully",
+						},
+						"404": map[string]interface{}{
+							"description": "URL not found",
 						},
 					},
 				},

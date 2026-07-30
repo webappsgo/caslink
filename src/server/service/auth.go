@@ -265,14 +265,14 @@ func (s *AuthService) AuthenticateUser(ctx context.Context, identifier, password
 	identifier = strings.ToLower(strings.TrimSpace(identifier))
 
 	// Try username or email
-	query := `SELECT id, username, email, email_verified, totp_enabled, created_at, last_login, password_hash
+	query := `SELECT id, username, email, email_verified, display_name, bio, totp_enabled, created_at, last_login, password_hash
 	          FROM users WHERE (username = ? OR email = ?)`
 
 	var user User
 	var passwordHash string
 
 	err := s.store.UsersDB.QueryRowContext(ctx, query, identifier, identifier).Scan(
-		&user.ID, &user.Username, &user.Email, &user.EmailVerified,
+		&user.ID, &user.Username, &user.Email, &user.EmailVerified, &user.DisplayName, &user.Bio,
 		&user.TOTPEnabled, &user.CreatedAt, &user.LastLogin, &passwordHash,
 	)
 
@@ -328,14 +328,14 @@ func (s *AuthService) CreateUserSession(ctx context.Context, userID int64, remem
 // ValidateUserSession validates a user session from user_sessions and returns the user.
 // Both tables are in users.db so a JOIN is used.
 func (s *AuthService) ValidateUserSession(ctx context.Context, sessionID string) (*User, error) {
-	query := `SELECT u.id, u.username, u.email, u.email_verified, u.totp_enabled, u.created_at, u.last_login
+	query := `SELECT u.id, u.username, u.email, u.email_verified, u.display_name, u.bio, u.totp_enabled, u.created_at, u.last_login
 	          FROM user_sessions s
 	          JOIN users u ON s.user_id = u.id
 	          WHERE s.id = ? AND s.expires_at > ?`
 
 	var user User
 	err := s.store.UsersDB.QueryRowContext(ctx, query, sessionID, time.Now().Unix()).Scan(
-		&user.ID, &user.Username, &user.Email, &user.EmailVerified,
+		&user.ID, &user.Username, &user.Email, &user.EmailVerified, &user.DisplayName, &user.Bio,
 		&user.TOTPEnabled, &user.CreatedAt, &user.LastLogin,
 	)
 
@@ -346,6 +346,26 @@ func (s *AuthService) ValidateUserSession(ctx context.Context, sessionID string)
 		return nil, fmt.Errorf("failed to validate session: %w", err)
 	}
 
+	return &user, nil
+}
+
+// GetUserByID loads a user by ID — used to resolve the caller of a
+// Bearer-authenticated API request, where BearerAuthMiddleware only
+// attaches the TokenRecord (owner ID/type), not a full User.
+func (s *AuthService) GetUserByID(ctx context.Context, userID int64) (*User, error) {
+	query := `SELECT id, username, email, email_verified, display_name, bio, totp_enabled, created_at, last_login
+	          FROM users WHERE id = ?`
+	var user User
+	err := s.store.UsersDB.QueryRowContext(ctx, query, userID).Scan(
+		&user.ID, &user.Username, &user.Email, &user.EmailVerified, &user.DisplayName, &user.Bio,
+		&user.TOTPEnabled, &user.CreatedAt, &user.LastLogin,
+	)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("user not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to load user: %w", err)
+	}
 	return &user, nil
 }
 
@@ -496,6 +516,59 @@ func (s *AuthService) ChangePassword(userID int64, newPassword string) error {
 	}
 
 	return nil
+}
+
+// ErrEmailAlreadyInUse is returned by UpdateUserProfile when the requested
+// email belongs to a different account.
+var ErrEmailAlreadyInUse = fmt.Errorf("email already in use")
+
+// UpdateUserProfile applies a partial update to a user's profile for
+// PATCH /api/{api_version}/users (AI.md PART 14). Only non-nil fields are
+// changed. Changing the email re-flags it as unverified (spec: identity
+// changes must be re-confirmed); it never persists a plaintext password.
+func (s *AuthService) UpdateUserProfile(ctx context.Context, userID int64, displayName, bio, email *string) (*User, error) {
+	if email != nil {
+		normalized := strings.ToLower(strings.TrimSpace(*email))
+		var count int
+		err := s.store.UsersDB.QueryRowContext(ctx,
+			`SELECT COUNT(*) FROM users WHERE email = ? AND id != ?`, normalized, userID).Scan(&count)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check email: %w", err)
+		}
+		if count > 0 {
+			return nil, ErrEmailAlreadyInUse
+		}
+		if _, err := s.store.UsersDB.ExecContext(ctx,
+			`UPDATE users SET email = ?, email_verified = 0 WHERE id = ?`, normalized, userID); err != nil {
+			return nil, fmt.Errorf("failed to update email: %w", err)
+		}
+	}
+	if displayName != nil {
+		trimmed := strings.TrimSpace(*displayName)
+		if _, err := s.store.UsersDB.ExecContext(ctx,
+			`UPDATE users SET display_name = ? WHERE id = ?`, trimmed, userID); err != nil {
+			return nil, fmt.Errorf("failed to update display name: %w", err)
+		}
+	}
+	if bio != nil {
+		trimmed := strings.TrimSpace(*bio)
+		if _, err := s.store.UsersDB.ExecContext(ctx,
+			`UPDATE users SET bio = ? WHERE id = ?`, trimmed, userID); err != nil {
+			return nil, fmt.Errorf("failed to update bio: %w", err)
+		}
+	}
+
+	query := `SELECT id, username, email, email_verified, display_name, bio, totp_enabled, created_at, last_login
+	          FROM users WHERE id = ?`
+	var user User
+	err := s.store.UsersDB.QueryRowContext(ctx, query, userID).Scan(
+		&user.ID, &user.Username, &user.Email, &user.EmailVerified, &user.DisplayName, &user.Bio,
+		&user.TOTPEnabled, &user.CreatedAt, &user.LastLogin,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reload user: %w", err)
+	}
+	return &user, nil
 }
 
 // hashToken hashes a token using SHA256 for storage per PART 23

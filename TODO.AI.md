@@ -76,9 +76,21 @@ Last full audit: 2026-07-30
   `src/common/httputil/` with `HTML2TextConverter`, non-interactive/text-browser/
   http-tool/our-CLI detection, `.txt`-extension + `Accept: text/plain` output on all
   `/api/**`, smart text/HTML on all frontend routes. None exists. — new `src/common/httputil/` + handler/middleware wiring
-- [HIGH] Incomplete API CRUD parity: no `GET /api/v1/urls`, no `PATCH`/`DELETE
-  /api/v1/urls/{code}`, no `POST`/`DELETE /api/v1/users/tokens`, no `PATCH
-  /api/v1/users`. — `handler/url.go`, `handler/user.go`
+- [DONE 2026-07-30] API CRUD parity: added `GET /api/v1/urls` (paginated,
+  Bearer user-owned links), migrated `/urls/{code}` update from `PUT` to
+  `PATCH` per PART 14's partial-update convention, added `POST`/`DELETE
+  /api/v1/users/tokens/{id}`, and `PATCH /api/v1/users` (display_name/bio/
+  email partial update — `users.display_name`/`users.bio` columns added via
+  migration). Also fixed a pre-existing bug found while wiring this in:
+  every `/api/v1/users/*` handler called `getUserFromRequest` (session-only)
+  even though the route group only runs `BearerAuthMiddleware`, so every
+  Bearer-authenticated call to `GET/PATCH /users`, `GET/POST /users/tokens`,
+  `GET /users/settings`, `GET /users/security` always 401'd; added
+  `UserHandler.currentAPIUser` (session first, then Bearer→
+  `AuthService.GetUserByID`) and switched all of them to it. —
+  `src/server/handler/url.go`, `src/server/handler/user.go`,
+  `src/server/service/auth.go`, `src/server/service/url.go`,
+  `src/server/store/store.go`, `src/server/server.go`, `src/swagger/swagger.go`
 
 ## PART 15 — SSL/TLS
 

@@ -341,13 +341,22 @@ func (s *URLService) CreateURLForUser(ctx context.Context, userID int64, req *mo
 
 // ListByUser returns the most recent URLs created by a user (up to limit).
 func (s *URLService) ListByUser(ctx context.Context, userID int64, limit int) ([]*model.URL, error) {
+	return s.ListByUserPage(ctx, userID, limit, 0)
+}
+
+// ListByUserPage returns a page of URLs created by a user, newest first,
+// per AI.md PART 14 query-param pagination convention (?page&limit).
+func (s *URLService) ListByUserPage(ctx context.Context, userID int64, limit, offset int) ([]*model.URL, error) {
 	if limit <= 0 {
 		limit = 50
 	}
+	if offset < 0 {
+		offset = 0
+	}
 	query := `SELECT id, short_code, long_url, title, description, user_id, custom_code, password_hash, expires_at, created_at, updated_at
-	          FROM urls WHERE user_id = ? ORDER BY created_at DESC LIMIT ?`
+	          FROM urls WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
 
-	rows, err := s.store.ServerDB.QueryContext(ctx, query, userID, limit)
+	rows, err := s.store.ServerDB.QueryContext(ctx, query, userID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list URLs: %w", err)
 	}
@@ -366,6 +375,17 @@ func (s *URLService) ListByUser(ctx context.Context, userID int64, limit int) ([
 		urls = append(urls, &u)
 	}
 	return urls, rows.Err()
+}
+
+// CountByUser returns the total number of URLs owned by a user, for
+// pagination totals on GET /api/v1/urls.
+func (s *URLService) CountByUser(ctx context.Context, userID int64) (int, error) {
+	var n int
+	err := s.store.ServerDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM urls WHERE user_id = ?`, userID).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count URLs: %w", err)
+	}
+	return n, nil
 }
 
 // validateCustomCode validates a custom short code

@@ -731,8 +731,9 @@ func (s *Server) setupRoutes() {
 		// URL management endpoints (require Bearer auth per spec)
 		r.Group(func(ar chi.Router) {
 			ar.Use(bearerMiddleware)
+			ar.Get("/urls", urlHandler.ListURLs)
 			ar.Post("/urls", urlHandler.CreateURL)
-			ar.Put("/urls/{code}", urlHandler.UpdateURL)
+			ar.Patch("/urls/{code}", urlHandler.UpdateURL)
 			ar.Delete("/urls/{code}", urlHandler.DeleteURL)
 		})
 
@@ -748,7 +749,10 @@ func (s *Server) setupRoutes() {
 			ar.Use(bearerMiddleware)
 			// Current user profile, tokens, settings, and security per PART 14.
 			ar.Get("/", userHandler.APIProfile)
+			ar.Patch("/", userHandler.APIUpdateProfile)
 			ar.Get("/tokens", userHandler.APITokens)
+			ar.Post("/tokens", userHandler.APICreateToken)
+			ar.Delete("/tokens/{id}", userHandler.APIRevokeToken)
 			ar.Get("/settings", userHandler.APISettings)
 			ar.Get("/security", userHandler.APISecurity)
 			// Bulk URL operations

@@ -653,6 +653,8 @@ func (s *Store) initUsersSchema() error {
 	addColumnQueries := []string{
 		`ALTER TABLE api_tokens ADD COLUMN token_prefix TEXT`,
 		`ALTER TABLE totp_secrets ADD COLUMN key_version INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE users ADD COLUMN display_name TEXT`,
+		`ALTER TABLE users ADD COLUMN bio TEXT`,
 	}
 	for _, q := range addColumnQueries {
 		ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
