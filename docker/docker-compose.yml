@@ -1,27 +1,66 @@
+# nginx proxy address - http://172.17.0.1:64580
+
 name: caslink
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "5m"
+    max-file: "1"
 
 services:
   caslink:
+    # replace with provider registry at deploy time
     image: ghcr.io/casapps/caslink:latest
-    container_name: caslink
-    restart: unless-stopped
+    container_name: caslink-app
+    hostname: caslink
+    restart: always
+    pull_policy: always
+    logging: *default-logging
     environment:
-      # Production: strict security, minimal logging, caching enabled
-      # NO debug options - debug must be explicitly set via CLI if needed
-      - MODE=production
-      - TZ=America/New_York
+      PORT: 80
+      TZ: ${TZ:-America/New_York}
+      CONTAINER_NAME: caslink-app
+      HOSTNAME: ${BASE_HOST_NAME:-$HOSTNAME}
+      CACHE_URL: valkey://caslink-cache:6379
       # DOMAIN (optional - auto-detects from reverse proxy headers)
-      # - DOMAIN=myapp.com,www.myapp.com
+      # DOMAIN: myapp.com,www.myapp.com
       # SMTP (optional - autodetects if not set)
-      # - SMTP_HOST=smtp.example.com
-      # - SMTP_PORT=587
-      # - SMTP_USERNAME=user
-      # - SMTP_PASSWORD=pass
-    ports:
-      - "64580:80"
+      # SMTP_HOST: smtp.example.com
+      # SMTP_PORT: 587
+      # SMTP_USERNAME: user
+      # SMTP_PASSWORD: pass
     volumes:
       - ./volumes/config:/config:z
       - ./volumes/data:/data:z
+    ports:
+      - "172.17.0.1:64580:80"
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/caslink", "--status"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    depends_on:
+      caslink-cache:
+        condition: service_healthy
+    networks:
+      - caslink
+
+  caslink-cache:
+    image: valkey/valkey:alpine
+    container_name: caslink-cache
+    restart: always
+    pull_policy: always
+    logging: *default-logging
+    volumes:
+      - ./volumes/data/db/valkey:/data:z
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli ping || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     networks:
       - caslink
 

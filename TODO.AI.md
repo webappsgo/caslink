@@ -224,27 +224,27 @@ Last full audit: 2026-07-30
 
 ## PART 26 — Makefile
 
-- [MED] `Makefile` builds against `golang:alpine` (`GO_DOCKER`, line 44) instead of
-  `casjaysdev/go:latest` (found by `go-lint`, 2026-07-30). — `Makefile`
-- [MED] `GO_DOCKER` and all `go build` invocations (lines 63, 73, 86, 100) are missing
-  `-e GOFLAGS=-buildvcs=false` / inline `-buildvcs=false` — required per
-  `~/.claude/memory/go_conventions.md` Docker Build Pattern since `.git` is mounted.
-  — `Makefile`
-- [LOW] `LDFLAGS` (line 19) is missing `-trimpath` for reproducible builds. — `Makefile`
+- [DONE 2026-07-30] `Makefile` built against `golang:alpine` and was missing
+  `-buildvcs=false`/`-trimpath`/project-scoped caches (found by `go-lint`,
+  2026-07-30). Fixed: `GO_DOCKER` now uses `casjaysdev/go:latest` with
+  `GO_CACHE`/`GO_BUILD` (project-scoped, `?=`-overridable) mounts and
+  `-e GOFLAGS=-buildvcs=false`; every `go build` invocation now passes
+  `-buildvcs=false -trimpath`; `test` target now runs `go vet ./...` before
+  `go test`; `docker` target no longer `--push`es (CI/CD's job) and gained a
+  `DOCKER_PLATFORMS` override. — `Makefile`
 
 ## PART 27 — Docker
 
-- [MED] Dockerfile builder stage uses `FROM golang:alpine` instead of required
-  `casjaysdev/go:latest` (found by `go-lint`, 2026-07-30 — also affects the Makefile,
-  see PART 26). — `docker/Dockerfile`
-- [MED] `docker/Dockerfile` `go build` (line 19) missing `-buildvcs=false`; LDFLAGS
-  (line 20) missing `-trimpath`. — `docker/Dockerfile`
-- [LOW] HEALTHCHECK timing wrong — spec `start-period=90s interval=10s timeout=5s`;
-  Dockerfile has `10m/5m/15s`. — `docker/Dockerfile`
-- [MED] Production `docker-compose.yml` non-compliant: `container_name` should be
-  `caslink-app`, `restart` should be `always`, missing `pull_policy: always`,
-  `x-logging` anchor, `healthcheck` block, and the `caslink-cache` (valkey) service +
-  `CACHE_URL` + `depends_on`; env uses list style and sets forbidden `MODE`. — `docker/docker-compose.yml`
+- [DONE 2026-07-30] Dockerfile builder stage used `FROM golang:alpine`
+  instead of `casjaysdev/go:latest`, was missing `-buildvcs=false`/
+  `-trimpath`, and HEALTHCHECK timing didn't match AI.md PART 27
+  (`start-period=90s interval=10s timeout=5s`, was `10m/5m/15s`) — found by
+  `go-lint`, 2026-07-30. Fixed all three. Also rewrote `docker-compose.yml`
+  to match the required production layout: `container_name: caslink-app`,
+  `restart: always`, `pull_policy: always`, `x-logging` anchor,
+  `healthcheck` block, map-style env (dropped forbidden `MODE`), and added
+  the `caslink-cache` (valkey) service + `CACHE_URL` + `depends_on`. —
+  `docker/Dockerfile`, `docker/docker-compose.yml`
 
 ## PART 29 — Testing
 

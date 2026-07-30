@@ -1,7 +1,7 @@
 # =============================================================================
 # Build Stage - Compile Go binary
 # =============================================================================
-FROM golang:alpine AS builder
+FROM casjaysdev/go:latest AS builder
 
 ARG TARGETARCH
 ARG VERSION=dev
@@ -16,7 +16,7 @@ RUN go mod download
 
 # Copy source and build
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build \
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -buildvcs=false -trimpath \
     -ldflags "-s -w -X 'main.Version=${VERSION}' -X 'main.CommitID=${COMMIT_ID}' -X 'main.BuildDate=${BUILD_DATE}'" \
     -o /build/binary/caslink ./src
 
@@ -86,8 +86,8 @@ EXPOSE 80
 # Stop signal for graceful shutdown
 STOPSIGNAL SIGRTMIN+3
 
-# Health check (long start period for services that need initialization)
-HEALTHCHECK --start-period=10m --interval=5m --timeout=15s --retries=3 \
+# Health check (AI.md PART 27 timing: start 90s, interval 10s, timeout 5s)
+HEALTHCHECK --start-period=90s --interval=10s --timeout=5s --retries=3 \
     CMD /usr/local/bin/caslink --status || exit 1
 
 # Use tini as init with signal propagation
