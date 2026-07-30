@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -61,7 +62,17 @@ func (h *URLHandler) CreateURL(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	url, err := h.urlService.CreateURL(r.Context(), &req)
+	// Bearer-authenticated user tokens own the links they create, so the
+	// caller can later edit/delete them (see UpdateURL/DeleteURL ownership
+	// check below). Admin/org tokens keep the prior anonymous behavior —
+	// org-owned links are tracked separately (see TODO.AI.md PART 35).
+	var url *model.URL
+	var err error
+	if rec, ok := getBearerFromRequest(r); ok && strings.EqualFold(rec.OwnerType, "user") {
+		url, err = h.urlService.CreateURLForUser(r.Context(), rec.OwnerID, &req)
+	} else {
+		url, err = h.urlService.CreateURL(r.Context(), &req)
+	}
 	if err != nil {
 		if err == model.ErrCodeAlreadyExists {
 			respondError(w, http.StatusConflict, "Short code already exists")
@@ -104,7 +115,15 @@ func (h *URLHandler) WebCreateURL(w http.ResponseWriter, r *http.Request) {
 		CustomCode: r.FormValue("custom_code"),
 		Password:   r.FormValue("password"),
 	}
-	url, err := h.urlService.CreateURL(r.Context(), req)
+	// Associate the link with the signed-in user so it shows up on their
+	// dashboard (ListByUser) and so they can edit/delete it later.
+	var url *model.URL
+	var err error
+	if user, ok := getUserFromRequest(r); ok {
+		url, err = h.urlService.CreateURLForUser(r.Context(), user.ID, req)
+	} else {
+		url, err = h.urlService.CreateURL(r.Context(), req)
+	}
 	if err != nil {
 		// Redirect back to root with an error query param.
 		http.Redirect(w, r, "/?error="+http.StatusText(http.StatusBadRequest), http.StatusSeeOther)
@@ -180,6 +199,95 @@ func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
 
 	// Redirect to long URL
 	http.Redirect(w, r, url.LongURL, http.StatusFound)
+}
+
+// checkURLOwnership verifies the Bearer-authenticated caller is allowed to
+// mutate the given URL: admin tokens always pass; user tokens must match
+// the URL's owning user_id. Links with no owner (org-owned, or created
+// before ownership was tracked) can only be mutated by an admin token —
+// see TODO.AI.md PART 35 for org-owned link ownership wiring. Returns false
+// (after writing the response) when the caller must not proceed.
+func (h *URLHandler) checkURLOwnership(w http.ResponseWriter, r *http.Request, code string) bool {
+	rec, ok := getBearerFromRequest(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Bearer token required")
+		return false
+	}
+	if strings.EqualFold(rec.OwnerType, "admin") {
+		return true
+	}
+
+	existing, err := h.urlService.GetURLByCodeAny(r.Context(), code)
+	if err != nil {
+		if err == model.ErrURLNotFound {
+			respondError(w, http.StatusNotFound, "URL not found")
+			return false
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to load URL")
+		return false
+	}
+	if existing.UserID == nil || *existing.UserID != rec.OwnerID {
+		respondError(w, http.StatusNotFound, "URL not found")
+		return false
+	}
+	return true
+}
+
+// UpdateURL handles PUT /api/v1/urls/{code} per AI.md PART 16
+// (`PUT /api/{api_version}/links/{code}`). Bearer callers may only mutate
+// links they own (see checkURLOwnership).
+func (h *URLHandler) UpdateURL(w http.ResponseWriter, r *http.Request) {
+	code := chi.URLParam(r, "code")
+	if code == "" {
+		respondError(w, http.StatusBadRequest, "Short code required")
+		return
+	}
+	if !h.checkURLOwnership(w, r, code) {
+		return
+	}
+
+	var req model.UpdateURLRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	url, err := h.urlService.UpdateURL(r.Context(), code, &req)
+	if err != nil {
+		if err == model.ErrURLNotFound {
+			respondError(w, http.StatusNotFound, "URL not found")
+			return
+		}
+		respondError(w, http.StatusBadRequest, "Failed to update URL")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, url)
+}
+
+// DeleteURL handles DELETE /api/v1/urls/{code} per AI.md PART 16
+// (`DELETE /api/{api_version}/links/{code}`). Bearer callers may only
+// delete links they own (see checkURLOwnership).
+func (h *URLHandler) DeleteURL(w http.ResponseWriter, r *http.Request) {
+	code := chi.URLParam(r, "code")
+	if code == "" {
+		respondError(w, http.StatusBadRequest, "Short code required")
+		return
+	}
+	if !h.checkURLOwnership(w, r, code) {
+		return
+	}
+
+	if err := h.urlService.DeleteURL(r.Context(), code); err != nil {
+		if err == model.ErrURLNotFound {
+			respondError(w, http.StatusNotFound, "URL not found")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "Failed to delete URL")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // Stats handles GET /api/v1/urls/{code}/stats

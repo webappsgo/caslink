@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"regexp"
 	"testing"
+	"time"
 
+	"github.com/casjaysdevdocker/caslink/src/server/model"
 	"github.com/casjaysdevdocker/caslink/src/server/store"
 	_ "modernc.org/sqlite"
 )
@@ -97,5 +99,100 @@ func TestShortCodeUniqueness(t *testing.T) {
 		); err != nil {
 			t.Fatalf("failed to insert code %q: %v", code, err)
 		}
+	}
+}
+
+func TestUpdateURL(t *testing.T) {
+	st := newTestURLStore(t)
+	svc := NewURLService(st)
+	ctx := context.Background()
+
+	created, err := svc.CreateURL(ctx, &model.CreateURLRequest{LongURL: "https://example.com/old"})
+	if err != nil {
+		t.Fatalf("CreateURL failed: %v", err)
+	}
+
+	newURL := "https://example.com/new"
+	newTitle := "New Title"
+	updated, err := svc.UpdateURL(ctx, created.ShortCode, &model.UpdateURLRequest{
+		LongURL: &newURL,
+		Title:   &newTitle,
+	})
+	if err != nil {
+		t.Fatalf("UpdateURL failed: %v", err)
+	}
+	if updated.LongURL != newURL {
+		t.Errorf("LongURL = %q, want %q", updated.LongURL, newURL)
+	}
+	if updated.Title == nil || *updated.Title != newTitle {
+		t.Errorf("Title = %v, want %q", updated.Title, newTitle)
+	}
+
+	if _, err := svc.UpdateURL(ctx, "does-not-exist", &model.UpdateURLRequest{LongURL: &newURL}); err != model.ErrURLNotFound {
+		t.Errorf("UpdateURL on missing code: got %v, want ErrURLNotFound", err)
+	}
+}
+
+func TestUpdateURLRejectsInvalidURL(t *testing.T) {
+	st := newTestURLStore(t)
+	svc := NewURLService(st)
+	ctx := context.Background()
+
+	created, err := svc.CreateURL(ctx, &model.CreateURLRequest{LongURL: "https://example.com/old"})
+	if err != nil {
+		t.Fatalf("CreateURL failed: %v", err)
+	}
+
+	bad := "not a url"
+	if _, err := svc.UpdateURL(ctx, created.ShortCode, &model.UpdateURLRequest{LongURL: &bad}); err == nil {
+		t.Error("UpdateURL with invalid URL: got nil error, want error")
+	}
+}
+
+func TestUpdateURLCanReviveExpiredLink(t *testing.T) {
+	st := newTestURLStore(t)
+	svc := NewURLService(st)
+	ctx := context.Background()
+
+	past := time.Now().Add(-time.Hour)
+	created, err := svc.CreateURL(ctx, &model.CreateURLRequest{LongURL: "https://example.com/old", ExpiresAt: &past})
+	if err != nil {
+		t.Fatalf("CreateURL failed: %v", err)
+	}
+
+	if _, err := svc.GetURLByCode(ctx, created.ShortCode); err != model.ErrURLExpired {
+		t.Fatalf("GetURLByCode on expired link: got %v, want ErrURLExpired", err)
+	}
+
+	future := time.Now().Add(time.Hour)
+	if _, err := svc.UpdateURL(ctx, created.ShortCode, &model.UpdateURLRequest{ExpiresAt: &future}); err != nil {
+		t.Fatalf("UpdateURL on expired link failed: %v", err)
+	}
+
+	if _, err := svc.GetURLByCode(ctx, created.ShortCode); err != nil {
+		t.Fatalf("GetURLByCode after reviving link: %v", err)
+	}
+}
+
+func TestDeleteURL(t *testing.T) {
+	st := newTestURLStore(t)
+	svc := NewURLService(st)
+	ctx := context.Background()
+
+	created, err := svc.CreateURL(ctx, &model.CreateURLRequest{LongURL: "https://example.com/old"})
+	if err != nil {
+		t.Fatalf("CreateURL failed: %v", err)
+	}
+
+	if err := svc.DeleteURL(ctx, created.ShortCode); err != nil {
+		t.Fatalf("DeleteURL failed: %v", err)
+	}
+
+	if _, err := svc.GetURLByCode(ctx, created.ShortCode); err != model.ErrURLNotFound {
+		t.Errorf("GetURLByCode after delete: got %v, want ErrURLNotFound", err)
+	}
+
+	if err := svc.DeleteURL(ctx, created.ShortCode); err != model.ErrURLNotFound {
+		t.Errorf("DeleteURL on missing code: got %v, want ErrURLNotFound", err)
 	}
 }

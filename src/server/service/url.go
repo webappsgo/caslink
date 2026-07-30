@@ -125,8 +125,106 @@ func (s *URLService) CreateURL(ctx context.Context, req *model.CreateURLRequest)
 	return urlRecord, nil
 }
 
+// UpdateURL applies a partial update to an existing short URL per AI.md
+// PART 16 (`PUT /api/{api_version}/links/{code}`). Only fields present in
+// req are changed; nil fields are left as-is. Returns model.ErrURLNotFound
+// if the code does not exist.
+func (s *URLService) UpdateURL(ctx context.Context, shortCode string, req *model.UpdateURLRequest) (*model.URL, error) {
+	// Use the raw (non-expiry-checking) fetch so an expired link can still
+	// be edited — e.g. to push out expires_at and revive it.
+	existing, err := s.getURLByCodeRaw(ctx, shortCode)
+	if err != nil {
+		return nil, err
+	}
+
+	longURL := existing.LongURL
+	if req.LongURL != nil {
+		if _, err := url.ParseRequestURI(*req.LongURL); err != nil {
+			return nil, fmt.Errorf("invalid URL: %w", err)
+		}
+		longURL = *req.LongURL
+	}
+
+	title := existing.Title
+	if req.Title != nil {
+		title = req.Title
+	}
+
+	description := existing.Description
+	if req.Description != nil {
+		description = req.Description
+	}
+
+	passwordHash := existing.PasswordHash
+	if req.Password != nil {
+		if *req.Password == "" {
+			passwordHash = nil
+		} else {
+			hash, err := hashPasswordArgon2id(*req.Password)
+			if err != nil {
+				return nil, fmt.Errorf("failed to hash URL password: %w", err)
+			}
+			passwordHash = &hash
+		}
+	}
+
+	expiresAt := existing.ExpiresAt
+	if req.ExpiresAt != nil {
+		expiresAt = req.ExpiresAt
+	}
+
+	query := `UPDATE urls SET long_url = ?, title = ?, description = ?, password_hash = ?, expires_at = ?, updated_at = CURRENT_TIMESTAMP
+	          WHERE short_code = ?`
+	if _, err := s.store.ServerDB.ExecContext(ctx, query,
+		longURL, title, description, passwordHash, expiresAt, shortCode); err != nil {
+		return nil, fmt.Errorf("failed to update URL: %w", err)
+	}
+
+	return s.GetURLByCode(ctx, shortCode)
+}
+
+// DeleteURL permanently removes a short URL per AI.md PART 16
+// (`DELETE /api/{api_version}/links/{code}`). Returns model.ErrURLNotFound
+// if the code does not exist.
+func (s *URLService) DeleteURL(ctx context.Context, shortCode string) error {
+	result, err := s.store.ServerDB.ExecContext(ctx, `DELETE FROM urls WHERE short_code = ?`, shortCode)
+	if err != nil {
+		return fmt.Errorf("failed to delete URL: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to confirm delete: %w", err)
+	}
+	if rows == 0 {
+		return model.ErrURLNotFound
+	}
+	return nil
+}
+
 // GetURLByCode retrieves a URL by its short code
 func (s *URLService) GetURLByCode(ctx context.Context, shortCode string) (*model.URL, error) {
+	u, err := s.getURLByCodeRaw(ctx, shortCode)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if expired
+	if u.ExpiresAt != nil && time.Now().After(*u.ExpiresAt) {
+		return nil, model.ErrURLExpired
+	}
+
+	return u, nil
+}
+
+// GetURLByCodeAny retrieves a URL by its short code without the expiry
+// check, so callers that need to operate on (or revive) an expired link —
+// UpdateURL, DeleteURL, and their ownership checks — are not blocked by
+// model.ErrURLExpired.
+func (s *URLService) GetURLByCodeAny(ctx context.Context, shortCode string) (*model.URL, error) {
+	return s.getURLByCodeRaw(ctx, shortCode)
+}
+
+func (s *URLService) getURLByCodeRaw(ctx context.Context, shortCode string) (*model.URL, error) {
 	query := `SELECT id, short_code, long_url, title, description, user_id, custom_code, password_hash, expires_at, created_at, updated_at
 	          FROM urls WHERE short_code = ?`
 
@@ -142,11 +240,6 @@ func (s *URLService) GetURLByCode(ctx context.Context, shortCode string) (*model
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to query URL: %w", err)
-	}
-
-	// Check if expired
-	if u.ExpiresAt != nil && time.Now().After(*u.ExpiresAt) {
-		return nil, model.ErrURLExpired
 	}
 
 	return &u, nil

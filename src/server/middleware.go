@@ -486,7 +486,7 @@ func OrgMemberMiddleware(orgService *service.OrgService) func(http.Handler) http
 
 // ---- Bearer token middleware -------------------------------------------
 
-const bearerContextKey = handler.ContextKey("bearer_user")
+const bearerContextKey = handler.BearerContextKey
 
 // BearerAuthMiddleware validates Authorization: Bearer <token> headers.
 // On failure it returns 401; on success the TokenRecord is stored in context.

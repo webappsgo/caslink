@@ -89,8 +89,11 @@ Last full audit: 2026-07-30
 
 ## PART 16 — Web Frontend
 
-- [HIGH] Link update & delete do not exist anywhere (no service, no handler, web or
-  API); `model.UpdateURLRequest` defined but unused. — `service/url.go`, `handler/url.go`, dashboard UI
+- [MED] Org-owned links (`urls.org_id` column exists) are not modeled in
+  `model.URL`/`URLService` and are never set on create; the new UpdateURL/
+  DeleteURL ownership check (2026-07-30) therefore only recognizes per-user
+  ownership — org-token API callers get 404 on any link mutation, even for
+  links belonging to their org. — `src/server/model/url.go`, `service/url.go`
 - [HIGH] Link-management frontend beyond create is absent: no per-link stats page,
   no edit/delete UI, no web QR-display page, no bulk import/export forms (QR/stats/
   bulk exist only as API). — new templates + web routes
@@ -269,6 +272,13 @@ Last full audit: 2026-07-30
 - [LOW] `log.Fatalf()` used instead of `os.Exit()` with an explicit sysexits code —
   sets exit code 1 only (found by `go-lint`, 2026-07-30). —
   `src/server/tmpl/tmpl.go` line 114, `src/server/server.go` line 936
+- [LOW] `os.Exit(4)` — code outside standard ranges (0-2, 64-78, 128-143)
+  (found by `go-lint`, 2026-07-30). — `src/client/cli/commands.go` line 216
+
+## PART 16 — Web Frontend (additional, found by go-lint 2026-07-30)
+
+- [HIGH] `src/graphql/graphql.go` lines 125-126 render client-side React —
+  CLAUDE.md NEVER-do #11 requires server-side Go templates only.
 
 ## Deferred / intentional (do NOT re-flag)
 

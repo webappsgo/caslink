@@ -707,6 +707,8 @@ func (s *Server) setupRoutes() {
 		r.Group(func(ar chi.Router) {
 			ar.Use(bearerMiddleware)
 			ar.Post("/urls", urlHandler.CreateURL)
+			ar.Put("/urls/{code}", urlHandler.UpdateURL)
+			ar.Delete("/urls/{code}", urlHandler.DeleteURL)
 		})
 
 		// Public read endpoints

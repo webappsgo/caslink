@@ -117,6 +117,10 @@ const (
 	UserContextKey ContextKey = "user"
 	// AdminContextKey is the context key for the authenticated *service.Admin.
 	AdminContextKey ContextKey = "admin"
+	// BearerContextKey is the context key for the *service.TokenRecord
+	// attached by server.BearerAuthMiddleware on Bearer-authenticated API
+	// requests.
+	BearerContextKey ContextKey = "bearer_user"
 )
 
 // getUserFromRequest returns the authenticated user attached by the
@@ -124,6 +128,14 @@ const (
 func getUserFromRequest(r *http.Request) (*service.User, bool) {
 	user, ok := r.Context().Value(UserContextKey).(*service.User)
 	return user, ok
+}
+
+// getBearerFromRequest returns the *service.TokenRecord attached by
+// server.BearerAuthMiddleware, or (nil, false) if the request was not
+// Bearer-authenticated.
+func getBearerFromRequest(r *http.Request) (*service.TokenRecord, bool) {
+	rec, ok := r.Context().Value(BearerContextKey).(*service.TokenRecord)
+	return rec, ok
 }
 
 // csrfToken returns the CSRF token from the csrf_token cookie.
