@@ -232,13 +232,13 @@ func (s *URLService) GetURLByCodeAny(ctx context.Context, shortCode string) (*mo
 }
 
 func (s *URLService) getURLByCodeRaw(ctx context.Context, shortCode string) (*model.URL, error) {
-	query := `SELECT id, short_code, long_url, title, description, user_id, custom_code, password_hash, expires_at, created_at, updated_at
+	query := `SELECT id, short_code, long_url, title, description, user_id, org_id, custom_code, password_hash, expires_at, created_at, updated_at
 	          FROM urls WHERE short_code = ?`
 
 	var u model.URL
 	err := s.store.ServerDB.QueryRowContext(ctx, query, shortCode).Scan(
 		&u.ID, &u.ShortCode, &u.LongURL, &u.Title, &u.Description,
-		&u.UserID, &u.CustomCode, &u.PasswordHash, &u.ExpiresAt,
+		&u.UserID, &u.OrgID, &u.CustomCode, &u.PasswordHash, &u.ExpiresAt,
 		&u.CreatedAt, &u.UpdatedAt,
 	)
 
@@ -346,6 +346,74 @@ func (s *URLService) CreateURLForUser(ctx context.Context, userID int64, req *mo
 	}, nil
 }
 
+// CreateURLForOrg creates a shortened URL owned by the given org (used by
+// org-scoped Bearer tokens, OwnerType "org" — see service/token.go). Mirrors
+// CreateURLForUser but sets org_id instead of user_id, per AI.md PART 35 /
+// TODO.AI.md PART 16 org-owned-link modeling.
+func (s *URLService) CreateURLForOrg(ctx context.Context, orgID int64, req *model.CreateURLRequest) (*model.URL, error) {
+	if _, err := url.ParseRequestURI(req.LongURL); err != nil {
+		return nil, fmt.Errorf("invalid URL: %w", err)
+	}
+
+	var shortCode string
+	var isCustom bool
+
+	if req.CustomCode != "" {
+		if err := s.validateCustomCode(req.CustomCode); err != nil {
+			return nil, err
+		}
+		exists, err := s.codeExists(ctx, req.CustomCode)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check code: %w", err)
+		}
+		if exists {
+			return nil, model.ErrCodeAlreadyExists
+		}
+		shortCode = req.CustomCode
+		isCustom = true
+	} else {
+		code, err := s.generateRandomCode(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate code: %w", err)
+		}
+		shortCode = code
+	}
+
+	var expiresAt *time.Time
+	if req.ExpiresAt != nil {
+		expiresAt = req.ExpiresAt
+	} else if req.ExpireAfter != "" {
+		exp := parseExpiration(req.ExpireAfter)
+		expiresAt = &exp
+	}
+
+	query := `INSERT INTO urls (short_code, long_url, title, description, org_id, custom_code, expires_at)
+	          VALUES (?, ?, ?, ?, ?, ?, ?)`
+
+	result, err := s.store.ServerDB.ExecContext(ctx, query,
+		shortCode, req.LongURL, req.Title, req.Description, orgID, isCustom, expiresAt)
+	if err != nil {
+		return nil, fmt.Errorf("failed to insert URL: %w", err)
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get insert ID: %w", err)
+	}
+
+	return &model.URL{
+		ID:         id,
+		ShortCode:  shortCode,
+		LongURL:    req.LongURL,
+		Title:      req.Title,
+		OrgID:      &orgID,
+		CustomCode: isCustom,
+		ExpiresAt:  expiresAt,
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}, nil
+}
+
 // ListByUser returns the most recent URLs created by a user (up to limit).
 func (s *URLService) ListByUser(ctx context.Context, userID int64, limit int) ([]*model.URL, error) {
 	return s.ListByUserPage(ctx, userID, limit, 0)
@@ -360,7 +428,7 @@ func (s *URLService) ListByUserPage(ctx context.Context, userID int64, limit, of
 	if offset < 0 {
 		offset = 0
 	}
-	query := `SELECT id, short_code, long_url, title, description, user_id, custom_code, password_hash, expires_at, created_at, updated_at
+	query := `SELECT id, short_code, long_url, title, description, user_id, org_id, custom_code, password_hash, expires_at, created_at, updated_at
 	          FROM urls WHERE user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
 
 	rows, err := s.store.ServerDB.QueryContext(ctx, query, userID, limit, offset)
@@ -374,7 +442,7 @@ func (s *URLService) ListByUserPage(ctx context.Context, userID int64, limit, of
 		var u model.URL
 		if err := rows.Scan(
 			&u.ID, &u.ShortCode, &u.LongURL, &u.Title, &u.Description,
-			&u.UserID, &u.CustomCode, &u.PasswordHash, &u.ExpiresAt,
+			&u.UserID, &u.OrgID, &u.CustomCode, &u.PasswordHash, &u.ExpiresAt,
 			&u.CreatedAt, &u.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan URL row: %w", err)
@@ -389,6 +457,50 @@ func (s *URLService) ListByUserPage(ctx context.Context, userID int64, limit, of
 func (s *URLService) CountByUser(ctx context.Context, userID int64) (int, error) {
 	var n int
 	err := s.store.ServerDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM urls WHERE user_id = ?`, userID).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count URLs: %w", err)
+	}
+	return n, nil
+}
+
+// ListByOrgPage returns a page of URLs owned by an org, newest first,
+// mirroring ListByUserPage for org-scoped Bearer tokens.
+func (s *URLService) ListByOrgPage(ctx context.Context, orgID int64, limit, offset int) ([]*model.URL, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	query := `SELECT id, short_code, long_url, title, description, user_id, org_id, custom_code, password_hash, expires_at, created_at, updated_at
+	          FROM urls WHERE org_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?`
+
+	rows, err := s.store.ServerDB.QueryContext(ctx, query, orgID, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list URLs: %w", err)
+	}
+	defer rows.Close()
+
+	var urls []*model.URL
+	for rows.Next() {
+		var u model.URL
+		if err := rows.Scan(
+			&u.ID, &u.ShortCode, &u.LongURL, &u.Title, &u.Description,
+			&u.UserID, &u.OrgID, &u.CustomCode, &u.PasswordHash, &u.ExpiresAt,
+			&u.CreatedAt, &u.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan URL row: %w", err)
+		}
+		urls = append(urls, &u)
+	}
+	return urls, rows.Err()
+}
+
+// CountByOrg returns the total number of URLs owned by an org, for
+// pagination totals on org-scoped list endpoints.
+func (s *URLService) CountByOrg(ctx context.Context, orgID int64) (int, error) {
+	var n int
+	err := s.store.ServerDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM urls WHERE org_id = ?`, orgID).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count URLs: %w", err)
 	}

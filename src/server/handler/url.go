@@ -69,15 +69,17 @@ func (h *URLHandler) CreateURL(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Bearer-authenticated user tokens own the links they create, so the
-	// caller can later edit/delete them (see UpdateURL/DeleteURL ownership
-	// check below). Admin/org tokens keep the prior anonymous behavior —
-	// org-owned links are tracked separately (see TODO.AI.md PART 35).
+	// Bearer-authenticated user/org tokens own the links they create, so the
+	// caller can later edit/delete them (see checkURLOwnership below). Admin
+	// tokens keep the prior anonymous (unowned) behavior.
 	var url *model.URL
 	var err error
-	if rec, ok := getBearerFromRequest(r); ok && strings.EqualFold(rec.OwnerType, "user") {
+	switch rec, ok := getBearerFromRequest(r); {
+	case ok && strings.EqualFold(rec.OwnerType, "user"):
 		url, err = h.urlService.CreateURLForUser(r.Context(), rec.OwnerID, &req)
-	} else {
+	case ok && strings.EqualFold(rec.OwnerType, "org"):
+		url, err = h.urlService.CreateURLForOrg(r.Context(), rec.OwnerID, &req)
+	default:
 		url, err = h.urlService.CreateURL(r.Context(), &req)
 	}
 	if err != nil {
@@ -149,14 +151,14 @@ type urlListResponse struct {
 }
 
 // ListURLs handles GET /api/v1/urls per AI.md PART 14 (current Bearer-
-// authenticated user's own links, paginated via ?page&limit). Only
-// user-owned tokens have a meaningful "own links" list; admin/org tokens
-// are rejected since PART 14 scopes /users/* to the current user's
-// resources — admins list all links via the admin config API instead.
+// authenticated caller's own links, paginated via ?page&limit). User tokens
+// list their own links; org tokens list the org's links. Admin tokens are
+// rejected since PART 14 scopes /users/* to the current caller's resources —
+// admins list all links via the admin config API instead.
 func (h *URLHandler) ListURLs(w http.ResponseWriter, r *http.Request) {
 	rec, ok := getBearerFromRequest(r)
-	if !ok || !strings.EqualFold(rec.OwnerType, "user") {
-		respondError(w, http.StatusUnauthorized, "Bearer user token required")
+	if !ok || !(strings.EqualFold(rec.OwnerType, "user") || strings.EqualFold(rec.OwnerType, "org")) {
+		respondError(w, http.StatusUnauthorized, "Bearer user or org token required")
 		return
 	}
 
@@ -174,14 +176,22 @@ func (h *URLHandler) ListURLs(w http.ResponseWriter, r *http.Request) {
 	}
 	offset := (page - 1) * limit
 
-	urls, err := h.urlService.ListByUserPage(r.Context(), rec.OwnerID, limit, offset)
+	var urls []*model.URL
+	var total int
+	var err error
+	if strings.EqualFold(rec.OwnerType, "org") {
+		urls, err = h.urlService.ListByOrgPage(r.Context(), rec.OwnerID, limit, offset)
+		if err == nil {
+			total, err = h.urlService.CountByOrg(r.Context(), rec.OwnerID)
+		}
+	} else {
+		urls, err = h.urlService.ListByUserPage(r.Context(), rec.OwnerID, limit, offset)
+		if err == nil {
+			total, err = h.urlService.CountByUser(r.Context(), rec.OwnerID)
+		}
+	}
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to list URLs")
-		return
-	}
-	total, err := h.urlService.CountByUser(r.Context(), rec.OwnerID)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "Failed to count URLs")
 		return
 	}
 
@@ -262,11 +272,12 @@ func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
 }
 
 // checkURLOwnership verifies the Bearer-authenticated caller is allowed to
-// mutate the given URL: admin tokens always pass; user tokens must match
-// the URL's owning user_id. Links with no owner (org-owned, or created
-// before ownership was tracked) can only be mutated by an admin token —
-// see TODO.AI.md PART 35 for org-owned link ownership wiring. Returns false
-// (after writing the response) when the caller must not proceed.
+// mutate the given URL: admin tokens always pass; user tokens must match the
+// URL's owning user_id; org tokens must match the URL's owning org_id (the
+// org token's OwnerID is the org's ID — see service/token.go). Links with no
+// owner (created before ownership was tracked) can only be mutated by an
+// admin token. Returns false (after writing the response) when the caller
+// must not proceed.
 func (h *URLHandler) checkURLOwnership(w http.ResponseWriter, r *http.Request, code string) bool {
 	rec, ok := getBearerFromRequest(r)
 	if !ok {
@@ -285,6 +296,13 @@ func (h *URLHandler) checkURLOwnership(w http.ResponseWriter, r *http.Request, c
 		}
 		respondError(w, http.StatusInternalServerError, "Failed to load URL")
 		return false
+	}
+	if strings.EqualFold(rec.OwnerType, "org") {
+		if existing.OrgID == nil || *existing.OrgID != rec.OwnerID {
+			respondError(w, http.StatusNotFound, "URL not found")
+			return false
+		}
+		return true
 	}
 	if existing.UserID == nil || *existing.UserID != rec.OwnerID {
 		respondError(w, http.StatusNotFound, "URL not found")

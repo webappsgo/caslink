@@ -13,6 +13,7 @@ type URL struct {
 	Title       *string    `json:"title,omitempty"`
 	Description *string    `json:"description,omitempty"`
 	UserID      *int64     `json:"user_id,omitempty"`
+	OrgID       *int64     `json:"org_id,omitempty"`
 	CustomCode  bool       `json:"custom_code"`
 	PasswordHash *string   `json:"-"` // Never expose in JSON
 	ExpiresAt   *time.Time `json:"expires_at,omitempty"`

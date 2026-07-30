@@ -117,11 +117,14 @@ Last full audit: 2026-07-30
 
 ## PART 16 — Web Frontend
 
-- [MED] Org-owned links (`urls.org_id` column exists) are not modeled in
-  `model.URL`/`URLService` and are never set on create; the new UpdateURL/
-  DeleteURL ownership check (2026-07-30) therefore only recognizes per-user
-  ownership — org-token API callers get 404 on any link mutation, even for
-  links belonging to their org. — `src/server/model/url.go`, `service/url.go`
+- [DONE 2026-07-30] Org-owned links: added `model.URL.OrgID`, wired into
+  `getURLByCodeRaw`/`ListByUserPage` scans; added `CreateURLForOrg`,
+  `ListByOrgPage`, `CountByOrg`. `CreateURL` handler now creates
+  org-owned links for `OwnerType=="org"` Bearer tokens (org token's
+  `OwnerID` is the org ID); `checkURLOwnership` now matches `org_id` for
+  org tokens instead of always 404ing them; `ListURLs` now serves org
+  tokens too. — `src/server/model/url.go`, `service/url.go`,
+  `handler/url.go`
 - [DONE 2026-07-30] Link-management frontend beyond create: added per-link
   manage page (stats, QR display, edit form, delete with confirm), bulk
   import/export page, `WebURLManage` GET+POST handler, `/users/urls/{code}`,
