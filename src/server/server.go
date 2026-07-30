@@ -427,9 +427,11 @@ func (s *Server) setupRoutes() {
 	s.router.Get("/.well-known/acme-challenge/{token}", s.wellKnownACMEChallenge)
 
 	// GraphQL API
-	// GraphiQL UI at /graphiql; vendor assets embedded in the binary.
+	// GraphiQL UI replaced with a server-rendered query console at /graphiql
+	// (GET renders the form, POST executes and re-renders) — no client-side
+	// rendering framework, per AI.md PART 16.
 	s.router.Get("/graphiql", graphql.Handler(s.Version))
-	s.router.Handle("/server/docs/graphql/static/*", graphql.StaticHandler())
+	s.router.Post("/graphiql", graphql.Handler(s.Version))
 	s.router.Get("/graphql/schema", graphql.SchemaHandler())
 	s.router.Post("/graphql", graphql.QueryHandler())
 

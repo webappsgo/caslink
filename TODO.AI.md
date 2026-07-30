@@ -347,8 +347,13 @@ Last full audit: 2026-07-30
 
 ## PART 16 — Web Frontend (additional, found by go-lint 2026-07-30)
 
-- [HIGH] `src/graphql/graphql.go` lines 125-126 render client-side React —
-  CLAUDE.md NEVER-do #11 requires server-side Go templates only.
+- [DONE 2026-07-30] `src/graphql/graphql.go` rendered client-side React —
+  CLAUDE.md NEVER-do #11 requires server-side Go templates only. Fixed by
+  replacing the GraphiQL/React bundle with a server-rendered query console
+  (GET renders an empty form, POST executes the query and re-renders the
+  page with the JSON result) — works fully without JavaScript. Removed the
+  now-unused vendored React/GraphiQL static assets and StaticHandler route.
+  — `src/graphql/graphql.go`, `src/server/server.go`
 
 ## Deferred / intentional (do NOT re-flag)
 
