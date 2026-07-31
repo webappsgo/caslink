@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -554,7 +555,8 @@ func (h *URLHandler) WebURLManage(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if _, err := h.urlService.UpdateURL(r.Context(), code, req); err != nil {
-				h.renderURLManage(w, r, user, code, &tmpl.Flash{Type: "danger", Message: "Failed to update link: " + err.Error()})
+				log.Printf("[url] update link %q failed: %v", code, err)
+				h.renderURLManage(w, r, user, code, &tmpl.Flash{Type: "danger", Message: "Failed to update link"})
 				return
 			}
 			h.renderURLManage(w, r, user, code, &tmpl.Flash{Type: "success", Message: "Link updated."})

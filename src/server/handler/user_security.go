@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"html/template"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -17,25 +18,25 @@ import (
 
 // UserSecurityHandler handles user security-related routes.
 type UserSecurityHandler struct {
-	authService    *service.AuthService
-	totpService    *service.TOTPService
-	qrService      *service.QRService
-	emailService   *service.EmailService
+	authService     *service.AuthService
+	totpService     *service.TOTPService
+	qrService       *service.QRService
+	emailService    *service.EmailService
 	webauthnService *service.WebAuthnService
-	renderer       *tmpl.Renderer
-	config         *config.Config
+	renderer        *tmpl.Renderer
+	config          *config.Config
 }
 
 // NewUserSecurityHandler creates a new user security handler.
 func NewUserSecurityHandler(authService *service.AuthService, totpService *service.TOTPService, qrService *service.QRService, emailService *service.EmailService, webauthnSvc *service.WebAuthnService, renderer *tmpl.Renderer, cfg *config.Config) *UserSecurityHandler {
 	return &UserSecurityHandler{
-		authService:    authService,
-		totpService:    totpService,
-		qrService:      qrService,
-		emailService:   emailService,
+		authService:     authService,
+		totpService:     totpService,
+		qrService:       qrService,
+		emailService:    emailService,
 		webauthnService: webauthnSvc,
-		renderer:       renderer,
-		config:         cfg,
+		renderer:        renderer,
+		config:          cfg,
 	}
 }
 
@@ -98,7 +99,8 @@ func (h *UserSecurityHandler) handlePasswordChange(w http.ResponseWriter, r *htt
 
 	// Change password
 	if err := h.authService.ChangePassword(user.ID, newPassword); err != nil {
-		http.Error(w, "Failed to change password: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("[user_security] change password failed for user %d: %v", user.ID, err)
+		http.Error(w, "Failed to change password", http.StatusInternalServerError)
 		return
 	}
 
@@ -277,25 +279,25 @@ func (h *UserSecurityHandler) handleTOTPEnable(w http.ResponseWriter, r *http.Re
 		h.renderTOTPPasswordConfirm(w, r, user)
 		return
 	}
-	
+
 	// Verify password
 	if err := h.authService.VerifyPassword(user.ID, password); err != nil {
 		http.Error(w, "Incorrect password", http.StatusUnauthorized)
 		return
 	}
-	
+
 	// Step 2: Generate TOTP secret per PART 23 line 20094-20106
 	secret, err := h.totpService.GenerateTOTPSecret()
 	if err != nil {
 		http.Error(w, "Failed to generate TOTP secret", http.StatusInternalServerError)
 		return
 	}
-	
+
 	// Generate QR code URL
 	issuer := "Caslink"
 	accountName := user.Username
 	qrURL := h.totpService.GenerateQRCodeURL(secret, issuer, accountName)
-	
+
 	// Show QR code and manual entry key
 	h.renderTOTPSetup(w, r, user, secret, qrURL)
 }
@@ -331,8 +333,8 @@ func (h *UserSecurityHandler) renderTOTPSetup(w http.ResponseWriter, r *http.Req
 		TOTPSecret            string
 		RecoveryKeysRemaining int
 	}{
-		Data:      newPageData(h.config, r, "Enable Two-Factor Authentication", user),
-		QRDataURL: qrDataURL,
+		Data:       newPageData(h.config, r, "Enable Two-Factor Authentication", user),
+		QRDataURL:  qrDataURL,
 		TOTPSecret: secret,
 	}
 	h.renderer.Render(w, "template/page/users/security/2fa.html", data)
@@ -342,25 +344,26 @@ func (h *UserSecurityHandler) renderTOTPSetup(w http.ResponseWriter, r *http.Req
 func (h *UserSecurityHandler) handleTOTPVerify(w http.ResponseWriter, r *http.Request, user *service.User) {
 	secret := strings.TrimSpace(r.FormValue("secret"))
 	code := strings.TrimSpace(r.FormValue("code"))
-	
+
 	if secret == "" || code == "" {
 		http.Error(w, "Missing secret or code", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Verify TOTP code
 	if !h.totpService.VerifyTOTPCode(secret, code) {
 		http.Error(w, "Invalid verification code. Please try again.", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Enable TOTP and generate recovery keys per PART 23 line 20145-20147
 	recoveryKeys, err := h.totpService.EnableTOTP(user.ID, secret)
 	if err != nil {
-		http.Error(w, "Failed to enable 2FA: "+err.Error(), http.StatusInternalServerError)
+		log.Printf("[user_security] enable 2FA failed for user %d: %v", user.ID, err)
+		http.Error(w, "Failed to enable 2FA", http.StatusInternalServerError)
 		return
 	}
-	
+
 	// Show recovery keys per PART 23 line 20032-20055
 	h.renderRecoveryKeys(w, r, user, recoveryKeys)
 }
@@ -375,12 +378,12 @@ func (h *UserSecurityHandler) renderRecoveryKeys(w http.ResponseWriter, r *http.
 	}
 	type recoveryKeysData struct {
 		tmpl.Data
-		Keys    []string
+		Keys     []string
 		KeysJSON template.JS
 	}
 	data := recoveryKeysData{
-		Data:    newPageData(h.config, r, "Save Recovery Keys", user),
-		Keys:    keys,
+		Data:     newPageData(h.config, r, "Save Recovery Keys", user),
+		Keys:     keys,
 		KeysJSON: template.JS(keysJSON),
 	}
 	h.renderer.Render(w, "template/page/users/security/recovery-keys.html", data)
@@ -393,29 +396,29 @@ func (h *UserSecurityHandler) handleTOTPDisable(w http.ResponseWriter, r *http.R
 		http.Error(w, "Password required to disable 2FA", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Verify password
 	if err := h.authService.VerifyPassword(user.ID, password); err != nil {
 		http.Error(w, "Incorrect password", http.StatusUnauthorized)
 		return
 	}
-	
+
 	// Disable TOTP
 	if err := h.totpService.DisableTOTP(user.ID); err != nil {
 		http.Error(w, "Failed to disable 2FA", http.StatusInternalServerError)
 		return
 	}
-	
+
 	// Send 2FA disabled email notification per PART 26
 	clientIP := r.RemoteAddr
 	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
 		clientIP = strings.Split(forwarded, ",")[0]
 	}
-	
+
 	// Note: Password changed template used for 2FA changes per PART 26
 	// In production, would use a dedicated 2fa_disabled template
 	_ = h.emailService.SendPasswordChanged(user.Email, user.Username, clientIP, "2FA disabled")
-	
+
 	http.Redirect(w, r, "/users/security?msg=2fa_disabled", http.StatusSeeOther)
 }
 
@@ -765,36 +768,36 @@ func (h *UserSecurityHandler) handleRecoveryAction(w http.ResponseWriter, r *htt
 			http.Error(w, "Password required to regenerate recovery keys", http.StatusBadRequest)
 			return
 		}
-		
+
 		// Verify password
 		if err := h.authService.VerifyPassword(user.ID, password); err != nil {
 			http.Error(w, "Incorrect password", http.StatusUnauthorized)
 			return
 		}
-		
+
 		// Check if user has 2FA enabled
 		if !h.totpService.HasTOTP(user.ID) {
 			http.Error(w, "2FA must be enabled to regenerate recovery keys", http.StatusBadRequest)
 			return
 		}
-		
+
 		// Get current TOTP secret
 		secret, err := h.totpService.GetTOTPSecret(user.ID)
 		if err != nil {
 			http.Error(w, "Failed to get TOTP secret", http.StatusInternalServerError)
 			return
 		}
-		
+
 		// Regenerate recovery keys (this replaces old ones)
 		newKeys, err := h.totpService.EnableTOTP(user.ID, secret)
 		if err != nil {
 			http.Error(w, "Failed to regenerate recovery keys", http.StatusInternalServerError)
 			return
 		}
-		
+
 		// Show new recovery keys
 		h.renderRecoveryKeys(w, r, user, newKeys)
-		
+
 	default:
 		http.Error(w, "Invalid action", http.StatusBadRequest)
 	}
