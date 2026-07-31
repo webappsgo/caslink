@@ -3,11 +3,12 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	mysqldriver "github.com/go-sql-driver/mysql"
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/microsoft/go-mssqldb"
 	_ "modernc.org/sqlite"
@@ -119,7 +120,19 @@ func OpenStoreWithConfig(
 	return st, nil
 }
 
-// buildPostgresDSN builds a postgres connection string.
+// quotePostgresValue quotes a libpq key=value DSN value so that spaces,
+// quotes, backslashes, or any other special character in the value are
+// never interpreted as a field delimiter. Per libpq's connection-string
+// format, values are always safe to single-quote, escaping any embedded
+// backslash or single quote with a leading backslash.
+func quotePostgresValue(v string) string {
+	escaped := strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(v)
+	return "'" + escaped + "'"
+}
+
+// buildPostgresDSN builds a postgres connection string, quoting every value
+// so credentials containing spaces, quotes, or backslashes never break the
+// key=value parsing or leak into an unintended field.
 func buildPostgresDSN(host string, port int, dbName, user, password, sslMode string) string {
 	if sslMode == "" {
 		sslMode = "require"
@@ -129,26 +142,47 @@ func buildPostgresDSN(host string, port int, dbName, user, password, sslMode str
 	}
 	return fmt.Sprintf(
 		"host=%s port=%d dbname=%s user=%s password=%s sslmode=%s",
-		host, port, dbName, user, password, sslMode,
+		quotePostgresValue(host), port, quotePostgresValue(dbName),
+		quotePostgresValue(user), quotePostgresValue(password), quotePostgresValue(sslMode),
 	)
 }
 
-// buildMySQLDSN builds a MySQL/MariaDB DSN.
+// buildMySQLDSN builds a MySQL/MariaDB DSN using the driver's own
+// mysql.Config/FormatDSN, which correctly escapes credentials containing
+// special characters (e.g. "@" or ":" in the password) instead of the naive
+// "user:password@tcp(host:port)/db" string formatting, which breaks on
+// those characters since they're also DSN field delimiters.
 func buildMySQLDSN(host string, port int, dbName, user, password string) string {
 	if port == 0 {
 		port = 3306
 	}
-	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true&loc=UTC&charset=utf8mb4&collation=utf8mb4_unicode_ci",
-		user, password, host, port, dbName,
-	)
+	cfg := mysqldriver.NewConfig()
+	cfg.User = user
+	cfg.Passwd = password
+	cfg.Net = "tcp"
+	cfg.Addr = fmt.Sprintf("%s:%d", host, port)
+	cfg.DBName = dbName
+	cfg.ParseTime = true
+	cfg.Loc = time.UTC
+	cfg.Collation = "utf8mb4_unicode_ci"
+	return cfg.FormatDSN()
 }
 
-// buildSQLServerDSN builds a SQL Server connection string.
+// buildSQLServerDSN builds a SQL Server connection string using net/url so
+// credentials containing special characters (spaces, "@", ":", "/") are
+// percent-encoded instead of interpolated raw into the URL, which would
+// otherwise produce a malformed DSN or connect to the wrong target.
 func buildSQLServerDSN(host string, port int, dbName, user, password string) string {
 	if port == 0 {
 		port = 1433
 	}
-	return fmt.Sprintf("sqlserver://%s:%s@%s:%d?database=%s",
-		user, password, host, port, dbName,
-	)
+	u := url.URL{
+		Scheme: "sqlserver",
+		User:   url.UserPassword(user, password),
+		Host:   fmt.Sprintf("%s:%d", host, port),
+	}
+	q := url.Values{}
+	q.Set("database", dbName)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
