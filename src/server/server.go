@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/subtle"
 	"fmt"
 	"log"
 	"net"
@@ -421,7 +422,8 @@ func (s *Server) setupRoutes() {
 		s.router.Get(endpoint, func(w http.ResponseWriter, r *http.Request) {
 			if token != "" {
 				auth := r.Header.Get("Authorization")
-				if auth != "Bearer "+token {
+				expected := "Bearer " + token
+				if subtle.ConstantTimeCompare([]byte(auth), []byte(expected)) != 1 {
 					http.Error(w, "Unauthorized", http.StatusUnauthorized)
 					return
 				}
