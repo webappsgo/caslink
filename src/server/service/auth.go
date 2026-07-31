@@ -65,6 +65,10 @@ func (s *AuthService) AuthenticateAdmin(ctx context.Context, username, password 
 	)
 
 	if err == sql.ErrNoRows {
+		// Run Argon2id against a dummy hash so timing is identical to
+		// the wrong-password path and leaks no admin-existence signal.
+		const dummyHash = "$argon2id$v=19$m=65536,t=1,p=1$dGVzdHNhbHQ$dGVzdGhhc2g"
+		verifyPasswordArgon2id(password, dummyHash)
 		return nil, fmt.Errorf("invalid credentials")
 	}
 	if err != nil {
@@ -452,6 +456,20 @@ func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword stri
 		return fmt.Errorf("failed to hash password: %w", err)
 	}
 
+	// Consume the token atomically FIRST: gate on used_at IS NULL so two
+	// concurrent resets cannot both spend the same token. If no row is
+	// affected the token was already used (or lost the race), so abort
+	// before touching the password.
+	tokenHash := hashToken(token)
+	markUsedQuery := `UPDATE password_resets SET used_at = ? WHERE token_hash = ? AND used_at IS NULL`
+	res, err := s.store.UsersDB.ExecContext(ctx, markUsedQuery, time.Now().Unix(), tokenHash)
+	if err != nil {
+		return fmt.Errorf("failed to consume reset token: %w", err)
+	}
+	if n, err := res.RowsAffected(); err != nil || n != 1 {
+		return fmt.Errorf("reset token already used or invalid")
+	}
+
 	// Update password
 	var updateQuery string
 	if userType == "admin" {
@@ -464,12 +482,6 @@ func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword stri
 	if err != nil {
 		return fmt.Errorf("failed to update password: %w", err)
 	}
-
-	// Mark token as used
-	tokenHash := hashToken(token)
-	markUsedQuery := `UPDATE password_resets SET used_at = ? WHERE token_hash = ?`
-	// Best-effort update — don't fail password reset if marking token fails
-	_, _ = s.store.UsersDB.ExecContext(ctx, markUsedQuery, time.Now().Unix(), tokenHash)
 
 	// Invalidate all existing sessions per PART 23 line 20534.
 	// Admin sessions live in server.db; user sessions live in users.db.
@@ -487,17 +499,17 @@ func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword stri
 // VerifyPassword verifies a user's current password
 func (s *AuthService) VerifyPassword(userID int64, password string) error {
 	query := `SELECT password_hash FROM users WHERE id = ?`
-	
+
 	var passwordHash string
 	err := s.store.UsersDB.QueryRow(query, userID).Scan(&passwordHash)
 	if err != nil {
 		return fmt.Errorf("failed to get password hash: %w", err)
 	}
-	
+
 	if !verifyPasswordArgon2id(password, passwordHash) {
 		return fmt.Errorf("incorrect password")
 	}
-	
+
 	return nil
 }
 
@@ -576,7 +588,6 @@ func hashToken(token string) string {
 	hash := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(hash[:])
 }
-
 
 // Session represents an active session with metadata.
 type Session struct {
