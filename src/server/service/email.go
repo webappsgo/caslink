@@ -24,6 +24,12 @@ var (
 	emailVerifyTemplate     = emailtmpl.EmailVerifyEmail
 )
 
+// stripHeaderCRLF removes carriage-return and line-feed characters from a
+// value destined for an email header, defeating SMTP header-injection.
+func stripHeaderCRLF(v string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(v)
+}
+
 // EmailService handles email sending
 type EmailService struct {
 	config *config.Config
@@ -129,7 +135,7 @@ func (s *EmailService) AutoDetectSMTP() (string, int, error) {
 	// Auto-detection order per spec
 	hosts := []string{"localhost", "127.0.0.1", "172.17.0.1"}
 	ports := []int{25, 587, 465}
-	
+
 	for _, host := range hosts {
 		for _, port := range ports {
 			address := net.JoinHostPort(host, strconv.Itoa(port))
@@ -140,7 +146,7 @@ func (s *EmailService) AutoDetectSMTP() (string, int, error) {
 			}
 		}
 	}
-	
+
 	return "", 0, fmt.Errorf("no SMTP server found")
 }
 
@@ -164,9 +170,9 @@ func (s *EmailService) SendPasswordReset(email, resetLink, ip string) error {
 		"expires":         "24 hours",
 		"admin_email":     getEnvOrDefault("ADMIN_EMAIL", "admin@localhost"),
 	}
-	
+
 	subject, body := renderTemplate(passwordResetTemplate, vars)
-	
+
 	return s.sendEmail(email, subject, body)
 }
 
@@ -176,21 +182,21 @@ func (s *EmailService) SendPasswordChanged(email, username, ip, method string) e
 		// Silently skip per PART 26 line 22669
 		return nil
 	}
-	
+
 	vars := map[string]string{
-		"app_name":         "Caslink",
-		"app_url":          getEnvOrDefault("APP_URL", "http://localhost:64521"),
-		"fqdn":             getEnvOrDefault("FQDN", "localhost"),
-		"recipient_email":  email,
+		"app_name":           "Caslink",
+		"app_url":            getEnvOrDefault("APP_URL", "http://localhost:64521"),
+		"fqdn":               getEnvOrDefault("FQDN", "localhost"),
+		"recipient_email":    email,
 		"recipient_username": username,
-		"ip":               ip,
-		"method":           method,
-		"timestamp":        time.Now().Format("2006-01-02 15:04:05 MST"),
-		"admin_email":      getEnvOrDefault("ADMIN_EMAIL", "admin@localhost"),
+		"ip":                 ip,
+		"method":             method,
+		"timestamp":          time.Now().Format("2006-01-02 15:04:05 MST"),
+		"admin_email":        getEnvOrDefault("ADMIN_EMAIL", "admin@localhost"),
 	}
-	
+
 	subject, body := renderTemplate(passwordChangedTemplate, vars)
-	
+
 	return s.sendEmail(email, subject, body)
 }
 
@@ -211,9 +217,9 @@ func (s *EmailService) SendEmailVerification(email, verifyLink string) error {
 		"timestamp":       time.Now().Format("2006-01-02 15:04:05 MST"),
 		"expires":         "48 hours",
 	}
-	
+
 	subject, body := renderTemplate(emailVerifyTemplate, vars)
-	
+
 	return s.sendEmail(email, subject, body)
 }
 
@@ -236,15 +242,15 @@ func (s *EmailService) SendWelcome(email, username string, isAdmin bool) error {
 		"profile_url":        getEnvOrDefault("APP_URL", "http://localhost:64521") + "/users/profile",
 		"admin_email":        getEnvOrDefault("ADMIN_EMAIL", "admin@localhost"),
 	}
-	
+
 	if isAdmin {
 		template = welcomeAdminTemplate
 		vars["admin_url"] = getEnvOrDefault("APP_URL", "http://localhost:64521") + "/server/admin"
 		vars["admin_username"] = username
 	}
-	
+
 	subject, body := renderTemplate(template, vars)
-	
+
 	return s.sendEmail(email, subject, body)
 }
 
@@ -262,25 +268,29 @@ func (s *EmailService) sendEmail(to, subject, body string) error {
 	fromName := s.fromName()
 	fromEmail := s.fromEmail()
 
-	// Build email message per RFC 5322
+	// Build email message per RFC 5322. Strip CR/LF from header values to
+	// prevent SMTP header injection if an unvalidated recipient or subject
+	// ever reaches this path.
 	from := fmt.Sprintf("%s <%s>", fromName, fromEmail)
-	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\n\r\n%s", from, to, subject, body)
-	
+	safeTo := stripHeaderCRLF(to)
+	safeSubject := stripHeaderCRLF(subject)
+	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\n\r\n%s", from, safeTo, safeSubject, body)
+
 	// Connect to SMTP server (IPv6-safe address join).
 	address := net.JoinHostPort(host, port)
-	
+
 	// Attempt connection with auth if credentials provided
 	var auth smtp.Auth
 	if username != "" {
 		auth = smtp.PlainAuth("", username, password, host)
 	}
-	
+
 	// Send email
 	err := smtp.SendMail(address, auth, fromEmail, []string{to}, []byte(msg))
 	if err != nil {
 		return fmt.Errorf("failed to send email: %w", err)
 	}
-	
+
 	return nil
 }
 
@@ -292,18 +302,18 @@ func renderTemplate(template string, vars map[string]string) (subject, body stri
 	if len(parts) != 2 {
 		return "Email", template
 	}
-	
+
 	// Extract subject (remove "Subject: " prefix)
 	subject = strings.TrimSpace(strings.TrimPrefix(parts[0], "Subject:"))
 	body = strings.TrimSpace(parts[1])
-	
+
 	// Replace variables in both subject and body
 	for key, value := range vars {
 		placeholder := "{" + key + "}"
 		subject = strings.ReplaceAll(subject, placeholder, value)
 		body = strings.ReplaceAll(body, placeholder, value)
 	}
-	
+
 	return subject, body
 }
 
