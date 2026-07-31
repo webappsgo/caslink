@@ -781,7 +781,12 @@ func envStr(key string) string {
 	return strings.TrimSpace(v)
 }
 
-// parseInt parses an integer from a string, returning 0 on error.
+// parseInt parses an unsigned decimal string for env-var overrides. It
+// returns 0 on any non-digit character or on empty input — callers must
+// treat 0 as "unset/invalid" and fall back to the existing config value
+// (every call site already guards with `n > 0` before applying it). There is
+// no overflow guard; this is only ever used for small config sizes (worker
+// counts, pool sizes, timeouts), never for user-controlled large values.
 func parseInt(s string) int {
 	n := 0
 	for _, c := range s {
