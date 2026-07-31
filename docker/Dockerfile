@@ -32,9 +32,9 @@ ARG COMMIT_ID
 ARG LICENSE=MIT
 
 # Static Labels
-LABEL maintainer="webappsgo <noreply@casapps.pro>" \
+LABEL maintainer="casjay <git-admin@casjaysdev.pro>" \
       org.opencontainers.image.vendor="webappsgo" \
-      org.opencontainers.image.authors="webappsgo" \
+      org.opencontainers.image.authors="casjay <git-admin@casjaysdev.pro>" \
       org.opencontainers.image.title="caslink" \
       org.opencontainers.image.base.name="caslink" \
       org.opencontainers.image.description="Containerized version of caslink" \

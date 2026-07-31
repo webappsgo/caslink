@@ -39,9 +39,9 @@ ARG BUILD_DATE
 ARG COMMIT_ID
 ARG LICENSE=MIT
 
-LABEL maintainer="webappsgo <noreply@casapps.pro>" \
+LABEL maintainer="casjay <git-admin@casjaysdev.pro>" \
       org.opencontainers.image.vendor="webappsgo" \
-      org.opencontainers.image.authors="webappsgo" \
+      org.opencontainers.image.authors="casjay <git-admin@casjaysdev.pro>" \
       org.opencontainers.image.title="caslink-aio" \
       org.opencontainers.image.base.name="caslink" \
       org.opencontainers.image.description="caslink - all-in-one (debian + postgresql + valkey + tor)" \
