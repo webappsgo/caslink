@@ -101,7 +101,6 @@ type GeoIPDatabasesConfig struct {
 	ASN     bool `yaml:"asn"`
 	Country bool `yaml:"country"`
 	City    bool `yaml:"city"`
-	WHOIS   bool `yaml:"whois"`
 }
 
 // TorConfig holds Tor hidden service + outbound network configuration per
@@ -196,10 +195,10 @@ type PasswordPolicyConfig struct {
 
 // LimitsConfig holds HTTP request limits per AI.md PART 12.
 type LimitsConfig struct {
-	MaxBodySize   string `yaml:"max_body_size"`   // e.g., "10MB"
-	ReadTimeout   int    `yaml:"read_timeout"`    // seconds
-	WriteTimeout  int    `yaml:"write_timeout"`   // seconds
-	IdleTimeout   int    `yaml:"idle_timeout"`    // seconds
+	MaxBodySize  string `yaml:"max_body_size"` // e.g., "10MB"
+	ReadTimeout  int    `yaml:"read_timeout"`  // seconds
+	WriteTimeout int    `yaml:"write_timeout"` // seconds
+	IdleTimeout  int    `yaml:"idle_timeout"`  // seconds
 }
 
 // CompressionConfig holds response compression settings per AI.md PART 12.
@@ -216,14 +215,14 @@ type TrustedProxiesConfig struct {
 
 // SessionConfig holds admin and user session cookie settings per AI.md PART 12.
 type SessionConfig struct {
-	Admin              SessionCookieConfig `yaml:"admin"`
-	User               SessionCookieConfig `yaml:"user"`
-	ExtendOnActivity   bool                `yaml:"extend_on_activity"`
-	Secure             string              `yaml:"secure"`             // auto|true|false
-	HTTPOnly           bool                `yaml:"http_only"`
-	SameSite           string              `yaml:"same_site"`          // strict|lax|none
-	Timeout            string              `yaml:"timeout"`            // e.g. "24h"
-	RememberMeTimeout  string              `yaml:"remember_me_timeout"` // e.g. "720h"
+	Admin             SessionCookieConfig `yaml:"admin"`
+	User              SessionCookieConfig `yaml:"user"`
+	ExtendOnActivity  bool                `yaml:"extend_on_activity"`
+	Secure            string              `yaml:"secure"` // auto|true|false
+	HTTPOnly          bool                `yaml:"http_only"`
+	SameSite          string              `yaml:"same_site"`           // strict|lax|none
+	Timeout           string              `yaml:"timeout"`             // e.g. "24h"
+	RememberMeTimeout string              `yaml:"remember_me_timeout"` // e.g. "720h"
 }
 
 // SessionCookieConfig holds per-role session cookie settings.
@@ -325,10 +324,10 @@ type AdminConfig struct {
 
 // SSLConfig holds SSL/TLS settings
 type SSLConfig struct {
-	Enabled    bool              `yaml:"enabled"`
-	Cert       string            `yaml:"cert"`
-	Key        string            `yaml:"key"`
-	MinVersion string            `yaml:"min_version"`
+	Enabled     bool              `yaml:"enabled"`
+	Cert        string            `yaml:"cert"`
+	Key         string            `yaml:"key"`
+	MinVersion  string            `yaml:"min_version"`
 	LetsEncrypt LetsEncryptConfig `yaml:"letsencrypt"`
 }
 
@@ -384,35 +383,35 @@ type SchedulerConfig struct {
 	MaxRetries int    `yaml:"max_retries"`
 	RetryDelay string `yaml:"retry_delay"`
 
-	SessionCleanupCron string `yaml:"session_cleanup_cron"`
-	SessionCleanupEnabled bool `yaml:"session_cleanup_enabled"`
+	SessionCleanupCron    string `yaml:"session_cleanup_cron"`
+	SessionCleanupEnabled bool   `yaml:"session_cleanup_enabled"`
 
-	TokenCleanupCron string `yaml:"token_cleanup_cron"`
-	TokenCleanupEnabled bool `yaml:"token_cleanup_enabled"`
+	TokenCleanupCron    string `yaml:"token_cleanup_cron"`
+	TokenCleanupEnabled bool   `yaml:"token_cleanup_enabled"`
 
-	ExpireURLsCron string `yaml:"expire_urls_cron"`
-	ExpireURLsEnabled bool `yaml:"expire_urls_enabled"`
+	ExpireURLsCron    string `yaml:"expire_urls_cron"`
+	ExpireURLsEnabled bool   `yaml:"expire_urls_enabled"`
 
-	LogRotationCron string `yaml:"log_rotation_cron"`
-	LogRotationEnabled bool `yaml:"log_rotation_enabled"`
+	LogRotationCron    string `yaml:"log_rotation_cron"`
+	LogRotationEnabled bool   `yaml:"log_rotation_enabled"`
 
-	BackupCron string `yaml:"backup_cron"`
-	BackupEnabled bool `yaml:"backup_enabled"`
+	BackupCron    string `yaml:"backup_cron"`
+	BackupEnabled bool   `yaml:"backup_enabled"`
 
-	BackupHourlyCron string `yaml:"backup_hourly_cron"`
-	BackupHourlyEnabled bool `yaml:"backup_hourly_enabled"`
+	BackupHourlyCron    string `yaml:"backup_hourly_cron"`
+	BackupHourlyEnabled bool   `yaml:"backup_hourly_enabled"`
 
-	SSLRenewalCron string `yaml:"ssl_renewal_cron"`
-	SSLRenewalEnabled bool `yaml:"ssl_renewal_enabled"`
+	SSLRenewalCron    string `yaml:"ssl_renewal_cron"`
+	SSLRenewalEnabled bool   `yaml:"ssl_renewal_enabled"`
 
-	GeoIPUpdateCron string `yaml:"geoip_update_cron"`
-	GeoIPUpdateEnabled bool `yaml:"geoip_update_enabled"`
+	GeoIPUpdateCron    string `yaml:"geoip_update_cron"`
+	GeoIPUpdateEnabled bool   `yaml:"geoip_update_enabled"`
 
-	BlocklistUpdateCron string `yaml:"blocklist_update_cron"`
-	BlocklistUpdateEnabled bool `yaml:"blocklist_update_enabled"`
+	BlocklistUpdateCron    string `yaml:"blocklist_update_cron"`
+	BlocklistUpdateEnabled bool   `yaml:"blocklist_update_enabled"`
 
-	CVEUpdateCron string `yaml:"cve_update_cron"`
-	CVEUpdateEnabled bool `yaml:"cve_update_enabled"`
+	CVEUpdateCron    string `yaml:"cve_update_cron"`
+	CVEUpdateEnabled bool   `yaml:"cve_update_enabled"`
 
 	// UpdateCheck* implement the `update_check` task (PART 19): notify-only
 	// unless UpdateAutoInstall is true; UpdateDeferDays delays install after
@@ -423,11 +422,11 @@ type SchedulerConfig struct {
 	UpdateAutoInstall  bool   `yaml:"update_auto_install"`
 	UpdateDeferDays    int    `yaml:"update_defer_days"`
 
-	HealthcheckCron string `yaml:"healthcheck_cron"`
-	HealthcheckEnabled bool `yaml:"healthcheck_enabled"`
+	HealthcheckCron    string `yaml:"healthcheck_cron"`
+	HealthcheckEnabled bool   `yaml:"healthcheck_enabled"`
 
-	TorHealthCron string `yaml:"tor_health_cron"`
-	TorHealthEnabled bool `yaml:"tor_health_enabled"`
+	TorHealthCron    string `yaml:"tor_health_cron"`
+	TorHealthEnabled bool   `yaml:"tor_health_enabled"`
 
 	// ClusterHeartbeatCron/Enabled implement `cluster_heartbeat` (PART 19);
 	// the task is a no-op when the node is not running in cluster mode.
@@ -448,28 +447,28 @@ type UIConfig struct {
 
 // FeaturesConfig holds feature flags and settings
 type FeaturesConfig struct {
-	Users          UsersConfig          `yaml:"users"`
-	Organizations  OrganizationsConfig  `yaml:"organizations"`
-	CustomDomains  CustomDomainsConfig  `yaml:"custom_domains"`
-	Billing        BillingConfig        `yaml:"billing"`
-	Federation     FederationConfig     `yaml:"federation"`
-	TOTPIssuer     string               `yaml:"totp_issuer"`      // issuer name shown in authenticator apps
+	Users           UsersConfig         `yaml:"users"`
+	Organizations   OrganizationsConfig `yaml:"organizations"`
+	CustomDomains   CustomDomainsConfig `yaml:"custom_domains"`
+	Billing         BillingConfig       `yaml:"billing"`
+	Federation      FederationConfig    `yaml:"federation"`
+	TOTPIssuer      string              `yaml:"totp_issuer"`      // issuer name shown in authenticator apps
 	WebAuthnDisplay string              `yaml:"webauthn_display"` // display name for WebAuthn/FIDO2
 }
 
 // UsersConfig holds user management settings
 type UsersConfig struct {
-	Enabled      bool                  `yaml:"enabled"`
-	Registration RegistrationConfig    `yaml:"registration"`
-	Profile      ProfileConfig         `yaml:"profile"`
+	Enabled      bool               `yaml:"enabled"`
+	Registration RegistrationConfig `yaml:"registration"`
+	Profile      ProfileConfig      `yaml:"profile"`
 }
 
 // RegistrationConfig holds registration settings
 type RegistrationConfig struct {
-	Enabled                 bool `yaml:"enabled"`
+	Enabled                  bool `yaml:"enabled"`
 	RequireEmailVerification bool `yaml:"require_email_verification"`
-	RequireApproval         bool `yaml:"require_approval"`
-	AllowDisposableEmails   bool `yaml:"allow_disposable_emails"`
+	RequireApproval          bool `yaml:"require_approval"`
+	AllowDisposableEmails    bool `yaml:"allow_disposable_emails"`
 }
 
 // ProfileConfig holds user profile settings
@@ -524,29 +523,29 @@ type CaslinkConfig struct {
 
 // URLConfig holds URL shortening settings
 type URLConfig struct {
-	MinRandomLength  int      `yaml:"min_random_length"`
-	MaxCustomLength  int      `yaml:"max_custom_length"`
+	MinRandomLength   int      `yaml:"min_random_length"`
+	MaxCustomLength   int      `yaml:"max_custom_length"`
 	DefaultExpiration string   `yaml:"default_expiration"`
-	AllowCustomCodes bool     `yaml:"allow_custom_codes"`
-	PerUserLimit     int      `yaml:"per_user_limit"`
-	PerOrgLimit      int      `yaml:"per_org_limit"`
-	ReservedWords    []string `yaml:"reserved_words"`
+	AllowCustomCodes  bool     `yaml:"allow_custom_codes"`
+	PerUserLimit      int      `yaml:"per_user_limit"`
+	PerOrgLimit       int      `yaml:"per_org_limit"`
+	ReservedWords     []string `yaml:"reserved_words"`
 }
 
 // AnalyticsConfig holds analytics settings
 type AnalyticsConfig struct {
-	Enabled             bool `yaml:"enabled"`
-	EnableGeolocation   bool `yaml:"enable_geolocation"`
-	AnonymizeIPs        bool `yaml:"anonymize_ips"`
-	RetentionDays       int  `yaml:"retention_days"`
+	Enabled           bool `yaml:"enabled"`
+	EnableGeolocation bool `yaml:"enable_geolocation"`
+	AnonymizeIPs      bool `yaml:"anonymize_ips"`
+	RetentionDays     int  `yaml:"retention_days"`
 }
 
 // QRConfig holds QR code settings
 type QRConfig struct {
-	DefaultSize      int    `yaml:"default_size"`
-	MaxSize          int    `yaml:"max_size"`
-	DefaultFormat    string `yaml:"default_format"`
-	ErrorCorrection  string `yaml:"error_correction"`
+	DefaultSize     int    `yaml:"default_size"`
+	MaxSize         int    `yaml:"max_size"`
+	DefaultFormat   string `yaml:"default_format"`
+	ErrorCorrection string `yaml:"error_correction"`
 }
 
 // Load loads configuration from server.yml
@@ -564,6 +563,11 @@ func Load(configDir string) (*Config, error) {
 			return nil, fmt.Errorf("failed to create default config: %w", err)
 		}
 		applyEnvOverrides(cfg)
+		// Re-validate after env overrides so out-of-range env values
+		// (e.g. an invalid CASLINK_PORT) are clamped/rejected here too.
+		if err := Validate(cfg); err != nil {
+			return nil, fmt.Errorf("invalid config after env overrides: %w", err)
+		}
 		return cfg, nil
 	}
 
@@ -598,6 +602,11 @@ func Load(configDir string) (*Config, error) {
 
 	// Apply environment variable overrides (PART 26 precedence: env > config > default).
 	applyEnvOverrides(&cfg)
+
+	// Re-validate after env overrides so out-of-range env values are caught.
+	if err := Validate(&cfg); err != nil {
+		return nil, fmt.Errorf("invalid config after env overrides: %w", err)
+	}
 
 	return &cfg, nil
 }
@@ -800,7 +809,7 @@ func Save(configDir string, cfg *Config) error {
 	}
 
 	// Write to file
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
+	if err := os.WriteFile(configPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
@@ -873,8 +882,8 @@ func DefaultConfig() *Config {
 			Session: SessionConfig{
 				Admin: SessionCookieConfig{
 					CookieName:  "caslink_admin_session",
-					MaxAge:      86400,   // 24 hours
-					IdleTimeout: 3600,    // 1 hour
+					MaxAge:      86400, // 24 hours
+					IdleTimeout: 3600,  // 1 hour
 				},
 				User: SessionCookieConfig{
 					CookieName:  "caslink_session",
@@ -922,40 +931,40 @@ func DefaultConfig() *Config {
 				PasswordResetMaxAttempts: 3,
 			},
 			Scheduler: SchedulerConfig{
-				Enabled:                true,
-				Timezone:               "America/New_York",
-				CatchUpWindow:          "1h",
-				MaxRetries:             3,
-				RetryDelay:             "5m",
-				SessionCleanupCron:     "@every 15m",
-				SessionCleanupEnabled:  true,
-				TokenCleanupCron:       "@every 15m",
-				TokenCleanupEnabled:    true,
-				ExpireURLsCron:         "30 2 * * *",
-				ExpireURLsEnabled:      true,
-				LogRotationCron:        "0 0 * * *",
-				LogRotationEnabled:     true,
-				BackupCron:             "0 2 * * *",
-				BackupEnabled:          true,
-				BackupHourlyCron:       "@hourly",
-				BackupHourlyEnabled:    false,
-				SSLRenewalCron:         "0 3 * * *",
-				SSLRenewalEnabled:      true,
-				GeoIPUpdateCron:        "0 3 * * 0",
-				GeoIPUpdateEnabled:     true,
-				BlocklistUpdateCron:    "0 4 * * *",
-				BlocklistUpdateEnabled: true,
-				CVEUpdateCron:          "0 5 * * *",
-				CVEUpdateEnabled:       true,
-				UpdateCheckCron:        "0 6 * * *",
-				UpdateCheckEnabled:     true,
-				UpdateBranch:           "stable",
-				UpdateAutoInstall:      false,
-				UpdateDeferDays:        0,
-				HealthcheckCron:        "@every 5m",
-				HealthcheckEnabled:     true,
-				TorHealthCron:          "@every 10m",
-				TorHealthEnabled:       true,
+				Enabled:                 true,
+				Timezone:                "America/New_York",
+				CatchUpWindow:           "1h",
+				MaxRetries:              3,
+				RetryDelay:              "5m",
+				SessionCleanupCron:      "@every 15m",
+				SessionCleanupEnabled:   true,
+				TokenCleanupCron:        "@every 15m",
+				TokenCleanupEnabled:     true,
+				ExpireURLsCron:          "30 2 * * *",
+				ExpireURLsEnabled:       true,
+				LogRotationCron:         "0 0 * * *",
+				LogRotationEnabled:      true,
+				BackupCron:              "0 2 * * *",
+				BackupEnabled:           true,
+				BackupHourlyCron:        "@hourly",
+				BackupHourlyEnabled:     false,
+				SSLRenewalCron:          "0 3 * * *",
+				SSLRenewalEnabled:       true,
+				GeoIPUpdateCron:         "0 3 * * 0",
+				GeoIPUpdateEnabled:      true,
+				BlocklistUpdateCron:     "0 4 * * *",
+				BlocklistUpdateEnabled:  true,
+				CVEUpdateCron:           "0 5 * * *",
+				CVEUpdateEnabled:        true,
+				UpdateCheckCron:         "0 6 * * *",
+				UpdateCheckEnabled:      true,
+				UpdateBranch:            "stable",
+				UpdateAutoInstall:       false,
+				UpdateDeferDays:         0,
+				HealthcheckCron:         "@every 5m",
+				HealthcheckEnabled:      true,
+				TorHealthCron:           "@every 10m",
+				TorHealthEnabled:        true,
 				ClusterHeartbeatCron:    "@every 30s",
 				ClusterHeartbeatEnabled: true,
 			},
@@ -963,10 +972,10 @@ func DefaultConfig() *Config {
 				Users: UsersConfig{
 					Enabled: true,
 					Registration: RegistrationConfig{
-						Enabled:                 true,
+						Enabled:                  true,
 						RequireEmailVerification: false,
-						RequireApproval:         false,
-						AllowDisposableEmails:   false,
+						RequireApproval:          false,
+						AllowDisposableEmails:    false,
 					},
 					Profile: ProfileConfig{
 						AllowDisplayName: true,
@@ -1054,7 +1063,6 @@ func DefaultConfig() *Config {
 					ASN:     true,
 					Country: true,
 					City:    true,
-					WHOIS:   true,
 				},
 			},
 			Tor: TorConfig{
@@ -1100,12 +1108,12 @@ func DefaultConfig() *Config {
 		},
 		Caslink: CaslinkConfig{
 			URL: URLConfig{
-				MinRandomLength:  6,
-				MaxCustomLength:  50,
+				MinRandomLength:   6,
+				MaxCustomLength:   50,
 				DefaultExpiration: "never",
-				AllowCustomCodes: true,
-				PerUserLimit:     0,
-				PerOrgLimit:      0,
+				AllowCustomCodes:  true,
+				PerUserLimit:      0,
+				PerOrgLimit:       0,
 				ReservedWords: []string{
 					"admin", "api", "auth", "user", "org",
 					"setup", "healthz", "swagger", "graphql", "graphiql",

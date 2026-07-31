@@ -40,16 +40,84 @@ Short flags: only `-h` (help) and `-v` (version). All other flags use long form.
 
 ## Environment Variables
 
-All variables use the `CASLINK_` prefix. The bare name (without prefix) is also accepted as a fallback.
+Most variables use the `CASLINK_` prefix. The bare name (without prefix) is also accepted as a fallback (e.g. both `CASLINK_PORT` and `PORT` work). Env values override `server.yml`; CLI flags override env.
+
+### Server
 
 | Variable | Example | Description |
 |----------|---------|-------------|
-| `CASLINK_MODE` | `production` | Application mode |
-| `CASLINK_PORT` | `8080` | Listen port |
-| `CASLINK_LISTEN` | `0.0.0.0` | Listen address |
+| `CASLINK_MODE` | `production` | Application mode: `production` or `development` |
+| `CASLINK_PORT` | `8080` | Listen port (`0` = auto-select from 64xxx range) |
+| `CASLINK_LISTEN` | `0.0.0.0` | Listen address (alias of `CASLINK_ADDRESS`) |
+| `CASLINK_ADDRESS` | `[::]` | Listen address |
 | `CASLINK_DOMAIN` | `short.example.com` | Public FQDN / base URL |
-| `CASLINK_DATABASE_DRIVER` | `postgres` | Database driver |
-| `CASLINK_DATABASE_URL` | `postgres://...` | Full database DSN |
+| `CASLINK_FQDN` | `short.example.com` | Public hostname used in generated links |
+| `CASLINK_APP_NAME` | `Caslink` | Branding title |
+| `CASLINK_APP_DESCRIPTION` | `URL shortener` | Branding description |
+
+### Admin
+
+| Variable | Example | Description |
+|----------|---------|-------------|
+| `CASLINK_ADMIN_EMAIL` | `admin@example.com` | Admin contact email |
+| `CASLINK_ADMIN_PATH` | `admin` | Admin panel URL segment (`/server/{path}/`) |
+
+### Database
+
+| Variable | Example | Description |
+|----------|---------|-------------|
+| `CASLINK_DATABASE_DRIVER` | `postgres` | Driver: `file`, `sqlite`, `postgres`, `mysql`, `mariadb`, `mssql` |
+| `CASLINK_DATABASE_URL` | `postgres://...` | Full database DSN (overrides host/name/user/pass) |
+| `CASLINK_DATABASE_HOST` | `db.internal` | Database host |
+| `CASLINK_DATABASE_NAME` | `caslink` | Database name |
+| `CASLINK_DATABASE_USERNAME` | `caslink` | Database username |
+| `CASLINK_DATABASE_PASSWORD` | `secret` | Database password |
+
+### TLS / Let's Encrypt
+
+| Variable | Example | Description |
+|----------|---------|-------------|
+| `CASLINK_SSL_ENABLED` | `true` | Enable TLS |
+| `CASLINK_LE_ENABLED` | `true` | Enable Let's Encrypt |
+| `CASLINK_LE_EMAIL` | `admin@example.com` | ACME account email |
+| `CASLINK_LE_CHALLENGE` | `http-01` | ACME challenge: `http-01`, `tls-alpn-01`, `dns-01` |
+| `CASLINK_LE_STAGING` | `false` | Use LE staging CA (for testing) |
+
+### Email / SMTP
+
+| Variable | Example | Description |
+|----------|---------|-------------|
+| `CASLINK_EMAIL_ENABLED` | `true` | Enable outbound email |
+| `CASLINK_EMAIL_FROM` | `no-reply@example.com` | From address |
+| `SMTP_HOST` | `smtp.example.com` | SMTP server host (also `CASLINK_SMTP_HOST`) |
+| `SMTP_PORT` | `587` | SMTP server port |
+| `SMTP_USERNAME` | `user` | SMTP auth username |
+| `SMTP_PASSWORD` | `pass` | SMTP auth password |
+| `SMTP_FROM_NAME` | `Caslink` | Display name on outbound mail |
+| `SMTP_FROM_EMAIL` | `no-reply@example.com` | From address (SMTP layer) |
+
+### Features & Limits
+
+| Variable | Example | Description |
+|----------|---------|-------------|
+| `CASLINK_MIN_RANDOM_LENGTH` | `6` | Minimum random short-code length |
+| `CASLINK_RATE_LIMIT_ENABLED` | `true` | Enable rate limiting |
+| `CASLINK_RATE_LIMIT_REQUESTS` | `120` | Requests per window |
+| `CASLINK_METRICS_ENABLED` | `true` | Enable the `/metrics` endpoint |
+| `CASLINK_METRICS_TOKEN` | `secret` | Bearer token protecting `/metrics` |
+| `CASLINK_GEOIP_ENABLED` | `true` | Enable GeoIP lookups |
+| `CASLINK_ANALYTICS_ENABLED` | `true` | Enable click analytics |
+| `CASLINK_ANONYMIZE_IPS` | `true` | Anonymize IPs in analytics |
+
+### Client / Maintenance
+
+These are read directly (no `CASLINK_`-prefix fallback logic beyond the literal name):
+
+| Variable | Example | Description |
+|----------|---------|-------------|
+| `CASLINK_TOKEN` | `tok_...` | API token used by the CLI client |
+| `CASLINK_BACKUP_PASSWORD` | `secret` | Password for `--maintenance backup`/`restore` (non-interactive) |
+| `NO_COLOR` | `1` | Disable coloured output (any non-empty value) |
 
 ## `server.yml` Reference
 
@@ -227,7 +295,6 @@ server:
       asn: true
       country: true
       city: true
-      whois: true
 ```
 
 ### Security

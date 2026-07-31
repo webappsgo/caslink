@@ -1,5 +1,5 @@
 // Package geoip downloads and serves the ip-location-db MMDB databases used
-// by caslink for country/city/ASN/WHOIS lookups (AI.md PART 20).
+// by caslink for country/city/ASN lookups (AI.md PART 20).
 //
 // Databases are NEVER embedded — they are downloaded on first run and refreshed
 // weekly by the scheduler. The directory layout under {data_dir}/security/geoip
@@ -8,7 +8,6 @@
 //	asn.mmdb
 //	country.mmdb
 //	city.mmdb
-//	whois.mmdb
 //
 // Each file is downloaded atomically (.tmp → rename) so a half-written database
 // can never be read by the lookup path.
@@ -35,8 +34,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/webappsgo/caslink/src/config"
 	"github.com/oschwald/maxminddb-golang"
+	"github.com/webappsgo/caslink/src/config"
 )
 
 // downloadTimeout caps each individual database download.
@@ -47,7 +46,6 @@ var sources = map[string]string{
 	"asn":     "https://cdn.jsdelivr.net/npm/@ip-location-db/asn-mmdb/asn.mmdb",
 	"country": "https://cdn.jsdelivr.net/npm/@ip-location-db/geo-whois-asn-country-mmdb/geo-whois-asn-country.mmdb",
 	"city":    "https://cdn.jsdelivr.net/npm/@ip-location-db/dbip-city-mmdb/dbip-city-ipv4.mmdb",
-	"whois":   "https://cdn.jsdelivr.net/npm/@ip-location-db/geo-whois-asn-country-mmdb/geo-whois-asn-country.mmdb",
 }
 
 // Service holds the configured GeoIP directory and selection. Lookups are
@@ -168,9 +166,6 @@ func (s *Service) selected() []string {
 	if s.cfg.Databases.City {
 		out = append(out, "city")
 	}
-	if s.cfg.Databases.WHOIS {
-		out = append(out, "whois")
-	}
 	return out
 }
 
@@ -252,7 +247,7 @@ func (s *Service) LastUpdate() time.Time {
 		return time.Time{}
 	}
 	var newest time.Time
-	for _, name := range []string{"asn", "country", "city", "whois"} {
+	for _, name := range []string{"asn", "country", "city"} {
 		fi, err := os.Stat(filepath.Join(s.dir, name+".mmdb"))
 		if err != nil {
 			continue
