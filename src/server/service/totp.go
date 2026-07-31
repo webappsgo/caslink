@@ -1,13 +1,17 @@
 package service
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha1"
+	"crypto/subtle"
 	"encoding/base32"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -81,13 +85,13 @@ func (s *TOTPService) GenerateTOTPSecret() (string, error) {
 	if _, err := rand.Read(secret); err != nil {
 		return "", fmt.Errorf("failed to generate TOTP secret: %w", err)
 	}
-	
+
 	// Encode as base32 (standard for TOTP)
 	encoded := base32.StdEncoding.EncodeToString(secret)
-	
+
 	// Remove padding (= characters)
 	encoded = strings.TrimRight(encoded, "=")
-	
+
 	return encoded, nil
 }
 
@@ -95,22 +99,22 @@ func (s *TOTPService) GenerateTOTPSecret() (string, error) {
 // Format: {8-hex-chars}-{4-hex-chars} (e.g., "a1b2c3d4-e5f6")
 func (s *TOTPService) GenerateRecoveryKeys() ([]string, error) {
 	keys := make([]string, 10)
-	
+
 	for i := 0; i < 10; i++ {
 		// Generate 6 random bytes (8 hex chars + 4 hex chars)
 		randomBytes := make([]byte, 6)
 		if _, err := rand.Read(randomBytes); err != nil {
 			return nil, fmt.Errorf("failed to generate recovery key: %w", err)
 		}
-		
+
 		// Convert to hex
 		hexStr := hex.EncodeToString(randomBytes)
-		
+
 		// Format as {8-hex}-{4-hex}
 		key := fmt.Sprintf("%s-%s", hexStr[:8], hexStr[8:])
 		keys[i] = key
 	}
-	
+
 	return keys, nil
 }
 
@@ -125,7 +129,7 @@ func (s *TOTPService) HashRecoveryKey(key string) (string, error) {
 func (s *TOTPService) VerifyRecoveryKey(key, hash string) bool {
 	// Normalize: case-insensitive per PART 23 line 20030
 	key = strings.ToLower(strings.TrimSpace(key))
-	
+
 	return verifyPasswordArgon2id(key, hash)
 }
 
@@ -133,12 +137,11 @@ func (s *TOTPService) VerifyRecoveryKey(key, hash string) bool {
 // Per PART 23: Format is otpauth://totp/{issuer}:{account}?secret={secret}&issuer={issuer}
 func (s *TOTPService) GenerateQRCodeURL(secret, issuer, accountName string) string {
 	// URL format: otpauth://totp/Issuer:account@example.com?secret=SECRET&issuer=Issuer
-	return fmt.Sprintf("otpauth://totp/%s:%s?secret=%s&issuer=%s",
-		issuer,
-		accountName,
-		secret,
-		issuer,
-	)
+	label := url.PathEscape(issuer + ":" + accountName)
+	q := url.Values{}
+	q.Set("secret", secret)
+	q.Set("issuer", issuer)
+	return fmt.Sprintf("otpauth://totp/%s?%s", label, q.Encode())
 }
 
 // VerifyTOTPCode verifies a 6-digit TOTP code per RFC 6238
@@ -148,25 +151,25 @@ func (s *TOTPService) VerifyTOTPCode(secret, code string) bool {
 	if len(code) != 6 {
 		return false
 	}
-	
+
 	// Decode base32 secret
 	secret = strings.ToUpper(strings.TrimSpace(secret))
 	secretBytes, err := base32.StdEncoding.DecodeString(secret)
 	if err != nil {
 		return false
 	}
-	
+
 	// Get current time step (30 seconds per step per RFC 6238)
 	currentStep := time.Now().Unix() / 30
-	
+
 	// Try current time step and ±1 window (to handle clock drift)
 	for offset := -1; offset <= 1; offset++ {
 		timeStep := currentStep + int64(offset)
-		if s.generateTOTPCode(secretBytes, timeStep) == code {
+		if subtle.ConstantTimeCompare([]byte(s.generateTOTPCode(secretBytes, timeStep)), []byte(code)) == 1 {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -175,19 +178,19 @@ func (s *TOTPService) generateTOTPCode(secret []byte, timeStep int64) string {
 	// Convert time step to 8-byte big-endian
 	buf := make([]byte, 8)
 	binary.BigEndian.PutUint64(buf, uint64(timeStep))
-	
+
 	// HMAC-SHA1 per RFC 6238
 	h := hmac.New(sha1.New, secret)
 	h.Write(buf)
 	hash := h.Sum(nil)
-	
+
 	// Dynamic truncation per RFC 4226
 	offset := hash[len(hash)-1] & 0x0F
 	truncated := binary.BigEndian.Uint32(hash[offset:offset+4]) & 0x7FFFFFFF
-	
+
 	// Generate 6-digit code
 	code := truncated % 1000000
-	
+
 	// Format with leading zeros
 	return fmt.Sprintf("%06d", code)
 }
@@ -199,7 +202,7 @@ func (s *TOTPService) EnableTOTP(userID int64, secret string) ([]string, error) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate recovery keys: %w", err)
 	}
-	
+
 	// Hash each recovery key before storing per PART 23 line 20027
 	hashedKeys := make([]string, len(recoveryKeys))
 	for i, key := range recoveryKeys {
@@ -209,7 +212,7 @@ func (s *TOTPService) EnableTOTP(userID int64, secret string) ([]string, error) 
 		}
 		hashedKeys[i] = hashed
 	}
-	
+
 	// Encrypt the secret at rest with AES-256-GCM per AI.md PART 11
 	// ("2FA secrets | Always encrypted | AES-256-GCM (server key)").
 	storedSecret, keyVersion, err := s.encryptSecret(secret)
@@ -235,7 +238,7 @@ func (s *TOTPService) EnableTOTP(userID int64, secret string) ([]string, error) 
 	if err != nil {
 		return nil, fmt.Errorf("failed to store TOTP secret: %w", err)
 	}
-	
+
 	// Return plaintext recovery keys to show user ONCE per PART 23 line 20026
 	return recoveryKeys, nil
 }
@@ -244,14 +247,14 @@ func (s *TOTPService) EnableTOTP(userID int64, secret string) ([]string, error) 
 func (s *TOTPService) DisableTOTP(userID int64) error {
 	// Delete TOTP secret and recovery keys from database per PART 23
 	query := `DELETE FROM totp_secrets WHERE user_type = 'user' AND user_id = ?`
-	
+
 	_, err := s.store.UsersDB.Exec(query, userID)
 	if err != nil {
 		return fmt.Errorf("failed to delete TOTP secret: %w", err)
 	}
-	
+
 	// Note: Email notification handled by caller (handler layer has access to EmailService)
-	
+
 	return nil
 }
 
@@ -259,25 +262,31 @@ func (s *TOTPService) DisableTOTP(userID int64) error {
 func (s *TOTPService) UseRecoveryKey(userID int64, key string) error {
 	// Normalize key: case-insensitive per PART 23 line 20030
 	key = strings.ToLower(strings.TrimSpace(key))
-	
-	// Get TOTP record with backup codes
+
+	// Read-modify-write must be atomic: two concurrent requests presenting the
+	// same recovery key could otherwise both pass verification before either
+	// write lands (TOCTOU), consuming a single-use key twice. Wrap the whole
+	// read/verify/update cycle in one transaction.
+	tx, err := s.store.UsersDB.BeginTx(context.Background(), nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	var backupCodesJSON string
 	query := `SELECT backup_codes FROM totp_secrets WHERE user_type = 'user' AND user_id = ? AND enabled = 1`
-	
-	err := s.store.UsersDB.QueryRow(query, userID).Scan(&backupCodesJSON)
-	if err != nil {
+	if err := tx.QueryRow(query, userID).Scan(&backupCodesJSON); err != nil {
 		return fmt.Errorf("no active 2FA found for user")
 	}
-	
-	// Parse backup codes JSON
-	// Format: ["hash1", "hash2", ...]
-	// Simple parsing: strip brackets and quotes, split by comma
-	backupCodesJSON = strings.Trim(backupCodesJSON, "[]")
-	hashes := strings.Split(backupCodesJSON, "\",\"")
-	for i := range hashes {
-		hashes[i] = strings.Trim(hashes[i], "\"")
+
+	// backup_codes is a JSON array of hashes: ["hash1","hash2",...]
+	var hashes []string
+	if backupCodesJSON != "" {
+		if err := json.Unmarshal([]byte(backupCodesJSON), &hashes); err != nil {
+			return fmt.Errorf("failed to parse backup codes: %w", err)
+		}
 	}
-	
+
 	// Find matching hash
 	matchedIndex := -1
 	for i, hash := range hashes {
@@ -286,27 +295,28 @@ func (s *TOTPService) UseRecoveryKey(userID int64, key string) error {
 			break
 		}
 	}
-	
+
 	if matchedIndex == -1 {
 		return fmt.Errorf("invalid or already used recovery key")
 	}
-	
+
 	// Remove used key from array (single-use per PART 23 line 20029)
 	hashes = append(hashes[:matchedIndex], hashes[matchedIndex+1:]...)
-	
-	// Rebuild JSON
-	newBackupCodesJSON := fmt.Sprintf("[\"%s\"]", strings.Join(hashes, "\",\""))
-	if len(hashes) == 0 {
-		newBackupCodesJSON = "[]"
-	}
-	
-	// Update database
-	updateQuery := `UPDATE totp_secrets SET backup_codes = ? WHERE user_type = 'user' AND user_id = ?`
-	_, err = s.store.UsersDB.Exec(updateQuery, newBackupCodesJSON, userID)
+
+	newBackupCodes, err := json.Marshal(hashes)
 	if err != nil {
+		return fmt.Errorf("failed to serialize backup codes: %w", err)
+	}
+
+	updateQuery := `UPDATE totp_secrets SET backup_codes = ? WHERE user_type = 'user' AND user_id = ?`
+	if _, err := tx.Exec(updateQuery, string(newBackupCodes), userID); err != nil {
 		return fmt.Errorf("failed to update backup codes: %w", err)
 	}
-	
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit recovery key use: %w", err)
+	}
+
 	return nil
 }
 
@@ -314,19 +324,19 @@ func (s *TOTPService) UseRecoveryKey(userID int64, key string) error {
 func (s *TOTPService) GetRemainingRecoveryKeyCount(userID int64) (int, error) {
 	var backupCodesJSON string
 	query := `SELECT backup_codes FROM totp_secrets WHERE user_type = 'user' AND user_id = ? AND enabled = 1`
-	
+
 	err := s.store.UsersDB.QueryRow(query, userID).Scan(&backupCodesJSON)
 	if err != nil {
 		return 0, fmt.Errorf("no active 2FA found")
 	}
-	
+
 	// Count keys in JSON array
 	// Simple count: remove brackets, count comma-separated items
 	backupCodesJSON = strings.Trim(backupCodesJSON, "[]")
 	if backupCodesJSON == "" {
 		return 0, nil
 	}
-	
+
 	hashes := strings.Split(backupCodesJSON, "\",\"")
 	return len(hashes), nil
 }
@@ -355,11 +365,11 @@ func (s *TOTPService) GetTOTPSecret(userID int64) (string, error) {
 func (s *TOTPService) HasTOTP(userID int64) bool {
 	var enabled int
 	query := `SELECT enabled FROM totp_secrets WHERE user_type = 'user' AND user_id = ?`
-	
+
 	err := s.store.UsersDB.QueryRow(query, userID).Scan(&enabled)
 	if err != nil {
 		return false
 	}
-	
+
 	return enabled == 1
 }
