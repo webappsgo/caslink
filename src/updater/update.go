@@ -128,6 +128,10 @@ func DoUpdateFor(ctx context.Context, release *Release, assetName string) error 
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download failed: unexpected status %s", resp.Status)
+	}
+
 	if _, err := io.Copy(tmpFile, resp.Body); err != nil {
 		tmpFile.Close()
 		return fmt.Errorf("failed to download: %w", err)
@@ -213,8 +217,11 @@ func verifyChecksumFromURL(ctx context.Context, client *http.Client, filePath, a
 			break
 		}
 	}
+	// Fail closed: a missing checksum entry means we cannot verify the
+	// downloaded binary, so refuse the update rather than replacing the
+	// running executable with unverified content.
 	if expectedHash == "" {
-		return nil // No checksum entry found; skip verification
+		return fmt.Errorf("no checksum entry found for %q; refusing unverified update", assetName)
 	}
 
 	return verifyFileChecksum(filePath, expectedHash)
@@ -233,8 +240,8 @@ func verifyFileChecksum(filePath, expectedHash string) error {
 	}
 
 	actualHash := hex.EncodeToString(h.Sum(nil))
-	if actualHash != expectedHash {
-		return fmt.Errorf("checksum mismatch: expected %s, got %s", expectedHash, actualHash)
+	if !strings.EqualFold(actualHash, expectedHash) {
+		return fmt.Errorf("checksum mismatch: expected %s, got %s", strings.ToLower(expectedHash), actualHash)
 	}
 	return nil
 }
