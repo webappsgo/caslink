@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/url"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/webappsgo/caslink/src/server/service"
 )
 
 // Parsed once at package init instead of per-request.
@@ -551,8 +554,14 @@ func (h *AdminHandler) ConfigScheduler(w http.ResponseWriter, r *http.Request) {
 // ConfigEmail handles GET /server/{adminPath}/config/email
 func (h *AdminHandler) ConfigEmail(w http.ResponseWriter, r *http.Request) {
 	flash := ""
-	if r.URL.Query().Get("saved") == "1" {
+	errMsg := ""
+	switch {
+	case r.URL.Query().Get("saved") == "1":
 		flash = "Email settings saved."
+	case r.URL.Query().Get("test") == "ok":
+		flash = "Test email sent successfully — check your inbox."
+	case r.URL.Query().Get("test") == "error":
+		errMsg = "Test email failed: " + r.URL.Query().Get("msg")
 	}
 	e := h.cfg.Server.Notifications.Email
 	s := h.cfg.Server.Notifications.Email.SMTP
@@ -616,6 +625,10 @@ func (h *AdminHandler) ConfigEmail(w http.ResponseWriter, r *http.Request) {
   <button type="submit" class="btn btn-primary">Save Email Settings</button>
   <a href="%s/config/email" class="btn btn-secondary">Cancel</a>
 </div>
+</form>
+<form method="POST" action="%s/config/email/test" style="margin-top:8px">
+  <button type="submit" class="btn btn-secondary">Send Test Email</button>
+  <div class="help-text">Sends a [TEST] email to your own admin address to verify SMTP actually works.</div>
 </form>`,
 		h.basePath(),
 		selectedIf(e.Enabled),
@@ -631,8 +644,9 @@ func (h *AdminHandler) ConfigEmail(w http.ResponseWriter, r *http.Request) {
 		selectedIf(s.UseTLS),
 		selectedIf(!s.UseTLS),
 		h.basePath(),
+		h.basePath(),
 	)
-	h.adminLayout(w, r, "Email", "/config/email", template.HTML(content), flash, "")
+	h.adminLayout(w, r, "Email", "/config/email", template.HTML(content), flash, errMsg)
 }
 
 // ConfigEmailSave handles POST /server/{adminPath}/config/email
@@ -667,6 +681,32 @@ func (h *AdminHandler) ConfigEmailSave(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	http.Redirect(w, r, h.basePath()+"/config/email?saved=1", http.StatusFound)
+}
+
+// ConfigEmailTest handles POST /server/{adminPath}/config/email/test — sends
+// a "[TEST]" prefixed email to the requesting admin's own address using the
+// currently saved SMTP configuration, per AI.md PART 18 ("Test email button
+// validates SMTP actually works before enabling email features"). Both the
+// attempt and its outcome are recorded to the audit log.
+func (h *AdminHandler) ConfigEmailTest(w http.ResponseWriter, r *http.Request) {
+	admin := h.getAdminFromSession(r)
+	if admin == nil || admin.Email == "" {
+		http.Redirect(w, r, h.basePath()+"/config/email?test=error&msg="+url.QueryEscape("no admin email on file to send to"), http.StatusFound)
+		return
+	}
+
+	emailService := service.NewEmailService(h.cfg)
+	err := emailService.SendTestEmail(admin.Email, h.version)
+
+	userID := &admin.ID
+	if err != nil {
+		h.recordAudit(r, userID, "email.test", "config/email", "failed: "+err.Error())
+		http.Redirect(w, r, h.basePath()+"/config/email?test=error&msg="+url.QueryEscape(err.Error()), http.StatusFound)
+		return
+	}
+
+	h.recordAudit(r, userID, "email.test", "config/email", "test email sent to "+admin.Email)
+	http.Redirect(w, r, h.basePath()+"/config/email?test=ok", http.StatusFound)
 }
 
 // --------------------------------------------------------------------------

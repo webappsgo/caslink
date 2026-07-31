@@ -22,6 +22,7 @@ var (
 	welcomeUserTemplate     = emailtmpl.WelcomeUserEmail
 	welcomeAdminTemplate    = emailtmpl.WelcomeAdminEmail
 	emailVerifyTemplate     = emailtmpl.EmailVerifyEmail
+	testEmailTemplate       = emailtmpl.TestEmail
 )
 
 // stripHeaderCRLF removes carriage-return and line-feed characters from a
@@ -112,22 +113,50 @@ func (s *EmailService) fromEmail() string {
 // SMTPConfigured checks if SMTP is configured and working
 // Per PART 26: No SMTP = No emails
 func (s *EmailService) SMTPConfigured() bool {
+	return s.TestSMTPConnection() == nil
+}
+
+// TestSMTPConnection performs a full SMTP-protocol-level pre-flight: it opens
+// a TCP connection, speaks EHLO, and — if credentials are configured —
+// authenticates. A server that accepts the TCP dial but rejects the SMTP
+// session (bad auth, TLS required, EHLO refused) is caught here instead of
+// only surfacing at actual send time, so misconfiguration fails loudly at
+// config/test time rather than silently dropping mail later.
+func (s *EmailService) TestSMTPConnection() error {
 	host := s.smtpHost()
 	if host == "" {
-		// No SMTP configured
-		return false
+		return fmt.Errorf("SMTP not configured")
 	}
 
 	port := s.smtpPort()
-
-	// Quick connection test — use net.JoinHostPort so IPv6 hosts work.
 	address := net.JoinHostPort(host, port)
+
 	conn, err := net.DialTimeout("tcp", address, 5*time.Second)
 	if err != nil {
-		return false
+		return fmt.Errorf("failed to reach SMTP server %s: %w", address, err)
 	}
-	conn.Close()
-	return true
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
+
+	client, err := smtp.NewClient(conn, host)
+	if err != nil {
+		return fmt.Errorf("SMTP handshake with %s failed: %w", address, err)
+	}
+	defer client.Close()
+
+	if err := client.Hello("localhost"); err != nil {
+		return fmt.Errorf("SMTP EHLO to %s failed: %w", address, err)
+	}
+
+	username := s.smtpUsername()
+	if username != "" {
+		auth := smtp.PlainAuth("", username, s.smtpPassword(), host)
+		if err := client.Auth(auth); err != nil {
+			return fmt.Errorf("SMTP authentication to %s failed: %w", address, err)
+		}
+	}
+
+	return client.Quit()
 }
 
 // AutoDetectSMTP attempts to auto-detect SMTP server per PART 26 line 19271-19285
@@ -252,6 +281,32 @@ func (s *EmailService) SendWelcome(email, username string, isAdmin bool) error {
 	subject, body := renderTemplate(template, vars)
 
 	return s.sendEmail(email, subject, body)
+}
+
+// SendTestEmail sends a "[TEST]" prefixed test message to verify the current
+// SMTP configuration actually delivers mail, not just that the TCP/protocol
+// pre-flight in TestSMTPConnection succeeds. Callers (the admin "Test
+// Connection" action) are expected to also write an audit log entry per
+// AI.md PART 18 ("prefix test emails with [TEST] and log them").
+func (s *EmailService) SendTestEmail(to, appVersion string) error {
+	if err := s.TestSMTPConnection(); err != nil {
+		return err
+	}
+
+	vars := map[string]string{
+		"app_name":    "Caslink",
+		"app_url":     getEnvOrDefault("APP_URL", "http://localhost:64521"),
+		"fqdn":        getEnvOrDefault("FQDN", "localhost"),
+		"timestamp":   time.Now().Format("2006-01-02 15:04:05 MST"),
+		"app_version": appVersion,
+		"smtp_host":   s.smtpHost(),
+		"smtp_port":   s.smtpPort(),
+	}
+
+	subject, body := renderTemplate(testEmailTemplate, vars)
+	subject = "[TEST] " + subject
+
+	return s.sendEmail(to, subject, body)
 }
 
 // sendEmail sends an email via SMTP

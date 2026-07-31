@@ -599,6 +599,7 @@ func (s *Server) setupRoutes() {
 			// Email
 			ar.Get("/config/email", adminHandler.ConfigEmail)
 			ar.Post("/config/email", adminHandler.ConfigEmailSave)
+			ar.Post("/config/email/test", adminHandler.ConfigEmailTest)
 
 			// Logs
 			ar.Get("/config/logs", adminHandler.ConfigLogs)

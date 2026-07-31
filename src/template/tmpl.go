@@ -21,3 +21,6 @@ var WelcomeAdminEmail string
 
 //go:embed email/email_verify.txt
 var EmailVerifyEmail string
+
+//go:embed email/test.txt
+var TestEmail string
