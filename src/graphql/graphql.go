@@ -11,7 +11,7 @@ import (
 // query and re-renders the page with the result) — no client-side
 // rendering framework, per AI.md PART 16's "NEVER do client-side
 // rendering (React/Vue)" rule. It works fully without JavaScript.
-func Handler(version string) http.HandlerFunc {
+func Handler(version string, resolver *Resolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Detect theme from query param or default to dark
 		theme := r.URL.Query().Get("theme")
@@ -25,7 +25,7 @@ func Handler(version string) http.HandlerFunc {
 				query = r.FormValue("query")
 			}
 			if query != "" {
-				result := executeQuery(query, nil)
+				result := resolver.Execute(r, query, nil)
 				if encoded, err := json.MarshalIndent(result, "", "  "); err == nil {
 					resultJSON = string(encoded)
 				}
@@ -47,7 +47,7 @@ func Handler(version string) http.HandlerFunc {
 }
 
 // QueryHandler handles GraphQL queries
-func QueryHandler() http.HandlerFunc {
+func QueryHandler(resolver *Resolver) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Parse GraphQL query from request body
 		var req struct {
@@ -60,39 +60,11 @@ func QueryHandler() http.HandlerFunc {
 			return
 		}
 
-		// Execute query (simplified for now)
-		result := executeQuery(req.Query, req.Variables)
+		result := resolver.Execute(r, req.Query, req.Variables)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(result)
-	}
-}
-
-// SchemaHandler serves the GraphQL schema
-func SchemaHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		schema := GetSchema()
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(schema))
-	}
-}
-
-// executeQuery executes a GraphQL query.
-//
-// Query resolvers are not yet wired to the store/services (the schema in
-// schema.go advertises url/urls/createURL/etc. but no resolver layer exists).
-// Rather than fabricate a success response, return a spec-compliant GraphQL
-// error so callers are not misled into believing the endpoint is functional.
-func executeQuery(query string, variables map[string]interface{}) map[string]interface{} {
-	_ = query
-	_ = variables
-	return map[string]interface{}{
-		"data": nil,
-		"errors": []map[string]interface{}{
-			{"message": "GraphQL resolvers are not yet implemented"},
-		},
 	}
 }
 
@@ -132,10 +104,9 @@ const graphiQLTemplate = `<!DOCTYPE html>
     <div class="console">
         <h1>Caslink GraphQL Console</h1>
         <p>Submit a query below (works without JavaScript). Programmatic clients should
-        POST JSON to <code>/graphql</code> directly; see the
-        <a href="/graphql/schema">schema</a>.</p>
-        <form method="post" action="/graphiql">
-            <textarea name="query" placeholder="query { health { status message } }">{{.Query}}</textarea>
+        POST JSON to <code>/api/graphql</code> directly.</p>
+        <form method="post" action="/server/docs/graphql">
+            <textarea name="query" placeholder="query { health { status version uptime } }">{{.Query}}</textarea>
             <p><button type="submit">Run query</button></p>
         </form>
         {{if .Result}}

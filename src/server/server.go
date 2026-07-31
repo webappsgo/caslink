@@ -350,6 +350,12 @@ func (s *Server) setupRoutes() {
 
 	// Create handlers
 	urlHandler := handler.NewURLHandler(urlService, analyticsService, s.renderer, s.config)
+	graphqlResolver := graphql.NewResolver(urlService, tokenService, graphql.Info{
+		Version:   s.Version,
+		CommitID:  s.CommitID,
+		BuildDate: s.BuildDate,
+		Mode:      s.mode.String(),
+	})
 	qrHandler := handler.NewQRHandler(qrService, urlService)
 	bulkHandler := handler.NewBulkHandler(bulkService)
 	adminHandler := handler.NewAdminHandler(authService, userAdminService, auditService, s.Version, s.mode.String(), adminPath, s.config, s.store, func() *apktor.TorManager { return s.torManager })
@@ -439,14 +445,14 @@ func (s *Server) setupRoutes() {
 	// HTTP-01 verification. Returns 404 when no challenge is active for the token.
 	s.router.Get("/.well-known/acme-challenge/{token}", s.wellKnownACMEChallenge)
 
-	// GraphQL API
-	// GraphiQL UI replaced with a server-rendered query console at /graphiql
-	// (GET renders the form, POST executes and re-renders) — no client-side
-	// rendering framework, per AI.md PART 16.
-	s.router.Get("/graphiql", graphql.Handler(s.Version))
-	s.router.Post("/graphiql", graphql.Handler(s.Version))
-	s.router.Get("/graphql/schema", graphql.SchemaHandler())
-	s.router.Post("/graphql", graphql.QueryHandler())
+	// GraphQL API per AI.md PART 14.
+	// Console UI (GET renders the form, POST executes and re-renders) — no
+	// client-side rendering framework, per AI.md PART 16.
+	s.router.Get("/server/docs/graphql", graphql.Handler(s.Version, graphqlResolver))
+	s.router.Post("/server/docs/graphql", graphql.Handler(s.Version, graphqlResolver))
+	// Unversioned alias — mounts the SAME handler as the versioned canonical
+	// route below, never a redirect (per PART 14 Route Migration Rule).
+	s.router.Post("/api/graphql", graphql.QueryHandler(graphqlResolver))
 
 	// Setup wizard (first-run only) — CSRF applied per AI.md PART 11.
 	// The setup token provides primary protection; CSRF adds a second layer
@@ -706,6 +712,9 @@ func (s *Server) setupRoutes() {
 		r.Get("/version", handler.VersionHandler(s.Version, s.CommitID, s.BuildDate))
 		// OpenAPI JSON spec — canonical per spec PART 14 + IDEA.md
 		r.Get("/server/swagger", swagger.SpecHandler(s.Version))
+		// GraphQL — canonical versioned route per spec PART 14; same handler
+		// as the unversioned /api/graphql alias above.
+		r.Post("/server/graphql", graphql.QueryHandler(graphqlResolver))
 
 		// CSP violation report endpoint (AI.md PART 11 report-uri).
 		// Accepts browser-POSTed CSP reports and returns 204; the report body is discarded

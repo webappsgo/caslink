@@ -224,7 +224,7 @@ func buildHelpSections(apiBase string) []helpSection {
 			Items: []helpItem{
 				{Label: "Interactive Swagger UI", Content: apiBase + "/server/docs/swagger", IsCode: false},
 				{Label: "OpenAPI JSON spec", Content: apiBase + "/api/v1/server/swagger", IsCode: false},
-				{Label: "GraphiQL explorer", Content: apiBase + "/graphiql", IsCode: false},
+				{Label: "GraphiQL explorer", Content: apiBase + "/server/docs/graphql", IsCode: false},
 			},
 		},
 		{
@@ -355,7 +355,7 @@ func (h *PagesHandler) APIHelp(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"api_base":    apiBase,
 		"swagger_ui":  apiBase + "/server/docs/swagger",
-		"graphiql":    apiBase + "/graphiql",
+		"graphiql":    apiBase + "/server/docs/graphql",
 		"healthz":     apiBase + "/server/healthz",
 		"sections":    buildHelpSections(apiBase),
 		"tor_enabled": torEnabled,

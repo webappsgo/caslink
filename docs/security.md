@@ -74,7 +74,7 @@ The following endpoints are publicly accessible without authentication:
 | `/server/about` | About page |
 | `/server/help` | Help page with API examples |
 | `/server/docs/swagger` | Swagger UI (API documentation) |
-| `/graphiql` | GraphQL explorer |
+| `/server/docs/graphql` | GraphQL explorer |
 
 The `/metrics` endpoint (Prometheus) is **internal-only** and never publicly exposed. Optionally protected with bearer token auth.
 

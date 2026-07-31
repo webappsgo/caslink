@@ -5,9 +5,9 @@
 | Tool | URL |
 |------|-----|
 | Swagger UI | `/server/docs/swagger` |
-| GraphiQL | `/graphiql` |
+| GraphiQL | `/server/docs/graphql` |
 | OpenAPI JSON spec | `/api/v1/server/swagger` (also aliased at `/api/swagger`) |
-| GraphQL schema | `GET /graphql/schema` |
+| GraphQL endpoint | `POST /api/v1/server/graphql` (also aliased at `/api/graphql`) |
 
 ## Overview
 
@@ -195,13 +195,13 @@ Base path: `/api/v1/server/{admin_path}/` where `admin_path` defaults to `admin`
 ## GraphQL
 
 ```
-POST /graphql
+POST /api/graphql
 Content-Type: application/json
 
-{ "query": "{ urls { code originalUrl clicks } }" }
+{ "query": "{ urls { short_code long_url created_at } }" }
 ```
 
-Explore the schema interactively at `/graphiql` or fetch it as text at `GET /graphql/schema`.
+Explore the schema interactively at `/server/docs/graphql`.
 
 ## CSP Violation Reports
 

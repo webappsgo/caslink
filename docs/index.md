@@ -10,8 +10,8 @@ Caslink is a secure, mobile-first, fully self-hosted URL shortener written in Go
 - **Single static binary** — all templates, CSS, JS, and locale files embedded at build time
 - **Zero-config startup** — auto-selects a port in the 64xxx range, creates `server.yml` on first run
 - **Multi-database** — SQLite (default), PostgreSQL, MySQL/MariaDB, SQL Server
-- **Full REST API + GraphQL** — versioned REST at `/api/v1/`, GraphQL at `/graphql`
-- **Interactive API docs** — Swagger UI at `/server/docs/swagger`, GraphiQL at `/graphiql`
+- **Full REST API + GraphQL** — versioned REST at `/api/v1/`, GraphQL at `/api/v1/server/graphql`
+- **Interactive API docs** — Swagger UI at `/server/docs/swagger`, GraphiQL at `/server/docs/graphql`
 - **Click analytics** — real-time tracking with GeoIP enrichment, referrer and device parsing
 - **QR code generation** — PNG/SVG/PDF output, configurable size and error-correction level
 - **Bulk import/export** — CSV/JSON via `/api/v1/users/urls/import` and `/export`

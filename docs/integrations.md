@@ -90,9 +90,9 @@ Caslink exposes a versioned REST API and a GraphQL endpoint:
 | Surface | URL |
 |---------|-----|
 | REST API | `/api/v1/` |
-| GraphQL | `/graphql` |
+| GraphQL | `/api/v1/server/graphql` (aliased at `/api/graphql`) |
 | Swagger UI | `/server/docs/swagger` |
-| GraphiQL | `/graphiql` |
+| GraphiQL | `/server/docs/graphql` |
 | OpenAPI JSON spec | `/api/v1/server/swagger` |
 
 See [API Reference](api.md) for complete endpoint documentation.
