@@ -4,12 +4,21 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/webappsgo/caslink/src/server/store"
 )
+
+// escapeLikePattern escapes SQL LIKE wildcard characters (% and _) plus the
+// escape character itself, so a raw search term never behaves like a
+// wildcard pattern. Callers must pair this with `ESCAPE '\'` in the query.
+func escapeLikePattern(s string) string {
+	r := strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_")
+	return r.Replace(s)
+}
 
 // UserAdminService provides admin-level user management operations.
 type UserAdminService struct {
@@ -53,9 +62,9 @@ func (s *UserAdminService) ListUsers(ctx context.Context, page, limit int, searc
 	var err error
 
 	if search != "" {
-		pattern := "%" + search + "%"
+		pattern := "%" + escapeLikePattern(search) + "%"
 		if err = s.store.UsersDB.QueryRowContext(ctx,
-			`SELECT COUNT(*) FROM users WHERE username LIKE ? OR email LIKE ?`,
+			`SELECT COUNT(*) FROM users WHERE username LIKE ? ESCAPE '\' OR email LIKE ? ESCAPE '\'`,
 			pattern, pattern,
 		).Scan(&total); err != nil {
 			return nil, 0, fmt.Errorf("failed to count users: %w", err)
@@ -64,7 +73,7 @@ func (s *UserAdminService) ListUsers(ctx context.Context, page, limit int, searc
 			`SELECT id, username, email, email_verified, totp_enabled,
 			        COALESCE(suspended, 0), COALESCE(suspend_reason,''), created_at, last_login
 			 FROM users
-			 WHERE username LIKE ? OR email LIKE ?
+			 WHERE username LIKE ? ESCAPE '\' OR email LIKE ? ESCAPE '\'
 			 ORDER BY created_at DESC LIMIT ? OFFSET ?`,
 			pattern, pattern, limit, offset,
 		)
