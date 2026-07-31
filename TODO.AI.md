@@ -43,18 +43,3 @@ findings from that audit were fixed directly and are not listed here.
   in `totp_secrets.backup_codes` are valid JSON arrays (they should be, since
   generation already wrote JSON) — add a one-time migration/validation if any
   legacy non-JSON rows could exist.
-
-## Query robustness (low severity, batch when convenient)
-
-- `admin_users` search uses `LIKE` without escaping `%`/`_` in the user term —
-  wildcards in a search box behave unexpectedly (not an injection; queries are
-  parameterized).
-- i18n `Tf` re-substitution: verify translated strings containing `%` can never
-  be re-interpreted as format verbs.
-- `parseInt` in `src/config/config.go` silently returns 0 on any non-digit and
-  has no overflow guard — fine for config sizes, but document the 0-on-error
-  contract at call sites that treat 0 as "unset".
-- N+1 query when listing org members — batch into a single JOIN if member lists
-  grow large.
-- `template.Must` parsing per request in some handlers — parse once at startup
-  and reuse.
