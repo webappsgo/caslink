@@ -29,38 +29,57 @@ type Metrics struct {
 	registry *prometheus.Registry
 
 	// ---- Application info ----
-	AppInfo          *prometheus.GaugeVec
-	AppUptimeSeconds prometheus.GaugeFunc
+	AppInfo           *prometheus.GaugeVec
+	AppUptimeSeconds  prometheus.GaugeFunc
 	AppStartTimestamp prometheus.Gauge
 
 	// ---- HTTP ----
-	HTTPRequestsTotal        *prometheus.CounterVec
-	HTTPRequestDuration      *prometheus.HistogramVec
-	HTTPRequestSizeBytes     *prometheus.HistogramVec
-	HTTPResponseSizeBytes    *prometheus.HistogramVec
-	HTTPActiveRequests       prometheus.Gauge
+	HTTPRequestsTotal     *prometheus.CounterVec
+	HTTPRequestDuration   *prometheus.HistogramVec
+	HTTPRequestSizeBytes  *prometheus.HistogramVec
+	HTTPResponseSizeBytes *prometheus.HistogramVec
+	HTTPActiveRequests    prometheus.Gauge
 
 	// ---- Database ----
-	DBQueriesTotal       *prometheus.CounterVec
-	DBQueryDuration      *prometheus.HistogramVec
-	DBConnectionsOpen    prometheus.Gauge
-	DBConnectionsInUse   prometheus.Gauge
-	DBErrorsTotal        *prometheus.CounterVec
+	DBQueriesTotal     *prometheus.CounterVec
+	DBQueryDuration    *prometheus.HistogramVec
+	DBConnectionsOpen  prometheus.Gauge
+	DBConnectionsInUse prometheus.Gauge
+	DBErrorsTotal      *prometheus.CounterVec
 
 	// ---- Auth ----
 	AuthAttemptsTotal  *prometheus.CounterVec
 	AuthSessionsActive prometheus.Gauge
 
 	// ---- Scheduler ----
-	SchedulerTasksTotal *prometheus.CounterVec
+	SchedulerTasksTotal          *prometheus.CounterVec
+	SchedulerTaskDurationSeconds *prometheus.HistogramVec
+	SchedulerTasksRunning        *prometheus.GaugeVec
+	SchedulerLastRunTimestamp    *prometheus.GaugeVec
+
+	// ---- Cache ----
+	CacheHitsTotal      *prometheus.CounterVec
+	CacheMissesTotal    *prometheus.CounterVec
+	CacheEvictionsTotal *prometheus.CounterVec
+
+	// ---- Rate limiting ----
+	RatelimitRequestsTotal *prometheus.CounterVec
+	RatelimitBlockedTotal  *prometheus.CounterVec
 }
+
+// schedulerDurationBuckets are the spec-canonical buckets for scheduler task
+// run duration (AI.md PART 21), covering sub-second tasks through the
+// longest expected maintenance jobs (10 minutes).
+var schedulerDurationBuckets = []float64{0.1, 0.5, 1, 5, 10, 30, 60, 300, 600}
 
 var startTime = time.Now()
 
 // New creates and registers all caslink metrics. It returns the Metrics struct
 // and the HTTP handler for the /metrics endpoint.
-// When includeRuntime is true the default Go runtime collectors are also registered.
-func New(version, commit, buildDate string, includeRuntime bool) (*Metrics, http.Handler) {
+// When includeRuntime is true the default Go runtime collectors are also registered,
+// plus the spec-mandated custom-named go_* gauges/counters.
+// When includeSystem is true, system disk usage metrics are registered for dataDir.
+func New(version, commit, buildDate string, includeRuntime, includeSystem bool, dataDir string) (*Metrics, http.Handler) {
 	reg := prometheus.NewRegistry()
 
 	m := &Metrics{registry: reg}
@@ -156,6 +175,51 @@ func New(version, commit, buildDate string, includeRuntime bool) (*Metrics, http
 		Help: "Total scheduled task executions, partitioned by task name and status.",
 	}, []string{"task", "status"})
 
+	m.SchedulerTaskDurationSeconds = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "caslink_scheduler_task_duration_seconds",
+		Help:    "Scheduled task run duration in seconds, partitioned by task name.",
+		Buckets: schedulerDurationBuckets,
+	}, []string{"task"})
+
+	m.SchedulerTasksRunning = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "caslink_scheduler_tasks_running",
+		Help: "Whether a scheduled task is currently running (1) or not (0), by task name.",
+	}, []string{"task"})
+
+	m.SchedulerLastRunTimestamp = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "caslink_scheduler_last_run_timestamp",
+		Help: "Unix timestamp of the last run of a scheduled task, by task name.",
+	}, []string{"task"})
+
+	// ---- Cache ----
+	m.CacheHitsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "caslink_cache_hits_total",
+		Help: "Total cache hits, partitioned by cache name.",
+	}, []string{"cache"})
+
+	m.CacheMissesTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "caslink_cache_misses_total",
+		Help: "Total cache misses, partitioned by cache name.",
+	}, []string{"cache"})
+
+	m.CacheEvictionsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "caslink_cache_evictions_total",
+		Help: "Total cache evictions, partitioned by cache name.",
+	}, []string{"cache"})
+
+	// ---- Rate limiting ----
+	// NOTE: "limit" is a rate-limit rule name (e.g. "login", "register"), never
+	// a raw client IP — see AI.md PART 21 cardinality warning.
+	m.RatelimitRequestsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "caslink_ratelimit_requests_total",
+		Help: "Total rate-limited-path requests, partitioned by limit rule and outcome status.",
+	}, []string{"limit", "status"})
+
+	m.RatelimitBlockedTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "caslink_ratelimit_blocked_total",
+		Help: "Total requests blocked by rate limiting, partitioned by limit rule.",
+	}, []string{"limit"})
+
 	// Register all metrics.
 	reg.MustRegister(
 		m.AppInfo,
@@ -174,13 +238,26 @@ func New(version, commit, buildDate string, includeRuntime bool) (*Metrics, http
 		m.AuthAttemptsTotal,
 		m.AuthSessionsActive,
 		m.SchedulerTasksTotal,
+		m.SchedulerTaskDurationSeconds,
+		m.SchedulerTasksRunning,
+		m.SchedulerLastRunTimestamp,
+		m.CacheHitsTotal,
+		m.CacheMissesTotal,
+		m.CacheEvictionsTotal,
+		m.RatelimitRequestsTotal,
+		m.RatelimitBlockedTotal,
 	)
 
 	if includeRuntime {
 		reg.MustRegister(
 			collectors.NewGoCollector(),
 			collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+			newRuntimeMetricsCollector(),
 		)
+	}
+
+	if includeSystem && dataDir != "" {
+		reg.MustRegister(newDiskCollector(dataDir))
 	}
 
 	handler := promhttp.HandlerFor(reg, promhttp.HandlerOpts{

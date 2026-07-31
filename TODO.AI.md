@@ -239,13 +239,52 @@ Last full audit: 2026-07-30
 
 ## PART 21 — Metrics
 
-- [MED] Several required metric families missing from `src/metrics/metrics.go`:
-  cache (`caslink_cache_hits_total`/`_misses_total`/`_evictions_total`/`cache_bytes`),
-  system (`disk_total_bytes`/`disk_used_bytes`/`memory_total_bytes`/`_used`),
-  go-runtime (`go_mem_alloc_bytes`/`_mem_sys_bytes`/`gc_runs_total`/`gc_pause_total_seconds`),
-  ratelimit (`ratelimit_requests_total`/`_blocked_total`),
-  `scheduler_task_duration_seconds`,
-  cluster (`cluster_nodes_total`/`sync_lag_seconds`/`elections_total`).
+- [DONE 2026-07-30] Fixed a production bug where `appmetrics.New(...)` was
+  called twice in `src/server/server.go` (once in `New()`, again in
+  `setupRoutes()`), creating two disjoint Prometheus registries — the real
+  `/metrics` endpoint was bound to an empty second registry, so none of the
+  HTTP/DB/auth/scheduler metrics recorded via `s.metrics.Middleware` ever
+  appeared in production. Fixed by storing the handler on a new
+  `Server.metricsHandler` field from the single `New()` call.
+- [DONE 2026-07-30] Added missing required/optional metric families to
+  `src/metrics/metrics.go` and wired each into its real call site:
+  cache (`caslink_cache_hits_total`/`_misses_total`/`_evictions_total`,
+  wired into `QRService` via `SetMetrics`), ratelimit
+  (`caslink_ratelimit_requests_total`/`_blocked_total`, wired into
+  `RateLimiter` via `SetMetrics` — labeled by rule name, never raw IP),
+  scheduler (`caslink_scheduler_task_duration_seconds`,
+  `caslink_scheduler_tasks_running`, `caslink_scheduler_last_run_timestamp`,
+  plus `caslink_scheduler_tasks_total` which existed as a field but was never
+  actually incremented anywhere — all four now wired into
+  `Scheduler.runTask`/`tick` via `SetMetrics`), go-runtime custom-named
+  gauges/counters (`caslink_go_goroutines`/`_mem_alloc_bytes`/`_mem_sys_bytes`/
+  `_gc_runs_total`/`_gc_pause_total_seconds` via a dedicated
+  `runtimeMetricsCollector`, distinct from the default `client_golang`
+  Go collector), and system disk usage
+  (`caslink_system_disk_usage_percent`/`_used_bytes`/`_total_bytes` labeled by
+  `path`, via a new `diskCollector` + platform-specific `disk_unix.go`/
+  `disk_windows.go` helpers, gated on `server.metrics.include_system`).
+  `metrics.New(...)` signature changed to accept `includeSystem bool, dataDir
+  string`. Unit tests added: `src/metrics/metrics_test.go`,
+  `src/metrics/disk_unix_test.go`.
+- [LOW] System CPU/memory metrics (`system_cpu_usage_percent`,
+  `system_memory_usage_percent`/`_used_bytes`/`_total_bytes`) are NOT
+  implemented — accurate cross-platform CPU% requires interval-based delta
+  sampling and real OS-level memory totals (not just Go heap stats via
+  `runtime.MemStats`), which needs a small background sampler to do correctly
+  without fabricating misleading values. Scoped out of the initial PART 21
+  pass; implement when picked up.
+- [LOW] Cluster metrics (`cluster_nodes_total`/`sync_lag_seconds`/
+  `elections_total`) are NOT implemented — no cluster/peer infrastructure
+  exists in this codebase (same precedent as `Scheduler.clusterHeartbeat`,
+  which is an explicit no-op). Add if/when PART 10 clustering is implemented.
+- [LOW] Business metrics (e.g. `users_total`) are NOT implemented — PART 34
+  regular-user accounts are not confirmed implemented in this codebase yet
+  (no `RegularUser`/`UsersTotal` references found). Add alongside PART 34 if
+  it's built out.
+- [LOW] Tor-specific metrics were not investigated this pass — add if AI.md
+  PART 32 calls for dedicated Tor metrics beyond the existing
+  `tor_health` scheduler task status.
 
 ## PART 22 — Backup & Restore
 

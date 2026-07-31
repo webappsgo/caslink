@@ -10,12 +10,18 @@ import (
 
 	"github.com/skip2/go-qrcode"
 
+	"github.com/casjaysdevdocker/caslink/src/metrics"
 	"github.com/casjaysdevdocker/caslink/src/server/store"
 )
 
+// qrCacheLabel is the Prometheus "cache" label value for QR code caching
+// (AI.md PART 21 Cache metrics).
+const qrCacheLabel = "qr_codes"
+
 // QRService handles QR code generation
 type QRService struct {
-	store *store.Store
+	store   *store.Store
+	metrics *metrics.Metrics // optional; nil disables cache metric recording
 }
 
 // NewQRService creates a new QR service
@@ -23,6 +29,12 @@ func NewQRService(st *store.Store) *QRService {
 	return &QRService{
 		store: st,
 	}
+}
+
+// SetMetrics attaches a Metrics instance so cache hits/misses/evictions are
+// recorded. Optional — safe to leave nil.
+func (s *QRService) SetMetrics(m *metrics.Metrics) {
+	s.metrics = m
 }
 
 // QRCodeOptions represents options for QR code generation
@@ -54,7 +66,13 @@ func (s *QRService) GenerateQRCode(ctx context.Context, urlID int64, url string,
 	// Check cache first
 	cached, contentType, err := s.getFromCache(ctx, urlID, opts)
 	if err == nil && cached != nil {
+		if s.metrics != nil {
+			s.metrics.CacheHitsTotal.WithLabelValues(qrCacheLabel).Inc()
+		}
 		return cached, contentType, nil
+	}
+	if s.metrics != nil {
+		s.metrics.CacheMissesTotal.WithLabelValues(qrCacheLabel).Inc()
 	}
 
 	// Generate QR code
@@ -132,8 +150,16 @@ func (s *QRService) saveToCache(ctx context.Context, urlID int64, format string,
 // ClearCache clears cached QR codes for a URL
 func (s *QRService) ClearCache(ctx context.Context, urlID int64) error {
 	query := `DELETE FROM qr_codes WHERE url_id = ?`
-	_, err := s.store.ServerDB.ExecContext(ctx, query, urlID)
-	return err
+	res, err := s.store.ServerDB.ExecContext(ctx, query, urlID)
+	if err != nil {
+		return err
+	}
+	if s.metrics != nil {
+		if n, rerr := res.RowsAffected(); rerr == nil && n > 0 {
+			s.metrics.CacheEvictionsTotal.WithLabelValues(qrCacheLabel).Add(float64(n))
+		}
+	}
+	return nil
 }
 
 // generateSVG renders a QR code as SVG by iterating the bitmap from go-qrcode.

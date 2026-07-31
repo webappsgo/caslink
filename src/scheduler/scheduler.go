@@ -16,6 +16,7 @@ import (
 	"github.com/casjaysdevdocker/caslink/src/backup"
 	"github.com/casjaysdevdocker/caslink/src/config"
 	"github.com/casjaysdevdocker/caslink/src/geoip"
+	appmetrics "github.com/casjaysdevdocker/caslink/src/metrics"
 	"github.com/casjaysdevdocker/caslink/src/server/service"
 	"github.com/casjaysdevdocker/caslink/src/server/store"
 	"github.com/casjaysdevdocker/caslink/src/updater"
@@ -60,19 +61,20 @@ type Scheduler struct {
 	catchUpWindow time.Duration
 	nodeID        string
 
-	logDir           string                   // path to log directory for log_rotation; may be ""
-	geoip            *geoip.Service           // optional; nil → geoip_update is a no-op
-	configDir        string                   // for daily backup; may be ""
-	dataDir          string                   // for daily backup; may be ""
-	backupDir        string                   // for daily backup; "" disables automatic backups
-	torChecker       torHealthChecker         // optional; nil → tor_health is a no-op
-	blocklistSources []config.BlocklistSource // empty → blocklist_update is a no-op
-	cveSources       []config.CVESource       // empty → cve_update is a no-op
-	complianceRequired bool                   // true → scheduled backups must be encrypted or are skipped
-	retention        config.BackupRetentionConfig // applied to backupDir after a successful backup_daily run
-	version          string                       // running binary version, for update_check
+	logDir             string                       // path to log directory for log_rotation; may be ""
+	geoip              *geoip.Service               // optional; nil → geoip_update is a no-op
+	configDir          string                       // for daily backup; may be ""
+	dataDir            string                       // for daily backup; may be ""
+	backupDir          string                       // for daily backup; "" disables automatic backups
+	torChecker         torHealthChecker             // optional; nil → tor_health is a no-op
+	blocklistSources   []config.BlocklistSource     // empty → blocklist_update is a no-op
+	cveSources         []config.CVESource           // empty → cve_update is a no-op
+	complianceRequired bool                         // true → scheduled backups must be encrypted or are skipped
+	retention          config.BackupRetentionConfig // applied to backupDir after a successful backup_daily run
+	version            string                       // running binary version, for update_check
 
 	auditSvc *service.AuditService // optional; nil → task runs are not audit-logged
+	metrics  *appmetrics.Metrics   // optional; nil → task runs are not recorded to Prometheus
 
 	updateSeenMu sync.Mutex
 	updateSeen   map[string]time.Time // release tag -> first-observed time, for update.defer_days (in-memory; resets on restart)
@@ -144,6 +146,13 @@ func (s *Scheduler) SetTorChecker(tc torHealthChecker) {
 // unset, task executions are simply not audit-logged.
 func (s *Scheduler) SetAuditService(a *service.AuditService) {
 	s.auditSvc = a
+}
+
+// SetMetrics wires an optional Metrics instance after construction (mirrors
+// SetAuditService/SetTorChecker). When nil (the default), scheduler_* metrics
+// are simply not recorded.
+func (s *Scheduler) SetMetrics(m *appmetrics.Metrics) {
+	s.metrics = m
 }
 
 // retryPolicy returns the default (max_retries, retry_delay) from config,
@@ -284,6 +293,10 @@ func (s *Scheduler) tick() {
 			continue
 		}
 
+		if s.metrics != nil {
+			s.metrics.SchedulerTasksRunning.WithLabelValues(t.id).Set(1)
+		}
+
 		s.wg.Add(1)
 		go func(t *task) {
 			defer s.wg.Done()
@@ -358,6 +371,9 @@ func (s *Scheduler) runTask(t *task) {
 		t.mu.Lock()
 		t.running = false
 		t.mu.Unlock()
+		if s.metrics != nil {
+			s.metrics.SchedulerTasksRunning.WithLabelValues(t.id).Set(0)
+		}
 	}()
 
 	if t.taskType == "global" {
@@ -406,6 +422,12 @@ func (s *Scheduler) runTask(t *task) {
 	t.mu.Unlock()
 
 	s.recordRun(t, started, finished, status, errMsg, nextRun)
+
+	if s.metrics != nil {
+		s.metrics.SchedulerTasksTotal.WithLabelValues(t.id, status).Inc()
+		s.metrics.SchedulerTaskDurationSeconds.WithLabelValues(t.id).Observe(duration.Seconds())
+		s.metrics.SchedulerLastRunTimestamp.WithLabelValues(t.id).Set(float64(finished.Unix()))
+	}
 
 	if s.auditSvc != nil {
 		details := fmt.Sprintf("status=%s duration=%s", status, duration.Round(time.Millisecond))

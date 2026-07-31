@@ -40,21 +40,22 @@ import (
 
 // Server represents the HTTP server
 type Server struct {
-	router      *chi.Mux
-	server      *http.Server
-	config      *config.Config
-	mode        mode.Mode
-	store       *store.Store
-	scheduler   *scheduler.Scheduler
-	renderer    *tmpl.Renderer
-	metrics     *appmetrics.Metrics
-	log         *logger.Logger
-	pidFile     string                // path to PID file; empty = no PID file
-	acmeManager *autocert.Manager     // non-nil when LE HTTP-01 is active
-	geoip       *geoip.Service        // non-nil when GeoIP is enabled
-	torManager  *apktor.TorManager    // non-nil when Tor binary was found at startup
-	configDir   string                // kept for TorManager (port not known until Start)
-	dataDir     string                // kept for TorManager
+	router         *chi.Mux
+	server         *http.Server
+	config         *config.Config
+	mode           mode.Mode
+	store          *store.Store
+	scheduler      *scheduler.Scheduler
+	renderer       *tmpl.Renderer
+	metrics        *appmetrics.Metrics
+	metricsHandler http.Handler
+	log            *logger.Logger
+	pidFile        string             // path to PID file; empty = no PID file
+	acmeManager    *autocert.Manager  // non-nil when LE HTTP-01 is active
+	geoip          *geoip.Service     // non-nil when GeoIP is enabled
+	torManager     *apktor.TorManager // non-nil when Tor binary was found at startup
+	configDir      string             // kept for TorManager (port not known until Start)
+	dataDir        string             // kept for TorManager
 
 	// Request counters for health endpoint (AI.md PART 13 stats fields).
 	// reqTotal is incremented on each request; activeConn is a live gauge.
@@ -109,7 +110,14 @@ func New(cfg *config.Config, appMode mode.Mode, dataDir, logDir, pidFile string,
 	}
 
 	// Initialize Prometheus metrics (always; gated by config at route level).
-	m, _ := appmetrics.New(version, commitID, buildDate, cfg.Server.Metrics.IncludeRuntime)
+	// A single registry/handler pair is created here and reused for both the
+	// Middleware (recording metrics) and the /metrics route (serving them) —
+	// two separate appmetrics.New() calls would create two disjoint registries,
+	// leaving /metrics permanently empty of everything Middleware records.
+	m, metricsHandler := appmetrics.New(
+		version, commitID, buildDate,
+		cfg.Server.Metrics.IncludeRuntime, cfg.Server.Metrics.IncludeSystem, dataDir,
+	)
 
 	// Initialise Let's Encrypt autocert.Manager.
 	// HTTP-01 (default) and TLS-ALPN-01 are both handled by autocert;
@@ -175,22 +183,23 @@ func New(cfg *config.Config, appMode mode.Mode, dataDir, logDir, pidFile string,
 	}
 
 	s := &Server{
-		router:      chi.NewRouter(),
-		config:      cfg,
-		mode:        appMode,
-		store:       db,
-		scheduler:   sched,
-		renderer:    renderer,
-		metrics:     m,
-		log:         appLogger,
-		pidFile:     pidFile,
-		acmeManager: acmeMgr,
-		geoip:       geoSvc,
-		configDir:   configDir,
-		dataDir:     dataDir,
-		Version:     version,
-		CommitID:    commitID,
-		BuildDate:   buildDate,
+		router:         chi.NewRouter(),
+		config:         cfg,
+		mode:           appMode,
+		store:          db,
+		scheduler:      sched,
+		renderer:       renderer,
+		metrics:        m,
+		metricsHandler: metricsHandler,
+		log:            appLogger,
+		pidFile:        pidFile,
+		acmeManager:    acmeMgr,
+		geoip:          geoSvc,
+		configDir:      configDir,
+		dataDir:        dataDir,
+		Version:        version,
+		CommitID:       commitID,
+		BuildDate:      buildDate,
 	}
 
 	s.setupMiddleware()
@@ -293,6 +302,7 @@ func (s *Server) setupRoutes() {
 
 	// Create rate limiter (per-IP sliding window)
 	rateLimiter := NewRateLimiter()
+	rateLimiter.SetMetrics(s.metrics)
 
 	// Create services
 	urlService := service.NewURLService(s.store)
@@ -307,6 +317,7 @@ func (s *Server) setupRoutes() {
 	totpService := service.NewTOTPService(s.store, encryptionKey, s.config.Server.Security.EncryptionKeyVersion)
 	emailService := service.NewEmailService(s.config)
 	qrService := service.NewQRService(s.store)
+	qrService.SetMetrics(s.metrics)
 	orgService := service.NewOrgService(s.store)
 	domainService := service.NewDomainService(s.store)
 	analyticsService := service.NewAnalyticsService(s.store)
@@ -314,6 +325,7 @@ func (s *Server) setupRoutes() {
 	userAdminService := service.NewUserAdminService(s.store)
 	auditService := service.NewAuditService(s.store)
 	s.scheduler.SetAuditService(auditService)
+	s.scheduler.SetMetrics(s.metrics)
 
 	// Token service (needed by user handler and bearer middleware)
 	tokenService := service.NewTokenService(s.store)
@@ -404,10 +416,7 @@ func (s *Server) setupRoutes() {
 		if endpoint == "" {
 			endpoint = "/metrics"
 		}
-		_, metricsHandler := appmetrics.New(
-			s.Version, s.CommitID, s.BuildDate,
-			s.config.Server.Metrics.IncludeRuntime,
-		)
+		metricsHandler := s.metricsHandler
 		token := s.config.Server.Metrics.Token
 		s.router.Get(endpoint, func(w http.ResponseWriter, r *http.Request) {
 			if token != "" {
@@ -676,21 +685,21 @@ func (s *Server) setupRoutes() {
 
 		// Public endpoints (no auth)
 		r.Get("/server/healthz", handler.APIHealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String(), s.store, func() *apktor.TorManager { return s.torManager }, func() (reqTotal, reqs24h, activeConn int64) {
-				reqTotal = atomic.LoadInt64(&s.reqTotal)
-				activeConn = atomic.LoadInt64(&s.activeConn)
-				for i := range s.reqWindow {
-					reqs24h += atomic.LoadInt64(&s.reqWindow[i])
-				}
-				return
-			}))
+			reqTotal = atomic.LoadInt64(&s.reqTotal)
+			activeConn = atomic.LoadInt64(&s.activeConn)
+			for i := range s.reqWindow {
+				reqs24h += atomic.LoadInt64(&s.reqWindow[i])
+			}
+			return
+		}))
 		r.Get("/healthz", handler.APIHealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String(), s.store, func() *apktor.TorManager { return s.torManager }, func() (reqTotal, reqs24h, activeConn int64) {
-				reqTotal = atomic.LoadInt64(&s.reqTotal)
-				activeConn = atomic.LoadInt64(&s.activeConn)
-				for i := range s.reqWindow {
-					reqs24h += atomic.LoadInt64(&s.reqWindow[i])
-				}
-				return
-			}))
+			reqTotal = atomic.LoadInt64(&s.reqTotal)
+			activeConn = atomic.LoadInt64(&s.activeConn)
+			for i := range s.reqWindow {
+				reqs24h += atomic.LoadInt64(&s.reqWindow[i])
+			}
+			return
+		}))
 		r.Get("/version", handler.VersionHandler(s.Version, s.CommitID, s.BuildDate))
 		// OpenAPI JSON spec — canonical per spec PART 14 + IDEA.md
 		r.Get("/server/swagger", swagger.SpecHandler(s.Version))

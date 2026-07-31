@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	appmetrics "github.com/casjaysdevdocker/caslink/src/metrics"
 	"github.com/casjaysdevdocker/caslink/src/server/handler"
 	"github.com/casjaysdevdocker/caslink/src/server/service"
 )
@@ -205,6 +206,7 @@ func (b *rateBucket) allow(limit int, window time.Duration) bool {
 type RateLimiter struct {
 	mu      sync.Mutex
 	buckets map[string]*rateBucket
+	metrics *appmetrics.Metrics // optional; nil disables ratelimit metric recording
 }
 
 // NewRateLimiter creates a new rate limiter with periodic garbage collection.
@@ -212,6 +214,14 @@ func NewRateLimiter() *RateLimiter {
 	rl := &RateLimiter{buckets: make(map[string]*rateBucket)}
 	go rl.gc()
 	return rl
+}
+
+// SetMetrics attaches a Metrics instance so ratelimit_requests_total and
+// ratelimit_blocked_total are recorded. Optional — safe to leave nil.
+// The "limit" label is always a rule name (e.g. "login"), never a raw IP,
+// per AI.md PART 21's cardinality warning.
+func (rl *RateLimiter) SetMetrics(m *appmetrics.Metrics) {
+	rl.metrics = m
 }
 
 // gc removes buckets that have had no requests for 2 hours.
@@ -269,24 +279,32 @@ func RateLimitMiddleware(rl *RateLimiter) func(http.Handler) http.Handler {
 
 			var limit int
 			var window time.Duration
+			var ruleName string
 
 			switch {
 			case strings.Contains(path, "/login"):
-				limit, window = 5, 15*time.Minute
+				limit, window, ruleName = 5, 15*time.Minute, "login"
 			case strings.Contains(path, "/register"):
-				limit, window = 5, time.Hour
+				limit, window, ruleName = 5, time.Hour, "register"
 			case strings.Contains(path, "/password"):
-				limit, window = 3, time.Hour
+				limit, window, ruleName = 3, time.Hour, "password"
 			case strings.Contains(path, "/2fa"):
-				limit, window = 5, 15*time.Minute
+				limit, window, ruleName = 5, 15*time.Minute, "2fa"
 			default:
 				next.ServeHTTP(w, r)
 				return
 			}
 
 			if !rl.Allow(ip+path, limit, window) {
+				if rl.metrics != nil {
+					rl.metrics.RatelimitRequestsTotal.WithLabelValues(ruleName, "blocked").Inc()
+					rl.metrics.RatelimitBlockedTotal.WithLabelValues(ruleName).Inc()
+				}
 				writeJSONError(w, http.StatusTooManyRequests, "Too many attempts. Please try again later.")
 				return
+			}
+			if rl.metrics != nil {
+				rl.metrics.RatelimitRequestsTotal.WithLabelValues(ruleName, "allowed").Inc()
 			}
 			next.ServeHTTP(w, r)
 		})
