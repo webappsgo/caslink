@@ -25,11 +25,3 @@ findings from that audit were fixed directly and are not listed here.
 - Email send path assumes `SMTPConfigured` implies a reachable server. Add a
   connect/dial pre-flight (or send-time error surfacing) so misconfigured SMTP
   fails loudly at config/test time rather than silently dropping mail.
-
-## Recovery-key / backup-code serialization (now JSON, verify migration)
-
-- `totp.UseRecoveryKey` was moved off fragile string-split parsing to
-  `encoding/json` + a transaction during the audit. Confirm all existing rows
-  in `totp_secrets.backup_codes` are valid JSON arrays (they should be, since
-  generation already wrote JSON) — add a one-time migration/validation if any
-  legacy non-JSON rows could exist.
