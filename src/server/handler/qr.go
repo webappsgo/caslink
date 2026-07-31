@@ -53,6 +53,14 @@ func (h *QRHandler) GenerateQR(w http.ResponseWriter, r *http.Request) {
 			size = s
 		}
 	}
+	// Clamp to a sane range: reject negative/huge values that would cause
+	// excessive allocation during image generation (DoS guard).
+	if size < 64 {
+		size = 64
+	}
+	if size > 2048 {
+		size = 2048
+	}
 
 	style := r.URL.Query().Get("style")
 	if style == "" {

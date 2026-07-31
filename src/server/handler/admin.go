@@ -653,6 +653,9 @@ func (h *AdminHandler) ActivateUser(w http.ResponseWriter, r *http.Request) {
 // apiUserList handles GET /api/v1/server/{adminPath}/config/users
 func (h *AdminHandler) APIUserList(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
 	search := r.URL.Query().Get("q")
 
 	users, total, err := h.userAdminService.ListUsers(r.Context(), page, 50, search)
