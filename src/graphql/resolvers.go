@@ -218,7 +218,7 @@ func (res *Resolver) resolveURL(ctx context.Context, r *http.Request, f astField
 func (res *Resolver) resolveURLs(ctx context.Context, r *http.Request, f astField, variables map[string]interface{}) (interface{}, error) {
 	rec, ok := res.bearerFromRequest(r)
 	if !ok || !(strings.EqualFold(rec.OwnerType, "user") || strings.EqualFold(rec.OwnerType, "org")) {
-		return nil, fmt.Errorf("Bearer user or org token required")
+		return nil, fmt.Errorf("bearer user or org token required")
 	}
 
 	limit := 10
@@ -390,7 +390,7 @@ func (res *Resolver) resolveDeleteURL(ctx context.Context, r *http.Request, f as
 func (res *Resolver) checkOwnership(ctx context.Context, r *http.Request, code string) error {
 	rec, ok := res.bearerFromRequest(r)
 	if !ok {
-		return fmt.Errorf("Bearer token required")
+		return fmt.Errorf("bearer token required")
 	}
 	if strings.EqualFold(rec.OwnerType, "admin") {
 		return nil
