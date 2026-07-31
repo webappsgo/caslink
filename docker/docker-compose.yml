@@ -22,7 +22,6 @@ services:
       TZ: ${TZ:-America/New_York}
       CONTAINER_NAME: caslink-app
       HOSTNAME: ${BASE_HOST_NAME:-$HOSTNAME}
-      CACHE_URL: valkey://caslink-cache:6379
       # DOMAIN (optional - auto-detects from reverse proxy headers)
       # DOMAIN: myapp.com,www.myapp.com
       # SMTP (optional - autodetects if not set)
@@ -41,26 +40,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 90s
-    depends_on:
-      caslink-cache:
-        condition: service_healthy
-    networks:
-      - caslink
-
-  caslink-cache:
-    image: valkey/valkey:alpine
-    container_name: caslink-cache
-    restart: always
-    pull_policy: always
-    logging: *default-logging
-    volumes:
-      - ./volumes/data/db/valkey:/data:z
-    healthcheck:
-      test: ["CMD-SHELL", "valkey-cli ping || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
     networks:
       - caslink
 
