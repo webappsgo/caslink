@@ -22,9 +22,9 @@ import (
 )
 
 const (
-	recoveryKeyDBTimeout    = 30 * time.Second
-	recoveryKeyCount        = 10
-	webauthnSessionTTL      = 5 * time.Minute
+	recoveryKeyDBTimeout     = 30 * time.Second
+	recoveryKeyCount         = 10
+	webauthnSessionTTL       = 5 * time.Minute
 	webauthnSessionCookieAge = int(webauthnSessionTTL / time.Second)
 )
 
@@ -43,7 +43,7 @@ type PasskeyCredential struct {
 	CredentialID   string
 	Name           string
 	AAGUID         string
-	SignCount       uint32
+	SignCount      uint32
 	UserVerified   bool
 	BackupEligible bool
 	BackupState    bool
@@ -185,6 +185,9 @@ func (s *WebAuthnService) BeginRegistration(userID, username, displayName string
 // FinishRegistration validates the authenticator response and persists the new
 // credential in the database using credentialName as the human-readable label.
 func (s *WebAuthnService) FinishRegistration(userID, credentialName string, sessionData *webauthn.SessionData, r *http.Request) error {
+	if sessionData == nil {
+		return fmt.Errorf("webauthn: missing or expired registration session")
+	}
 	credentials, err := s.loadCredentials(userID)
 	if err != nil {
 		return fmt.Errorf("failed to load credentials for finish registration: %w", err)
@@ -233,6 +236,9 @@ func (s *WebAuthnService) BeginLogin(userID, username string) (*protocol.Credent
 // FinishLogin validates the assertion response and updates the credential's
 // sign counter and flags in the database.
 func (s *WebAuthnService) FinishLogin(userID string, sessionData *webauthn.SessionData, r *http.Request) error {
+	if sessionData == nil {
+		return fmt.Errorf("webauthn: missing or expired login session")
+	}
 	credentials, err := s.loadCredentials(userID)
 	if err != nil {
 		return fmt.Errorf("failed to load credentials for finish login: %w", err)
