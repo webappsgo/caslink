@@ -19,9 +19,3 @@ findings from that audit were fixed directly and are not listed here.
   `ci.yml` / `release.yml`. Create security-only workflows first, then
   `ci.yml`/`release.yml` last, per cicd_conventions.md. Third-party Actions
   pinned to full commit SHA, never tags.
-
-## SMTP pre-flight (robustness)
-
-- Email send path assumes `SMTPConfigured` implies a reachable server. Add a
-  connect/dial pre-flight (or send-time error surfacing) so misconfigured SMTP
-  fails loudly at config/test time rather than silently dropping mail.
