@@ -64,11 +64,19 @@ func (s *OrgService) CreateOrganization(ctx context.Context, userID int64, name,
 		return nil, fmt.Errorf("organization slug already exists")
 	}
 
-	// Insert organization
+	// Insert the organization and its owner membership in a single
+	// transaction so a failure mid-way cannot leave an orphaned org with
+	// no owner (and a permanently-taken slug).
+	tx, err := s.store.UsersDB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	query := `INSERT INTO organizations (name, slug, owner_id, created_at, updated_at)
 	          VALUES (?, ?, ?, ?, ?)`
 
-	result, err := s.store.UsersDB.ExecContext(ctx, query, name, slug, userID, time.Now(), time.Now())
+	result, err := tx.ExecContext(ctx, query, name, slug, userID, time.Now(), time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create organization: %w", err)
 	}
@@ -82,9 +90,12 @@ func (s *OrgService) CreateOrganization(ctx context.Context, userID int64, name,
 	memberQuery := `INSERT INTO org_members (org_id, user_id, role, joined_at)
 	                VALUES (?, ?, 'owner', ?)`
 
-	_, err = s.store.UsersDB.ExecContext(ctx, memberQuery, orgID, userID, time.Now())
-	if err != nil {
+	if _, err = tx.ExecContext(ctx, memberQuery, orgID, userID, time.Now()); err != nil {
 		return nil, fmt.Errorf("failed to add owner as member: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit organization: %w", err)
 	}
 
 	// Return created organization
