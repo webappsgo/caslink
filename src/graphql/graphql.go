@@ -79,16 +79,19 @@ func SchemaHandler() http.HandlerFunc {
 	}
 }
 
-// executeQuery executes a GraphQL query
+// executeQuery executes a GraphQL query.
+//
+// Query resolvers are not yet wired to the store/services (the schema in
+// schema.go advertises url/urls/createURL/etc. but no resolver layer exists).
+// Rather than fabricate a success response, return a spec-compliant GraphQL
+// error so callers are not misled into believing the endpoint is functional.
 func executeQuery(query string, variables map[string]interface{}) map[string]interface{} {
 	_ = query
 	_ = variables
 	return map[string]interface{}{
-		"data": map[string]interface{}{
-			"health": map[string]interface{}{
-				"status":  "healthy",
-				"message": "GraphQL endpoint functional",
-			},
+		"data": nil,
+		"errors": []map[string]interface{}{
+			{"message": "GraphQL resolvers are not yet implemented"},
 		},
 	}
 }
