@@ -85,7 +85,7 @@ func (h *OrgHandler) ListOrgs(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	orgs, err := h.orgService.GetUserOrganizations(ctx, user.ID)
+	orgs, err := h.orgService.GetUserOrganizationsWithSummary(ctx, user.ID)
 	if err != nil {
 		http.Error(w, "Failed to load organizations", http.StatusInternalServerError)
 		return
@@ -93,13 +93,11 @@ func (h *OrgHandler) ListOrgs(w http.ResponseWriter, r *http.Request) {
 
 	summaries := make([]OrgSummary, 0, len(orgs))
 	for _, o := range orgs {
-		members, _ := h.orgService.GetOrgMembers(ctx, o.ID)
-		_, role, _ := h.orgService.IsMember(ctx, o.ID, user.ID)
 		summaries = append(summaries, OrgSummary{
 			Name:        o.Name,
 			Slug:        o.Slug,
-			MemberCount: len(members),
-			Role:        role,
+			MemberCount: o.MemberCount,
+			Role:        o.Role,
 		})
 	}
 

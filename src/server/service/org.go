@@ -138,6 +138,47 @@ func (s *OrgService) GetUserOrganizations(ctx context.Context, userID int64) ([]
 	return orgs, nil
 }
 
+// OrgSummary is an organization plus the requesting user's role and the
+// org's total member count, fetched in one query to avoid N+1 lookups.
+type OrgSummary struct {
+	Organization
+	Role        string
+	MemberCount int
+}
+
+// GetUserOrganizationsWithSummary returns every organization the user
+// belongs to, along with their role and the org's member count, in a
+// single query (a per-org member-count/role subquery would be N+1).
+func (s *OrgService) GetUserOrganizationsWithSummary(ctx context.Context, userID int64) ([]*OrgSummary, error) {
+	query := `SELECT o.id, o.name, o.slug, o.owner_id, o.created_at, o.updated_at, m.role,
+	                 (SELECT COUNT(*) FROM org_members WHERE org_id = o.id) AS member_count
+	          FROM organizations o
+	          JOIN org_members m ON o.id = m.org_id
+	          WHERE m.user_id = ?
+	          ORDER BY o.created_at DESC`
+
+	rows, err := s.store.UsersDB.QueryContext(ctx, query, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query organizations: %w", err)
+	}
+	defer rows.Close()
+
+	var summaries []*OrgSummary
+	for rows.Next() {
+		var sum OrgSummary
+		if err := rows.Scan(&sum.ID, &sum.Name, &sum.Slug, &sum.OwnerID, &sum.CreatedAt, &sum.UpdatedAt,
+			&sum.Role, &sum.MemberCount); err != nil {
+			return nil, fmt.Errorf("failed to scan organization summary: %w", err)
+		}
+		summaries = append(summaries, &sum)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("organization summary row iteration failed: %w", err)
+	}
+
+	return summaries, nil
+}
+
 // GetOrganizationBySlug gets an organization by slug
 func (s *OrgService) GetOrganizationBySlug(ctx context.Context, slug string) (*Organization, error) {
 	query := `SELECT id, name, slug, owner_id, created_at, updated_at
