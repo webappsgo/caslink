@@ -30,7 +30,7 @@ func (h *TwoFactorHandler) VerifyPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No pending 2FA session. Please log in first.", http.StatusUnauthorized)
 		return
 	}
-	
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprint(w, `
@@ -54,57 +54,57 @@ func (h *TwoFactorHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	ctx := r.Context()
-	
+
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Invalid form data", http.StatusBadRequest)
 		return
 	}
-	
+
 	code := strings.TrimSpace(r.FormValue("code"))
 	if code == "" || len(code) != 6 {
 		http.Error(w, "Invalid code format. Must be 6 digits.", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Get pending 2FA session from cookie
 	cookie, err := r.Cookie("2fa_pending")
 	if err != nil || cookie.Value == "" {
 		http.Error(w, "No pending 2FA session. Please log in again.", http.StatusUnauthorized)
 		return
 	}
-	
+
 	// Validate temporary session and get user
 	user, err := h.authService.ValidateUserSession(ctx, cookie.Value)
 	if err != nil {
 		http.Error(w, "Invalid or expired 2FA session. Please log in again.", http.StatusUnauthorized)
 		return
 	}
-	
+
 	// Get TOTP secret
 	secret, err := h.totpService.GetTOTPSecret(user.ID)
 	if err != nil {
 		http.Error(w, "Failed to verify 2FA code", http.StatusInternalServerError)
 		return
 	}
-	
+
 	// Verify TOTP code
 	if !h.totpService.VerifyTOTPCode(secret, code) {
 		http.Error(w, "Invalid verification code. Please try again.", http.StatusUnauthorized)
 		return
 	}
-	
+
 	// Code is valid! Delete temp session and create full session
 	_ = h.authService.DeleteSession(ctx, cookie.Value)
-	
+
 	// Create full session (7 days default)
 	sessionID, err := h.authService.CreateUserSession(ctx, user.ID, false)
 	if err != nil {
 		http.Error(w, "2FA verification succeeded but session creation failed", http.StatusInternalServerError)
 		return
 	}
-	
+
 	// Clear 2FA pending cookie
 	http.SetCookie(w, &http.Cookie{
 		Name:     "2fa_pending",
@@ -113,7 +113,7 @@ func (h *TwoFactorHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   -1,
 		HttpOnly: true,
 	})
-	
+
 	// Set full session cookie
 	http.SetCookie(w, &http.Cookie{
 		Name:     "user_session",
@@ -124,7 +124,7 @@ func (h *TwoFactorHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		Secure:   r.TLS != nil,
 		SameSite: http.SameSiteLaxMode,
 	})
-	
+
 	// Redirect to user dashboard
 	http.Redirect(w, r, "/users/profile", http.StatusSeeOther)
 }
@@ -153,44 +153,44 @@ func (h *TwoFactorHandler) Recovery(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	
+
 	ctx := r.Context()
-	
+
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "Invalid form data", http.StatusBadRequest)
 		return
 	}
-	
+
 	recoveryKey := strings.TrimSpace(r.FormValue("recovery_key"))
 	if recoveryKey == "" {
 		http.Error(w, "Recovery key is required", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Get pending 2FA session from cookie
 	cookie, err := r.Cookie("2fa_pending")
 	if err != nil || cookie.Value == "" {
 		http.Error(w, "No pending 2FA session. Please log in again.", http.StatusUnauthorized)
 		return
 	}
-	
+
 	// Validate temporary session and get user
 	user, err := h.authService.ValidateUserSession(ctx, cookie.Value)
 	if err != nil {
 		http.Error(w, "Invalid or expired 2FA session. Please log in again.", http.StatusUnauthorized)
 		return
 	}
-	
+
 	// Verify and use recovery key (single-use per PART 23 line 20029)
 	err = h.totpService.UseRecoveryKey(user.ID, recoveryKey)
 	if err != nil {
 		http.Error(w, "Invalid or already used recovery key.", http.StatusUnauthorized)
 		return
 	}
-	
+
 	// Get remaining key count
 	remainingKeys, _ := h.totpService.GetRemainingRecoveryKeyCount(user.ID)
-	
+
 	// Recovery key accepted! Show options per PART 23 line 20247-20259
 	h.renderRecoveryOptionsPageWithKeys(w, r, user, remainingKeys)
 }
@@ -230,15 +230,15 @@ func (h *TwoFactorHandler) RecoveryOptionsPage(w http.ResponseWriter, r *http.Re
 		http.Error(w, "No pending session", http.StatusUnauthorized)
 		return
 	}
-	
+
 	user, err := h.authService.ValidateUserSession(r.Context(), cookie.Value)
 	if err != nil {
 		http.Error(w, "Invalid session", http.StatusUnauthorized)
 		return
 	}
-	
+
 	remainingKeys, _ := h.totpService.GetRemainingRecoveryKeyCount(user.ID)
-	
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, `

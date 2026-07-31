@@ -41,15 +41,15 @@ type apiResponse struct {
 
 // model is the root bubbletea model for the TUI.
 type model struct {
-	cfg         *config.CLIConfig
-	activeView  view
-	links       []linkRecord
-	cursor      int
-	loading     bool
-	err         string
-	width       int
-	height      int
-	styles      styles
+	cfg        *config.CLIConfig
+	activeView view
+	links      []linkRecord
+	cursor     int
+	loading    bool
+	err        string
+	width      int
+	height     int
+	styles     styles
 }
 
 // styles holds pre-built lipgloss styles.

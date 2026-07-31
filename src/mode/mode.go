@@ -101,10 +101,10 @@ func parseMode(s string) Mode {
 func IsContainer() bool {
 	// Check for common container indicators
 	indicators := []string{
-		"/.dockerenv",                    // Docker
-		"/.containerenv",                 // Podman
-		"/run/.containerenv",             // Podman alternative
-		"/proc/1/cgroup",                 // cgroup check (read separately)
+		"/.dockerenv",        // Docker
+		"/.containerenv",     // Podman
+		"/run/.containerenv", // Podman alternative
+		"/proc/1/cgroup",     // cgroup check (read separately)
 	}
 
 	for _, path := range indicators {
@@ -116,8 +116,8 @@ func IsContainer() bool {
 	// Check environment variables
 	containerEnvVars := []string{
 		"KUBERNETES_SERVICE_HOST", // Kubernetes
-		"CONTAINER",                // Generic container flag
-		"DOCKER_CONTAINER",         // Docker
+		"CONTAINER",               // Generic container flag
+		"DOCKER_CONTAINER",        // Docker
 	}
 
 	for _, envVar := range containerEnvVars {

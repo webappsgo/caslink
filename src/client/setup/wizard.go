@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/webappsgo/caslink/src/client/config"
 )
@@ -24,7 +24,7 @@ const (
 
 // model is the bubbletea model for the setup wizard.
 type model struct {
-	step       step
+	step        step
 	serverInput textinput.Model
 	tokenInput  textinput.Model
 	status      string

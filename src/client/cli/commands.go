@@ -43,22 +43,22 @@ type apiResponse struct {
 
 // linkRecord is a single link as returned by the API.
 type linkRecord struct {
-	Code      string    `json:"code"`
-	URL       string    `json:"url"`
-	ShortURL  string    `json:"short_url"`
-	Clicks    int64     `json:"clicks"`
-	CreatedAt time.Time `json:"created_at"`
+	Code      string     `json:"code"`
+	URL       string     `json:"url"`
+	ShortURL  string     `json:"short_url"`
+	Clicks    int64      `json:"clicks"`
+	CreatedAt time.Time  `json:"created_at"`
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
-	Active    bool      `json:"active"`
+	Active    bool       `json:"active"`
 }
 
 // statsRecord holds per-link analytics.
 type statsRecord struct {
-	Code       string         `json:"code"`
-	TotalClicks int64         `json:"total_clicks"`
-	UniqueClicks int64        `json:"unique_clicks"`
-	Countries  []countryCount `json:"countries,omitempty"`
-	Referrers  []referrerCount `json:"referrers,omitempty"`
+	Code         string          `json:"code"`
+	TotalClicks  int64           `json:"total_clicks"`
+	UniqueClicks int64           `json:"unique_clicks"`
+	Countries    []countryCount  `json:"countries,omitempty"`
+	Referrers    []referrerCount `json:"referrers,omitempty"`
 }
 
 type countryCount struct {

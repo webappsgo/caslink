@@ -43,10 +43,10 @@ type InviteMemberRequest struct {
 
 // Error definitions
 var (
-	ErrOrgNotFound           = errors.New("organization not found")
-	ErrOrgSlugAlreadyExists  = errors.New("organization slug already exists")
-	ErrNotOrgMember          = errors.New("not an organization member")
-	ErrInsufficientOrgPerms  = errors.New("insufficient organization permissions")
-	ErrCannotLeaveAsOwner    = errors.New("owner cannot leave organization")
-	ErrOrgLimitReached       = errors.New("organization limit reached")
+	ErrOrgNotFound          = errors.New("organization not found")
+	ErrOrgSlugAlreadyExists = errors.New("organization slug already exists")
+	ErrNotOrgMember         = errors.New("not an organization member")
+	ErrInsufficientOrgPerms = errors.New("insufficient organization permissions")
+	ErrCannotLeaveAsOwner   = errors.New("owner cannot leave organization")
+	ErrOrgLimitReached      = errors.New("organization limit reached")
 )

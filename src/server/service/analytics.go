@@ -21,7 +21,7 @@ func NewAnalyticsService(st *store.Store) *AnalyticsService {
 
 // ClickSummary holds the click count for a single day.
 type ClickSummary struct {
-	Date   string `json:"date"`   // YYYY-MM-DD
+	Date   string `json:"date"` // YYYY-MM-DD
 	Clicks int    `json:"clicks"`
 }
 

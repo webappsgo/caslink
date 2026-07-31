@@ -210,4 +210,3 @@ func (h *DomainHandler) AddOrgDomain(w http.ResponseWriter, r *http.Request) {
 		"domain": domain,
 	})
 }
-

@@ -81,8 +81,8 @@ type ChecksInfo struct {
 // Includes generic fields required by AI.md PART 13 plus caslink-specific fields.
 type StatsInfo struct {
 	// Standard fields required by AI.md PART 13
-	RequestsTotal    int64 `json:"requests_total"`
-	Requests24h      int64 `json:"requests_24h"`
+	RequestsTotal     int64 `json:"requests_total"`
+	Requests24h       int64 `json:"requests_24h"`
 	ActiveConnections int64 `json:"active_connections"`
 	// Caslink-specific fields
 	LinksTotal   int64 `json:"links_total"`

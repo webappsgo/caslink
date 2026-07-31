@@ -366,11 +366,11 @@ func (h *PagesHandler) APIHelp(w http.ResponseWriter, r *http.Request) {
 // APIPrivacy returns Privacy policy as JSON.
 func (h *PagesHandler) APIPrivacy(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"data_sold":        false,
-		"contact_url":      "/server/contact",
-		"retention_days":   30,
-		"cookies":          []string{"essential", "preferences", "analytics"},
-		"export_available": true,
+		"data_sold":          false,
+		"contact_url":        "/server/contact",
+		"retention_days":     30,
+		"cookies":            []string{"essential", "preferences", "analytics"},
+		"export_available":   true,
 		"deletion_available": true,
 	})
 }

@@ -27,9 +27,9 @@ type ThemePalette struct {
 	Border     string
 
 	// Interactive element colors
-	Highlight  string
-	Selected   string
-	Cursor     string
+	Highlight string
+	Selected  string
+	Cursor    string
 
 	// Reset sequence
 	Reset string

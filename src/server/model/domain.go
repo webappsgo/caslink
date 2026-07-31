@@ -49,12 +49,12 @@ type DomainAudit struct {
 
 // Error definitions
 var (
-	ErrDomainNotFound         = errors.New("domain not found")
-	ErrDomainAlreadyExists    = errors.New("domain already exists")
-	ErrDomainNotVerified      = errors.New("domain not verified")
-	ErrDomainLimitReached     = errors.New("domain limit reached")
-	ErrDomainReserved         = errors.New("domain is reserved")
-	ErrDomainBlockedPattern   = errors.New("domain matches blocked pattern")
-	ErrSSLNotConfigured       = errors.New("SSL not configured")
-	ErrSSLCertificateExpired  = errors.New("SSL certificate expired")
+	ErrDomainNotFound        = errors.New("domain not found")
+	ErrDomainAlreadyExists   = errors.New("domain already exists")
+	ErrDomainNotVerified     = errors.New("domain not verified")
+	ErrDomainLimitReached    = errors.New("domain limit reached")
+	ErrDomainReserved        = errors.New("domain is reserved")
+	ErrDomainBlockedPattern  = errors.New("domain matches blocked pattern")
+	ErrSSLNotConfigured      = errors.New("SSL not configured")
+	ErrSSLCertificateExpired = errors.New("SSL certificate expired")
 )

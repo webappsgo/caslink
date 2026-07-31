@@ -503,8 +503,8 @@ func (s *URLService) CreateURLForUser(ctx context.Context, userID int64, req *mo
 
 // CreateURLForOrg creates a shortened URL owned by the given org (used by
 // org-scoped Bearer tokens, OwnerType "org" — see service/token.go). Mirrors
-// CreateURLForUser but sets org_id instead of user_id, per AI.md PART 35 /
-// TODO.AI.md PART 16 org-owned-link modeling.
+// CreateURLForUser but sets org_id instead of user_id, per AI.md PART 35 and
+// PART 16 org-owned-link modeling.
 func (s *URLService) CreateURLForOrg(ctx context.Context, orgID int64, req *model.CreateURLRequest) (*model.URL, error) {
 	if _, err := url.ParseRequestURI(req.LongURL); err != nil {
 		return nil, fmt.Errorf("invalid URL: %w", err)
@@ -742,7 +742,6 @@ func (s *URLService) generateRandomCode(ctx context.Context) (string, error) {
 
 	return "", fmt.Errorf("failed to generate unique code after %d retries", maxRetries)
 }
-
 
 // linkOptions holds the parsed/validated per-link option fields shared by
 // CreateURL, CreateURLForUser, and CreateURLForOrg (IDEA.md line 25/37 link

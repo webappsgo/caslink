@@ -167,4 +167,3 @@ func (h *BulkHandler) Import(w http.ResponseWriter, r *http.Request) {
 		"errors":  errorRows,
 	})
 }
-

@@ -110,11 +110,11 @@ type Click struct {
 
 // URLStats represents statistics for a URL
 type URLStats struct {
-	ShortCode    string `json:"short_code"`
-	TotalClicks  int64  `json:"total_clicks"`
-	UniqueIPs    int64  `json:"unique_ips"`
-	LastClick    *time.Time `json:"last_click,omitempty"`
-	TopCountries []CountryStat `json:"top_countries,omitempty"`
+	ShortCode    string         `json:"short_code"`
+	TotalClicks  int64          `json:"total_clicks"`
+	UniqueIPs    int64          `json:"unique_ips"`
+	LastClick    *time.Time     `json:"last_click,omitempty"`
+	TopCountries []CountryStat  `json:"top_countries,omitempty"`
 	TopReferrers []ReferrerStat `json:"top_referrers,omitempty"`
 }
 
@@ -132,10 +132,10 @@ type ReferrerStat struct {
 
 // Error definitions
 var (
-	ErrURLNotFound         = errors.New("URL not found")
-	ErrCodeAlreadyExists   = errors.New("short code already exists")
-	ErrInvalidPassword     = errors.New("invalid password")
-	ErrURLExpired          = errors.New("URL has expired")
-	ErrInvalidCustomCode   = errors.New("invalid custom code")
-	ErrReservedWord        = errors.New("short code is a reserved word")
+	ErrURLNotFound       = errors.New("URL not found")
+	ErrCodeAlreadyExists = errors.New("short code already exists")
+	ErrInvalidPassword   = errors.New("invalid password")
+	ErrURLExpired        = errors.New("URL has expired")
+	ErrInvalidCustomCode = errors.New("invalid custom code")
+	ErrReservedWord      = errors.New("short code is a reserved word")
 )

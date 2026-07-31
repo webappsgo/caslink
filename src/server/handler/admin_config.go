@@ -1094,15 +1094,15 @@ func (h *AdminHandler) ConfigSecurityAuthSave(w http.ResponseWriter, r *http.Req
 		username = admin.Username
 	}
 	pairs := map[string]string{
-		"security.pwd_min_length":       r.FormValue("pwd_min_length"),
-		"security.pwd_require_upper":    boolFormValue(r, "pwd_require_upper"),
-		"security.pwd_require_lower":    boolFormValue(r, "pwd_require_lower"),
-		"security.pwd_require_number":   boolFormValue(r, "pwd_require_number"),
-		"security.pwd_require_special":  boolFormValue(r, "pwd_require_special"),
-		"session.timeout":               r.FormValue("session_timeout"),
-		"session.remember_me_timeout":   r.FormValue("remember_timeout"),
-		"features.totp_issuer":          r.FormValue("totp_issuer"),
-		"features.webauthn_display":     r.FormValue("webauthn_display"),
+		"security.pwd_min_length":      r.FormValue("pwd_min_length"),
+		"security.pwd_require_upper":   boolFormValue(r, "pwd_require_upper"),
+		"security.pwd_require_lower":   boolFormValue(r, "pwd_require_lower"),
+		"security.pwd_require_number":  boolFormValue(r, "pwd_require_number"),
+		"security.pwd_require_special": boolFormValue(r, "pwd_require_special"),
+		"session.timeout":              r.FormValue("session_timeout"),
+		"session.remember_me_timeout":  r.FormValue("remember_timeout"),
+		"features.totp_issuer":         r.FormValue("totp_issuer"),
+		"features.webauthn_display":    r.FormValue("webauthn_display"),
 	}
 	for k, v := range pairs {
 		if err := h.store.SetConfigValue(k, v, username); err != nil {
@@ -1245,11 +1245,11 @@ func (h *AdminHandler) ConfigSecurityRateLimitSave(w http.ResponseWriter, r *htt
 		username = admin.Username
 	}
 	pairs := map[string]string{
-		"rate_limit.enabled":         r.FormValue("enabled"),
-		"rate_limit.rpm":             r.FormValue("rpm"),
-		"rate_limit.burst":           r.FormValue("burst"),
-		"rate_limit.login_attempts":  r.FormValue("login_attempts"),
-		"rate_limit.reset_attempts":  r.FormValue("reset_attempts"),
+		"rate_limit.enabled":        r.FormValue("enabled"),
+		"rate_limit.rpm":            r.FormValue("rpm"),
+		"rate_limit.burst":          r.FormValue("burst"),
+		"rate_limit.login_attempts": r.FormValue("login_attempts"),
+		"rate_limit.reset_attempts": r.FormValue("reset_attempts"),
 	}
 	for k, v := range pairs {
 		if err := h.store.SetConfigValue(k, v, username); err != nil {

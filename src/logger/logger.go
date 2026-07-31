@@ -27,9 +27,9 @@ import (
 
 // Logger holds handles for each log channel.
 type Logger struct {
-	mu       sync.Mutex
-	logDir   string
-	devMode  bool
+	mu      sync.Mutex
+	logDir  string
+	devMode bool
 
 	accessFile   *os.File
 	serverFile   *os.File

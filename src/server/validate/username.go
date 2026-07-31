@@ -8,7 +8,7 @@ import (
 
 // Username validation rules per AI.md PART 23
 var (
-	usernameRegex = regexp.MustCompile(`^[a-z][a-z0-9_-]*[a-z0-9]$`)
+	usernameRegex    = regexp.MustCompile(`^[a-z][a-z0-9_-]*[a-z0-9]$`)
 	consecutiveRegex = regexp.MustCompile(`__|--|_-|-_`)
 )
 
