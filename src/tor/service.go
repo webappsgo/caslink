@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -22,9 +21,9 @@ import (
 
 // TorService holds the running Tor instance and its metadata.
 type TorService struct {
-	instance    *binetor.Tor
-	onionAddr   string
-	outDialer   *binetor.Dialer
+	instance  *binetor.Tor
+	onionAddr string
+	outDialer *binetor.Dialer
 }
 
 // TorManager manages the full lifecycle of the Tor hidden service.
@@ -393,11 +392,4 @@ func parseDuration(s string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return d
-}
-
-// dialContextAdapter bridges binetor.Dialer.DialContext for http.Transport.
-func dialContextAdapter(d *binetor.Dialer) func(ctx context.Context, network, addr string) (net.Conn, error) {
-	return func(ctx context.Context, network, addr string) (net.Conn, error) {
-		return d.DialContext(ctx, network, addr)
-	}
 }
