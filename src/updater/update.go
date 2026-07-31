@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	githubOrg  = "casapps"
+	githubOrg  = "webappsgo"
 	githubRepo = "caslink"
 )
 

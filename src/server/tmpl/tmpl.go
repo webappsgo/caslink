@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -115,7 +116,9 @@ func (r *Renderer) Render(w http.ResponseWriter, name string, data interface{}) 
 func StaticHandler() http.Handler {
 	sub, err := fs.Sub(staticFS, "static")
 	if err != nil {
-		log.Fatalf("failed to create static sub-FS: %v", err)
+		// Exit code 1 (general error) per AI.md's CLI Exit Codes table.
+		log.Printf("failed to create static sub-FS: %v", err)
+		os.Exit(1)
 	}
 	return http.StripPrefix("/static/", http.FileServer(http.FS(sub)))
 }

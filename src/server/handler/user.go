@@ -9,9 +9,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/casjaysdevdocker/caslink/src/config"
-	"github.com/casjaysdevdocker/caslink/src/server/service"
-	"github.com/casjaysdevdocker/caslink/src/server/tmpl"
+	"github.com/webappsgo/caslink/src/config"
+	"github.com/webappsgo/caslink/src/server/service"
+	"github.com/webappsgo/caslink/src/server/tmpl"
 )
 
 // UserHandler handles user profile and settings pages

@@ -2,7 +2,7 @@ name: caslink-dev
 
 services:
   caslink:
-    image: ghcr.io/casapps/caslink:latest
+    image: ghcr.io/webappsgo/caslink:latest
     container_name: caslink-dev
     restart: unless-stopped
     environment:

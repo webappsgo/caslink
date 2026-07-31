@@ -26,9 +26,9 @@ const launchdPlist = `<?xml version="1.0" encoding="UTF-8"?>
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/var/log/casapps/caslink/stdout.log</string>
+    <string>/var/log/webappsgo/caslink/stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>/var/log/casapps/caslink/stderr.log</string>
+    <string>/var/log/webappsgo/caslink/stderr.log</string>
 </dict>
 </plist>
 `

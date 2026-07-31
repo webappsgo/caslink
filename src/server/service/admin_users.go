@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/casjaysdevdocker/caslink/src/server/store"
+	"github.com/webappsgo/caslink/src/server/store"
 )
 
 // UserAdminService provides admin-level user management operations.

@@ -1,9 +1,9 @@
 # Caslink - Self-Hosted URL Shortener
 
-[![License](https://img.shields.io/github/license/casapps/caslink)](LICENSE.md)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/casapps/caslink)](go.mod)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/casapps/caslink/release.yml?branch=main)](https://github.com/casapps/caslink/actions)
-[![Docker Pulls](https://img.shields.io/docker/pulls/casapps/caslink)](https://hub.docker.com/r/casapps/caslink)
+[![License](https://img.shields.io/github/license/webappsgo/caslink)](LICENSE.md)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/webappsgo/caslink)](go.mod)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/webappsgo/caslink/release.yml?branch=main)](https://github.com/webappsgo/caslink/actions)
+[![Docker Pulls](https://img.shields.io/docker/pulls/webappsgo/caslink)](https://hub.docker.com/r/webappsgo/caslink)
 
 **Caslink** is a secure, mobile-first, feature-rich, fully self-hosted URL shortener application written in Go that compiles into a single static binary with zero external dependencies.
 
@@ -30,9 +30,9 @@
 ```bash
 docker run -d \
   -p 64580:80 \
-  -v caslink-config:/etc/casapps/caslink \
-  -v caslink-data:/var/lib/casapps/caslink \
-  casapps/caslink:latest
+  -v caslink-config:/etc/webappsgo/caslink \
+  -v caslink-data:/var/lib/webappsgo/caslink \
+  webappsgo/caslink:latest
 ```
 
 Access at: `http://localhost:64580`
@@ -41,7 +41,7 @@ Access at: `http://localhost:64580`
 
 ```bash
 # Download latest release
-wget https://github.com/casapps/caslink/releases/latest/download/caslink-linux-amd64
+wget https://github.com/webappsgo/caslink/releases/latest/download/caslink-linux-amd64
 chmod +x caslink-linux-amd64
 
 # Run server (creates admin on first run)
@@ -53,7 +53,7 @@ Access at: `http://localhost:64580` (or auto-selected port shown in terminal)
 ### Using Docker Compose
 
 ```bash
-git clone https://github.com/casapps/caslink
+git clone https://github.com/webappsgo/caslink
 cd caslink/docker
 docker-compose up -d
 ```
@@ -63,7 +63,7 @@ docker-compose up -d
 Caslink works with zero configuration but can be customized via:
 
 1. **Environment Variables** - `CASLINK_*` prefix
-2. **Config File** - `/etc/casapps/caslink/server.yml`
+2. **Config File** - `/etc/webappsgo/caslink/server.yml`
 3. **CLI Flags** - `--config`, `--data`, `--port`, etc.
 4. **Admin Panel** - Web UI at `/admin`
 
@@ -225,8 +225,8 @@ Includes embedded licenses for all third-party dependencies.
 ## Support
 
 - **Documentation**: https://caslink.casapps.us
-- **Issues**: https://github.com/casapps/caslink/issues
-- **Discussions**: https://github.com/casapps/caslink/discussions
+- **Issues**: https://github.com/webappsgo/caslink/issues
+- **Discussions**: https://github.com/webappsgo/caslink/discussions
 
 ## Contributing
 
@@ -244,6 +244,6 @@ Contributions welcome! Please read [CONTRIBUTING.md](.github/CONTRIBUTING.md) fi
 
 ## Credits
 
-Built with ❤️ by [casapps](https://github.com/casapps)
+Built with ❤️ by [webappsgo](https://github.com/webappsgo)
 
 Powered by Go and amazing open-source libraries.

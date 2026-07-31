@@ -6,8 +6,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/casjaysdevdocker/caslink/src/config"
-	"github.com/casjaysdevdocker/caslink/src/server/service"
+	"github.com/webappsgo/caslink/src/config"
+	"github.com/webappsgo/caslink/src/server/service"
 )
 
 // SetupHandler handles first-run setup wizard

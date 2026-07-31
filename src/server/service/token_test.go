@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/casjaysdevdocker/caslink/src/server/store"
+	"github.com/webappsgo/caslink/src/server/store"
 	_ "modernc.org/sqlite"
 )
 

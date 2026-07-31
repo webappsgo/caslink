@@ -2,7 +2,7 @@
 // packages can read them without violating the go:embed parent-directory
 // restriction. Import with an alias to avoid shadowing html/template:
 //
-//	import emailtmpl "github.com/casjaysdevdocker/caslink/src/template"
+//	import emailtmpl "github.com/webappsgo/caslink/src/template"
 package template
 
 import _ "embed"

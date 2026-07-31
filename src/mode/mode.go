@@ -4,7 +4,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/casjaysdevdocker/caslink/src/config"
+	"github.com/webappsgo/caslink/src/config"
 )
 
 // Mode represents the application mode

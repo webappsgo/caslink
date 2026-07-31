@@ -3,8 +3,8 @@ package handler
 import (
 	"net/http"
 
-	"github.com/casjaysdevdocker/caslink/src/config"
-	apktor "github.com/casjaysdevdocker/caslink/src/tor"
+	"github.com/webappsgo/caslink/src/config"
+	apktor "github.com/webappsgo/caslink/src/tor"
 )
 
 // AutodiscoverHandler returns the /api/autodiscover endpoint per AI.md PART 14.

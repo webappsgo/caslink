@@ -13,9 +13,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	appmetrics "github.com/casjaysdevdocker/caslink/src/metrics"
-	"github.com/casjaysdevdocker/caslink/src/server/handler"
-	"github.com/casjaysdevdocker/caslink/src/server/service"
+	appmetrics "github.com/webappsgo/caslink/src/metrics"
+	"github.com/webappsgo/caslink/src/server/handler"
+	"github.com/webappsgo/caslink/src/server/service"
 )
 
 // Context keys are sourced from the handler package so that middleware

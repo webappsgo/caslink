@@ -4,11 +4,11 @@
 
 ## Installation
 
-Download the latest release for your platform from the [releases page](https://github.com/casapps/caslink/releases).
+Download the latest release for your platform from the [releases page](https://github.com/webappsgo/caslink/releases).
 
 ```bash
 # Linux amd64
-curl -LSsf https://github.com/casapps/caslink/releases/latest/download/caslink-cli-linux-amd64 \
+curl -LSsf https://github.com/webappsgo/caslink/releases/latest/download/caslink-cli-linux-amd64 \
   -o caslink-cli && chmod +x caslink-cli
 sudo mv caslink-cli /usr/local/bin/
 ```

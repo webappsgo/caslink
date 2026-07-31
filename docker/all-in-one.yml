@@ -12,7 +12,7 @@ x-logging: &default-logging
 
 services:
   caslink:
-    image: ghcr.io/casapps/caslink:latest-aio
+    image: ghcr.io/webappsgo/caslink:latest-aio
     container_name: caslink-app
     hostname: ${BASE_HOST_NAME:-$HOSTNAME}
     restart: always

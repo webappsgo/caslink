@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/casjaysdevdocker/caslink/src/common/i18n"
-	"github.com/casjaysdevdocker/caslink/src/config"
-	"github.com/casjaysdevdocker/caslink/src/server/service"
-	"github.com/casjaysdevdocker/caslink/src/server/tmpl"
+	"github.com/webappsgo/caslink/src/common/i18n"
+	"github.com/webappsgo/caslink/src/config"
+	"github.com/webappsgo/caslink/src/server/service"
+	"github.com/webappsgo/caslink/src/server/tmpl"
 )
 
 // realClientIP extracts the real client IP, respecting X-Forwarded-For /

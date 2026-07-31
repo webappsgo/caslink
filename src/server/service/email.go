@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/casjaysdevdocker/caslink/src/config"
-	emailtmpl "github.com/casjaysdevdocker/caslink/src/template"
+	"github.com/webappsgo/caslink/src/config"
+	emailtmpl "github.com/webappsgo/caslink/src/template"
 )
 
 // Email templates are sourced from src/template/email/*.txt.

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/casjaysdevdocker/caslink/src/server/model"
-	"github.com/casjaysdevdocker/caslink/src/server/store"
+	"github.com/webappsgo/caslink/src/server/model"
+	"github.com/webappsgo/caslink/src/server/store"
 	_ "modernc.org/sqlite"
 )
 

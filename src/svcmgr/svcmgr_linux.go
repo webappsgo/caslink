@@ -69,10 +69,10 @@ StandardError=journal
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
-ReadWritePaths=/etc/casapps/caslink
-ReadWritePaths=/var/lib/casapps/caslink
-ReadWritePaths=/var/cache/casapps/caslink
-ReadWritePaths=/var/log/casapps/caslink
+ReadWritePaths=/etc/webappsgo/caslink
+ReadWritePaths=/var/lib/webappsgo/caslink
+ReadWritePaths=/var/cache/webappsgo/caslink
+ReadWritePaths=/var/log/webappsgo/caslink
 
 [Install]
 WantedBy=multi-user.target

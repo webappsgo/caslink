@@ -404,11 +404,11 @@ func (h *AdminHandler) ConfigSSL(w http.ResponseWriter, r *http.Request) {
   </div>
   <div class="form-group">
     <label>Certificate File Path</label>
-    <input type="text" name="cert_file" value="%s" placeholder="/etc/casapps/caslink/ssl/cert.pem">
+    <input type="text" name="cert_file" value="%s" placeholder="/etc/webappsgo/caslink/ssl/cert.pem">
   </div>
   <div class="form-group">
     <label>Key File Path</label>
-    <input type="text" name="key_file" value="%s" placeholder="/etc/casapps/caslink/ssl/key.pem">
+    <input type="text" name="key_file" value="%s" placeholder="/etc/webappsgo/caslink/ssl/key.pem">
   </div>
 </div>
 <div class="card">

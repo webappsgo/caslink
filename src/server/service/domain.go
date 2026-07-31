@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/casjaysdevdocker/caslink/src/server/store"
+	"github.com/webappsgo/caslink/src/server/store"
 )
 
 // DomainService handles custom domain operations

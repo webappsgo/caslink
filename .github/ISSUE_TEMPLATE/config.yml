@@ -2,11 +2,11 @@ blank_issues_enabled: false
 
 contact_links:
   - name: Documentation
-    url: https://github.com/casapps/caslink/wiki
+    url: https://github.com/webappsgo/caslink/wiki
     about: Read the docs before opening an issue — your question may already be answered.
 
   - name: Discussions / Support
-    url: https://github.com/casapps/caslink/discussions
+    url: https://github.com/webappsgo/caslink/discussions
     about: General questions and community support belong in Discussions, not Issues.
 
   - name: Report a Security Vulnerability

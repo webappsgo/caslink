@@ -13,13 +13,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/casjaysdevdocker/caslink/src/backup"
-	"github.com/casjaysdevdocker/caslink/src/config"
-	"github.com/casjaysdevdocker/caslink/src/geoip"
-	appmetrics "github.com/casjaysdevdocker/caslink/src/metrics"
-	"github.com/casjaysdevdocker/caslink/src/server/service"
-	"github.com/casjaysdevdocker/caslink/src/server/store"
-	"github.com/casjaysdevdocker/caslink/src/updater"
+	"github.com/webappsgo/caslink/src/backup"
+	"github.com/webappsgo/caslink/src/config"
+	"github.com/webappsgo/caslink/src/geoip"
+	appmetrics "github.com/webappsgo/caslink/src/metrics"
+	"github.com/webappsgo/caslink/src/server/service"
+	"github.com/webappsgo/caslink/src/server/store"
+	"github.com/webappsgo/caslink/src/updater"
 )
 
 // torHealthChecker is a minimal interface for checking and restarting the Tor service.

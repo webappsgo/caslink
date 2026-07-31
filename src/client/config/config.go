@@ -34,7 +34,7 @@ type CLIConfig struct {
 	} `yaml:"update"`
 	// Lang is the preferred language code (e.g. "en", "fr").
 	Lang string `yaml:"lang"`
-	// Color controls ANSI output: "on", "off", or "auto".
+	// Color controls ANSI output: "auto", "yes", or "no".
 	Color string `yaml:"color"`
 }
 
@@ -51,15 +51,15 @@ func defaultConfig() CLIConfig {
 
 // GetConfigDir returns the platform-appropriate directory for caslink-cli config.
 //
-//   - Unix:    ~/.config/casapps/caslink/
-//   - Windows: %APPDATA%\casapps\caslink\
+//   - Unix:    ~/.config/webappsgo/caslink/
+//   - Windows: %APPDATA%\webappsgo\caslink\
 func GetConfigDir() (string, error) {
 	if runtime.GOOS == "windows" {
 		appData := os.Getenv("APPDATA")
 		if appData == "" {
 			return "", fmt.Errorf("APPDATA environment variable not set")
 		}
-		return filepath.Join(appData, "casapps", "caslink"), nil
+		return filepath.Join(appData, "webappsgo", "caslink"), nil
 	}
 
 	// Unix: respect XDG_CONFIG_HOME
@@ -71,7 +71,7 @@ func GetConfigDir() (string, error) {
 		}
 		configHome = filepath.Join(home, ".config")
 	}
-	return filepath.Join(configHome, "casapps", "caslink"), nil
+	return filepath.Join(configHome, "webappsgo", "caslink"), nil
 }
 
 // configFilePath returns the path to cli.yml.

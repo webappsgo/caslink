@@ -11,7 +11,7 @@ x-logging: &default-logging
 services:
   caslink:
     # replace with provider registry at deploy time
-    image: ghcr.io/casapps/caslink:latest
+    image: ghcr.io/webappsgo/caslink:latest
     container_name: caslink-app
     hostname: caslink
     restart: always

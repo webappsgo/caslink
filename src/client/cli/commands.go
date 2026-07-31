@@ -14,7 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/casjaysdevdocker/caslink/src/client/config"
+	"github.com/webappsgo/caslink/src/client/config"
 )
 
 // autodiscoverResponse mirrors the /api/autodiscover JSON shape (AI.md PART 14/33).

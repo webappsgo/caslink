@@ -32,15 +32,15 @@ ARG COMMIT_ID
 ARG LICENSE=MIT
 
 # Static Labels
-LABEL maintainer="casapps <noreply@casapps.pro>" \
-      org.opencontainers.image.vendor="casapps" \
-      org.opencontainers.image.authors="casapps" \
+LABEL maintainer="webappsgo <noreply@casapps.pro>" \
+      org.opencontainers.image.vendor="webappsgo" \
+      org.opencontainers.image.authors="webappsgo" \
       org.opencontainers.image.title="caslink" \
       org.opencontainers.image.base.name="caslink" \
       org.opencontainers.image.description="Containerized version of caslink" \
-      org.opencontainers.image.url="https://github.com/casapps/caslink" \
-      org.opencontainers.image.source="https://github.com/casapps/caslink" \
-      org.opencontainers.image.documentation="https://github.com/casapps/caslink" \
+      org.opencontainers.image.url="https://github.com/webappsgo/caslink" \
+      org.opencontainers.image.source="https://github.com/webappsgo/caslink" \
+      org.opencontainers.image.documentation="https://github.com/webappsgo/caslink" \
       org.opencontainers.image.vcs-type="Git" \
       com.github.containers.toolbox="false"
 

@@ -8,7 +8,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/casjaysdevdocker/caslink/src/common/crypto"
+	"github.com/webappsgo/caslink/src/common/crypto"
 )
 
 // Config represents the complete application configuration

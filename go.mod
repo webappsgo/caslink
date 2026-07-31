@@ -1,4 +1,4 @@
-module github.com/casjaysdevdocker/caslink
+module github.com/webappsgo/caslink
 
 go 1.26.3
 

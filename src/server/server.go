@@ -21,21 +21,21 @@ import (
 
 	"net/http/pprof"
 
-	appcrypto "github.com/casjaysdevdocker/caslink/src/common/crypto"
-	"github.com/casjaysdevdocker/caslink/src/common/i18n"
-	"github.com/casjaysdevdocker/caslink/src/config"
-	"github.com/casjaysdevdocker/caslink/src/geoip"
-	"github.com/casjaysdevdocker/caslink/src/graphql"
-	"github.com/casjaysdevdocker/caslink/src/logger"
-	appmetrics "github.com/casjaysdevdocker/caslink/src/metrics"
-	"github.com/casjaysdevdocker/caslink/src/mode"
-	"github.com/casjaysdevdocker/caslink/src/scheduler"
-	"github.com/casjaysdevdocker/caslink/src/server/handler"
-	"github.com/casjaysdevdocker/caslink/src/server/service"
-	"github.com/casjaysdevdocker/caslink/src/server/store"
-	"github.com/casjaysdevdocker/caslink/src/server/tmpl"
-	"github.com/casjaysdevdocker/caslink/src/swagger"
-	apktor "github.com/casjaysdevdocker/caslink/src/tor"
+	appcrypto "github.com/webappsgo/caslink/src/common/crypto"
+	"github.com/webappsgo/caslink/src/common/i18n"
+	"github.com/webappsgo/caslink/src/config"
+	"github.com/webappsgo/caslink/src/geoip"
+	"github.com/webappsgo/caslink/src/graphql"
+	"github.com/webappsgo/caslink/src/logger"
+	appmetrics "github.com/webappsgo/caslink/src/metrics"
+	"github.com/webappsgo/caslink/src/mode"
+	"github.com/webappsgo/caslink/src/scheduler"
+	"github.com/webappsgo/caslink/src/server/handler"
+	"github.com/webappsgo/caslink/src/server/service"
+	"github.com/webappsgo/caslink/src/server/store"
+	"github.com/webappsgo/caslink/src/server/tmpl"
+	"github.com/webappsgo/caslink/src/swagger"
+	apktor "github.com/webappsgo/caslink/src/tor"
 )
 
 // Server represents the HTTP server
@@ -988,7 +988,9 @@ func (s *Server) Start(address string, port int) error {
 	go func() {
 		log.Printf("Server starting on %s (mode: %s)", addr, s.mode)
 		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server failed: %v", err)
+			// Exit code 1 (general error) per AI.md's CLI Exit Codes table.
+			log.Printf("Server failed: %v", err)
+			os.Exit(1)
 		}
 	}()
 

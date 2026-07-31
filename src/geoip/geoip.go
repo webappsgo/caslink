@@ -35,7 +35,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/casjaysdevdocker/caslink/src/config"
+	"github.com/webappsgo/caslink/src/config"
 	"github.com/oschwald/maxminddb-golang"
 )
 

@@ -10,8 +10,8 @@ import (
 
 	"github.com/skip2/go-qrcode"
 
-	"github.com/casjaysdevdocker/caslink/src/metrics"
-	"github.com/casjaysdevdocker/caslink/src/server/store"
+	"github.com/webappsgo/caslink/src/metrics"
+	"github.com/webappsgo/caslink/src/server/store"
 )
 
 // qrCacheLabel is the Prometheus "cache" label value for QR code caching

@@ -7,7 +7,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 PROJECT_NAME="caslink"
-PROJECT_ORG="casapps"
+PROJECT_ORG="webappsgo"
 INCUS_NAME="caslink-test-$$"
 
 # Colors

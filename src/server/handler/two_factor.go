@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/casjaysdevdocker/caslink/src/server/service"
+	"github.com/webappsgo/caslink/src/server/service"
 )
 
 // TwoFactorHandler handles 2FA verification during login per PART 23

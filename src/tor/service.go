@@ -17,7 +17,7 @@ import (
 	"github.com/cretz/bine/control"
 	binetor "github.com/cretz/bine/tor"
 
-	"github.com/casjaysdevdocker/caslink/src/config"
+	"github.com/webappsgo/caslink/src/config"
 )
 
 // TorService holds the running Tor instance and its metadata.

@@ -5,13 +5,16 @@ Caslink is a secure, mobile-first, fully self-hosted URL shortener written in Go
 ## Project variables
 
 project_name:     caslink
-project_org:      casapps
+project_org:      webappsgo
 internal_name:    caslink
 app_name:         Caslink
 official_site:    https://caslink.casapps.us
 maintainer_name:  casjay
 maintainer_email: git-admin@casjaysdev.pro
 api_version:      v1
+multi_user:       true
+organizations:    true
+custom_domains:   true
 
 ## Business logic
 

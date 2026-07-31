@@ -6,7 +6,7 @@ Thank you for your interest in contributing to Caslink!
 
 ```bash
 # Clone the repository
-git clone https://github.com/casapps/caslink.git
+git clone https://github.com/webappsgo/caslink.git
 cd caslink
 
 # Build development binary (uses Docker internally - no Go required on host)

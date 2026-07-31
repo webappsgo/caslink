@@ -20,14 +20,14 @@ type Paths struct {
 // GetDefaultPaths returns the default paths based on OS and user privileges.
 //
 // For root/Administrator:
-//   - Linux:   /etc/casapps/caslink, /var/lib/casapps/caslink, /var/log/casapps/caslink
-//   - Windows: C:\ProgramData\casapps\caslink
-//   - macOS:   /Library/Application Support/casapps/caslink
+//   - Linux:   /etc/webappsgo/caslink, /var/lib/webappsgo/caslink, /var/log/webappsgo/caslink
+//   - Windows: C:\ProgramData\webappsgo\caslink
+//   - macOS:   /Library/Application Support/webappsgo/caslink
 //
 // For regular users:
-//   - Linux:   ~/.config/casapps/caslink, ~/.local/share/casapps/caslink
-//   - Windows: %APPDATA%\casapps\caslink
-//   - macOS:   ~/Library/Application Support/casapps/caslink
+//   - Linux:   ~/.config/webappsgo/caslink, ~/.local/share/webappsgo/caslink
+//   - Windows: %APPDATA%\webappsgo\caslink
+//   - macOS:   ~/Library/Application Support/webappsgo/caslink
 func GetDefaultPaths(projectOrg, projectName string) *Paths {
 	isRoot := isRunningAsRoot()
 

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/casjaysdevdocker/caslink/src/server/store"
+	"github.com/webappsgo/caslink/src/server/store"
 )
 
 // tokenAlphabet is the character set for the random part of API tokens.

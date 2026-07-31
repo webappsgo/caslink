@@ -32,7 +32,7 @@ docker run -d \
   -p 64580:80 \
   -v ./volumes/config:/config \
   -v ./volumes/data:/data \
-  casapps/caslink:latest
+  webappsgo/caslink:latest
 ```
 
 Open `http://localhost:64580/setup` to create the first admin account.
@@ -41,7 +41,7 @@ Open `http://localhost:64580/setup` to create the first admin account.
 
 ```bash
 # Download for your platform, e.g. Linux amd64
-wget https://github.com/casapps/caslink/releases/latest/download/caslink-linux-amd64
+wget https://github.com/webappsgo/caslink/releases/latest/download/caslink-linux-amd64
 chmod +x caslink-linux-amd64
 ./caslink-linux-amd64
 ```

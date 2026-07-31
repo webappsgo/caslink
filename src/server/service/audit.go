@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/casjaysdevdocker/caslink/src/server/store"
+	"github.com/webappsgo/caslink/src/server/store"
 )
 
 // AuditService records and retrieves admin/security audit events. The audit

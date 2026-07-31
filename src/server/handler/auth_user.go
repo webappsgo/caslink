@@ -5,11 +5,11 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/casjaysdevdocker/caslink/src/config"
-	"github.com/casjaysdevdocker/caslink/src/server/model"
-	"github.com/casjaysdevdocker/caslink/src/server/service"
-	"github.com/casjaysdevdocker/caslink/src/server/tmpl"
-	"github.com/casjaysdevdocker/caslink/src/server/validate"
+	"github.com/webappsgo/caslink/src/config"
+	"github.com/webappsgo/caslink/src/server/model"
+	"github.com/webappsgo/caslink/src/server/service"
+	"github.com/webappsgo/caslink/src/server/tmpl"
+	"github.com/webappsgo/caslink/src/server/validate"
 )
 
 // AuthUserHandler handles user authentication and registration

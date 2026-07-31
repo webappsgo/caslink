@@ -130,7 +130,7 @@ Audit log entries never contain raw credentials or tokens.
 
 Please report security vulnerabilities via the coordinated disclosure process:
 
-- **Email**: See [`.github/SECURITY.md`](https://github.com/casapps/caslink/blob/main/.github/SECURITY.md)
-- **Security advisory**: [GitHub Security Advisories](https://github.com/casapps/caslink/security/advisories/new)
+- **Email**: See [`.github/SECURITY.md`](https://github.com/webappsgo/caslink/blob/main/.github/SECURITY.md)
+- **Security advisory**: [GitHub Security Advisories](https://github.com/webappsgo/caslink/security/advisories/new)
 
 Do not open public issues for security vulnerabilities.

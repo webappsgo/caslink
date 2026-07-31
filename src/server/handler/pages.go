@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/casjaysdevdocker/caslink/src/config"
-	"github.com/casjaysdevdocker/caslink/src/server/tmpl"
-	apktor "github.com/casjaysdevdocker/caslink/src/tor"
+	"github.com/webappsgo/caslink/src/config"
+	"github.com/webappsgo/caslink/src/server/tmpl"
+	apktor "github.com/webappsgo/caslink/src/tor"
 )
 
 // PagesHandler handles the public server information pages: About, Help,
@@ -39,7 +39,7 @@ func NewPagesHandler(cfg *config.Config, renderer *tmpl.Renderer, version, build
 const (
 	caslinkTagline     = "Self-hosted URL shortening, done right."
 	caslinkDescription = "Caslink is a secure, mobile-first, fully self-hosted URL shortener written in Go that ships as a single static binary with zero external dependencies. It targets individuals and teams who want the control of self-hosting without the operational complexity of multi-service stacks. Any user can shorten links, track clicks, generate QR codes, and manage custom branded domains — all features ship to all users, no tier gating."
-	caslinkGitHub      = "https://github.com/casjaysdevdocker/caslink"
+	caslinkGitHub      = "https://github.com/webappsgo/caslink"
 	caslinkSite        = "https://caslink.casapps.us"
 )
 

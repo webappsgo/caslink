@@ -10,7 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/textinput"
 
-	"github.com/casjaysdevdocker/caslink/src/client/config"
+	"github.com/webappsgo/caslink/src/client/config"
 )
 
 // step tracks which input field is active.

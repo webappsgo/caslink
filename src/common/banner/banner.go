@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/casjaysdevdocker/caslink/src/common/terminal"
+	"github.com/webappsgo/caslink/src/common/terminal"
 )
 
 // BannerConfig holds the information needed to render the startup banner.

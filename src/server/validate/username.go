@@ -98,7 +98,7 @@ var UsernameBlocklist = []string{
 	"webmaster", "hostmaster", "abuse", "spam", "junk", "trash",
 
 	// Project-specific
-	"caslink", "casapps",
+	"caslink", "webappsgo",
 }
 
 // Critical terms that also block as substrings

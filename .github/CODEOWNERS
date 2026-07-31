@@ -2,33 +2,33 @@
 # Format: <pattern> <owner> [<owner> ...]
 # https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 
-# Catch-all: casapps org owns everything
-* @casapps
+# Catch-all: webappsgo org owns everything
+* @webappsgo
 
 # CI/CD and release infrastructure — requires security review
-.github/workflows/ @casapps
-Jenkinsfile @casapps
+.github/workflows/ @webappsgo
+Jenkinsfile @webappsgo
 
 # Docker and release artifacts
-docker/ @casapps
-docker/Dockerfile @casapps
-docker/Dockerfile.aio @casapps
-release.txt @casapps
+docker/ @webappsgo
+docker/Dockerfile @webappsgo
+docker/Dockerfile.aio @webappsgo
+release.txt @webappsgo
 
 # Authentication, cryptography, and security-sensitive code
-src/server/service/auth.go @casapps
-src/server/service/password.go @casapps
-src/server/service/token.go @casapps
-src/server/service/totp.go @casapps
-src/server/handler/setup.go @casapps
-src/server/middleware.go @casapps
+src/server/service/auth.go @webappsgo
+src/server/service/password.go @webappsgo
+src/server/service/token.go @webappsgo
+src/server/service/totp.go @webappsgo
+src/server/handler/setup.go @webappsgo
+src/server/middleware.go @webappsgo
 
 # Database schema and migrations
-src/server/store/ @casapps
+src/server/store/ @webappsgo
 
 # Update and maintenance subsystem
-src/server/handler/admin.go @casapps
-src/scheduler/ @casapps
+src/server/handler/admin.go @webappsgo
+src/scheduler/ @webappsgo
 
 # SSL/TLS handling
-src/ssl/ @casapps
+src/ssl/ @webappsgo

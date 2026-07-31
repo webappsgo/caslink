@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	appcrypto "github.com/casjaysdevdocker/caslink/src/common/crypto"
-	"github.com/casjaysdevdocker/caslink/src/server/store"
+	appcrypto "github.com/webappsgo/caslink/src/common/crypto"
+	"github.com/webappsgo/caslink/src/server/store"
 )
 
 // TOTPService handles Two-Factor Authentication (TOTP)

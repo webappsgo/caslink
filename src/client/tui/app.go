@@ -11,7 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/casjaysdevdocker/caslink/src/client/config"
+	"github.com/webappsgo/caslink/src/client/config"
 )
 
 // view identifies the active panel.

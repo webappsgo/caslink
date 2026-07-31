@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2025 casapps
+Copyright (c) 2025 webappsgo
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -28,122 +28,31 @@ This software includes the following third-party libraries:
 
 ---
 
-### github.com/gorilla/mux v1.8.1
+## Third-Party Licenses
 
-**Copyright:** Copyright (c) 2012 Rodrigo Moraes
-**License:** BSD 3-Clause License
-**Repository:** https://github.com/gorilla/mux
+| Library | Version | License | Copyright |
+|---------|---------|---------|-----------|
+| github.com/charmbracelet/bubbles | v0.20.0 | MIT | 2020-present Charmbracelet, Inc. |
+| github.com/charmbracelet/bubbletea | v1.2.4 | MIT | 2020-present Charmbracelet, Inc. |
+| github.com/charmbracelet/lipgloss | v1.0.0 | MIT | 2021-present Charmbracelet, Inc. |
+| github.com/cretz/bine | v0.2.0 | MIT | 2018 Chad Retz |
+| github.com/go-chi/chi/v5 | v5.0.11 | MIT | 2015-present Peter Kieltyka, Google Inc. |
+| github.com/go-sql-driver/mysql | v1.10.0 | MPL-2.0 | 2012-2021 The Go-MySQL-Driver Authors |
+| github.com/go-webauthn/webauthn | v0.17.4 | BSD-3-Clause | go-webauthn/webauthn authors |
+| github.com/google/uuid | v1.6.0 | BSD-3-Clause | 2009,2014 Google Inc. |
+| github.com/jackc/pgx/v5 | v5.9.2 | MIT | 2013-2021 Jack Christensen |
+| github.com/microsoft/go-mssqldb | v1.8.2 | BSD-3-Clause | 2012 The Go Authors; Microsoft Corporation |
+| github.com/oschwald/maxminddb-golang | v1.13.1 | ISC | 2015 Gregory J. Oschwald |
+| github.com/prometheus/client_golang | v1.22.0 | Apache-2.0 | 2012-2015 The Prometheus Authors |
+| github.com/rs/cors | v1.11.0 | MIT | 2014 Olivier Poitrey |
+| github.com/skip2/go-qrcode | v0.0.0-20200617195104-da1b6568686e | MIT | 2014 Tom Harwood |
+| github.com/spf13/cobra | v1.8.1 | Apache-2.0 | 2013-present Steve Francia |
+| golang.org/x/crypto | v0.52.0 | BSD-3-Clause | 2009 The Go Authors |
+| golang.org/x/sys | v0.45.0 | BSD-3-Clause | 2009 The Go Authors |
+| golang.org/x/term | v0.43.0 | BSD-3-Clause | 2009 The Go Authors |
+| gopkg.in/yaml.v3 | v3.0.1 | Apache-2.0 AND MIT | 2011-2016 Canonical Ltd.; 2006-2011 Kirill Simonov |
+| modernc.org/sqlite | v1.41.0 | BSD-3-Clause | 2017 The Sqlite Authors |
 
-```
-BSD 3-Clause License
-
-Copyright (c) 2012, Rodrigo Moraes
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-1. Redistributions of source code must retain the above copyright notice, this
-   list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright notice,
-   this list of conditions and the following disclaimer in the documentation
-   and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-   contributors may be used to endorse or promote products derived from
-   this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-```
-
----
-
-### modernc.org/sqlite (TO BE ADDED - REPLACES mattn/go-sqlite3)
-
-**Copyright:** Copyright (c) modernc.org
-**License:** BSD 3-Clause License
-**Repository:** https://gitlab.com/cznic/sqlite
-
-**NOTE:** This dependency will replace github.com/mattn/go-sqlite3 for pure Go SQLite support.
-
----
-
-### github.com/lib/pq v1.10.9
-
-**Copyright:** Copyright (c) 2011-2013, 'pq' Contributors
-**License:** MIT License
-**Repository:** https://github.com/lib/pq
-
-```
-MIT License
-
-Copyright (c) 2011-2013, 'pq' Contributors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
----
-
-### github.com/spf13/cobra v1.8.0
-
-**Copyright:** Copyright (c) 2013 Steve Francia
-**License:** Apache License 2.0
-**Repository:** https://github.com/spf13/cobra
-
-```
-Apache License
-Version 2.0, January 2004
-http://www.apache.org/licenses/
-
-[Full Apache 2.0 license text - included per Apache 2.0 requirements]
-```
-
----
-
-### github.com/spf13/viper v1.18.2
-
-**Copyright:** Copyright (c) 2014 Steve Francia
-**License:** MIT License
-**Repository:** https://github.com/spf13/viper
-
----
-
-### golang.org/x/crypto
-
-**Copyright:** Copyright (c) 2009 The Go Authors
-**License:** BSD 3-Clause License
-**Repository:** https://go.googlesource.com/crypto
-
----
-
-**NOTE:** Complete embedded license attribution for all dependencies will be added using go-licenses tool during Phase 1 completion. This includes all direct and indirect dependencies listed in go.mod.
-
-**TODO:** Run `go-licenses save ./... --save_path=third_party_licenses` to generate complete license attribution.
+Full license texts available at: https://spdx.org/licenses/
 
 ---

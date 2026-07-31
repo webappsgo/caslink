@@ -1,7 +1,7 @@
 # All-in-One Dockerfile - includes app + postgresql + valkey + tor
 # Build: golang:alpine (static binary, CGO_ENABLED=0)
 # Runtime: debian:latest (stable, broad compatibility)
-# Image name: ghcr.io/casapps/caslink:latest-aio
+# Image name: ghcr.io/webappsgo/caslink:latest-aio
 # PORTS: Only 80 exposed (db/cache are internal-only)
 
 # =============================================================================
@@ -39,15 +39,15 @@ ARG BUILD_DATE
 ARG COMMIT_ID
 ARG LICENSE=MIT
 
-LABEL maintainer="casapps <noreply@casapps.pro>" \
-      org.opencontainers.image.vendor="casapps" \
-      org.opencontainers.image.authors="casapps" \
+LABEL maintainer="webappsgo <noreply@casapps.pro>" \
+      org.opencontainers.image.vendor="webappsgo" \
+      org.opencontainers.image.authors="webappsgo" \
       org.opencontainers.image.title="caslink-aio" \
       org.opencontainers.image.base.name="caslink" \
       org.opencontainers.image.description="caslink - all-in-one (debian + postgresql + valkey + tor)" \
-      org.opencontainers.image.url="https://github.com/casapps/caslink" \
-      org.opencontainers.image.source="https://github.com/casapps/caslink" \
-      org.opencontainers.image.documentation="https://github.com/casapps/caslink" \
+      org.opencontainers.image.url="https://github.com/webappsgo/caslink" \
+      org.opencontainers.image.source="https://github.com/webappsgo/caslink" \
+      org.opencontainers.image.documentation="https://github.com/webappsgo/caslink" \
       org.opencontainers.image.vcs-type="Git" \
       com.github.containers.toolbox="false"
 

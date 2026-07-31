@@ -12,15 +12,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/casjaysdevdocker/caslink/src/backup"
-	"github.com/casjaysdevdocker/caslink/src/common/i18n"
-	"github.com/casjaysdevdocker/caslink/src/config"
-	"github.com/casjaysdevdocker/caslink/src/logger"
-	"github.com/casjaysdevdocker/caslink/src/mode"
-	"github.com/casjaysdevdocker/caslink/src/paths"
-	"github.com/casjaysdevdocker/caslink/src/server"
-	"github.com/casjaysdevdocker/caslink/src/svcmgr"
-	"github.com/casjaysdevdocker/caslink/src/updater"
+	"github.com/webappsgo/caslink/src/backup"
+	"github.com/webappsgo/caslink/src/common/i18n"
+	"github.com/webappsgo/caslink/src/config"
+	"github.com/webappsgo/caslink/src/logger"
+	"github.com/webappsgo/caslink/src/mode"
+	"github.com/webappsgo/caslink/src/paths"
+	"github.com/webappsgo/caslink/src/server"
+	"github.com/webappsgo/caslink/src/svcmgr"
+	"github.com/webappsgo/caslink/src/updater"
 )
 
 // Version information (set by ldflags during build)
@@ -133,7 +133,7 @@ func main() {
 	}
 
 	// Get default paths
-	defaultPaths := paths.GetDefaultPaths("casapps", "caslink")
+	defaultPaths := paths.GetDefaultPaths("webappsgo", "caslink")
 
 	// Use provided paths or defaults
 	if configDir == "" {
@@ -604,7 +604,7 @@ func printHelp(binaryName string) {
 	fmt.Printf("  %s --update check                    # Check for updates\n", binaryName)
 
 	fmt.Printf("\nDefault Paths:\n")
-	defaultPaths := paths.GetDefaultPaths("casapps", "caslink")
+	defaultPaths := paths.GetDefaultPaths("webappsgo", "caslink")
 	fmt.Printf("  Config: %s\n", defaultPaths.Config)
 	fmt.Printf("  Data:   %s\n", defaultPaths.Data)
 	fmt.Printf("  Cache:  %s\n", defaultPaths.Cache)
@@ -613,7 +613,7 @@ func printHelp(binaryName string) {
 	fmt.Printf("  PID:    %s\n", defaultPaths.PID)
 
 	fmt.Printf("\nDocumentation: https://caslink.casapps.us\n")
-	fmt.Printf("Issues: https://github.com/casapps/caslink/issues\n")
+	fmt.Printf("Issues: https://github.com/webappsgo/caslink/issues\n")
 }
 
 // handleShellCmd prints shell completions or init script for the given shell.

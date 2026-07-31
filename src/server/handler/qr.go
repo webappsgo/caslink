@@ -8,7 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/casjaysdevdocker/caslink/src/server/service"
+	"github.com/webappsgo/caslink/src/server/service"
 )
 
 // QRHandler handles QR code endpoints

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/casjaysdevdocker/caslink/src/server/service"
+	"github.com/webappsgo/caslink/src/server/service"
 )
 
 // BulkHandler handles bulk import/export endpoints.

@@ -6,8 +6,8 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/casjaysdevdocker/caslink/src/server/store"
-	apktor "github.com/casjaysdevdocker/caslink/src/tor"
+	"github.com/webappsgo/caslink/src/server/store"
+	apktor "github.com/webappsgo/caslink/src/tor"
 )
 
 var startTime = time.Now()

@@ -60,12 +60,12 @@ func generateOpenAPISpec(version string) map[string]interface{} {
 			"description": "Self-Hosted URL Shortener API",
 			"version":     version,
 			"contact": map[string]interface{}{
-				"name": "casapps",
-				"url":  "https://github.com/casapps/caslink",
+				"name": "webappsgo",
+				"url":  "https://github.com/webappsgo/caslink",
 			},
 			"license": map[string]interface{}{
 				"name": "MIT",
-				"url":  "https://github.com/casapps/caslink/blob/main/LICENSE.md",
+				"url":  "https://github.com/webappsgo/caslink/blob/main/LICENSE.md",
 			},
 		},
 		"servers": []map[string]interface{}{

@@ -8,13 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/casjaysdevdocker/caslink/src/client/cli"
-	clientcfg "github.com/casjaysdevdocker/caslink/src/client/config"
-	"github.com/casjaysdevdocker/caslink/src/client/setup"
-	"github.com/casjaysdevdocker/caslink/src/client/tui"
-	"github.com/casjaysdevdocker/caslink/src/common/display"
-	"github.com/casjaysdevdocker/caslink/src/common/i18n"
-	"github.com/casjaysdevdocker/caslink/src/updater"
+	"github.com/webappsgo/caslink/src/client/cli"
+	clientcfg "github.com/webappsgo/caslink/src/client/config"
+	"github.com/webappsgo/caslink/src/client/setup"
+	"github.com/webappsgo/caslink/src/client/tui"
+	"github.com/webappsgo/caslink/src/common/display"
+	"github.com/webappsgo/caslink/src/common/i18n"
+	"github.com/webappsgo/caslink/src/updater"
 )
 
 // Version information — populated by ldflags at build time.
@@ -79,10 +79,14 @@ func main() {
 		}
 	}
 
-	// Determine effective output color setting.
+	// Determine effective output color setting: --color flag overrides
+	// config, which overrides the NO_COLOR env var, which overrides the
+	// "auto" default (https://no-color.org/).
 	colorMode := cfg.Color
 	if c := flagValue(args, "--color"); c != "" {
 		colorMode = c
+	} else if os.Getenv("NO_COLOR") != "" {
+		colorMode = "no"
 	}
 	_ = colorMode
 
@@ -160,7 +164,7 @@ func applyFlagOverrides(cfg *clientcfg.CLIConfig, args []string) {
 //  2. --token-file flag
 //  3. CASLINK_TOKEN env var
 //  4. cli.yml token field
-//  5. ~/.config/casapps/caslink/token file
+//  5. ~/.config/webappsgo/caslink/token file
 func resolveToken(cfg *clientcfg.CLIConfig, args []string) string {
 	// --token-file
 	if tf := flagValue(args, "--token-file"); tf != "" {
@@ -202,7 +206,7 @@ Flags:
   --output FORMAT          Output format: table|json|csv (default: table)
   --user NAME              User/org context (@NAME=user, +NAME=org)
   --debug                  Enable debug output
-  --color on|off|auto      Color output (default: auto)
+  --color auto|yes|no      Color output (default: auto)
   --lang LANG              Language code (default: en)
   --shell bash|zsh|fish    Print shell completions
   --update [check|yes|branch <stable|beta|daily>]  Update operations
@@ -255,7 +259,7 @@ _%[1]s() {
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     case "$prev" in
         --output) COMPREPLY=($(compgen -W "table json csv" -- "$cur")) ; return ;;
-        --color)  COMPREPLY=($(compgen -W "on off auto" -- "$cur")) ; return ;;
+        --color)  COMPREPLY=($(compgen -W "auto yes no" -- "$cur")) ; return ;;
         --shell)  COMPREPLY=($(compgen -W "bash zsh fish" -- "$cur")) ; return ;;
         --update) COMPREPLY=($(compgen -W "check yes branch" -- "$cur")) ; return ;;
     esac
@@ -302,7 +306,7 @@ complete -c %[1]s -n __fish_use_subcommand -a qr        -d 'Show QR code'
 complete -c %[1]s -n __fish_use_subcommand -a stats     -d 'Show stats'
 complete -c %[1]s -n __fish_use_subcommand -a version   -d 'Show version'
 complete -c %[1]s -l output  -a 'table json csv' -d 'Output format'
-complete -c %[1]s -l color   -a 'on off auto'    -d 'Color mode'
+complete -c %[1]s -l color   -a 'auto yes no'    -d 'Color mode'
 complete -c %[1]s -l shell   -a 'bash zsh fish'  -d 'Print completions'
 `, bin)
 
