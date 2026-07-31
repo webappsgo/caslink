@@ -6,8 +6,10 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/webappsgo/caslink/src/backup"
 	"golang.org/x/term"
@@ -58,7 +60,8 @@ func promptBackupPassword(prompt string) string {
 		}
 		return string(pw)
 	}
-	var line string
-	fmt.Fscanln(os.Stdin, &line)
-	return line
+	// Non-terminal stdin: read a full line so passwords containing spaces are
+	// preserved (Fscanln would truncate at the first whitespace).
+	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	return strings.TrimRight(line, "\r\n")
 }
