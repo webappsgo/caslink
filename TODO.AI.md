@@ -20,16 +20,6 @@ findings from that audit were fixed directly and are not listed here.
   `ci.yml`/`release.yml` last, per cicd_conventions.md. Third-party Actions
   pinned to full commit SHA, never tags.
 
-## DSN credential escaping (regression-risk)
-
-- `src/server/store/factory.go` — `buildPostgresDSN` (key=value),
-  `buildMySQLDSN` (`user:password@tcp`), and `buildSQLServerDSN` (URL) do not
-  escape credentials containing special characters (spaces, `@`, `:`, `/`, `'`).
-  A password with these chars would produce a malformed DSN or connect to the
-  wrong target. Fix per-driver (pq quoting / url.UserPassword / mssql URL
-  encoding) with tests — deferred because each driver quotes differently and a
-  naive fix risks breaking currently-working simple passwords.
-
 ## SMTP pre-flight (robustness)
 
 - Email send path assumes `SMTPConfigured` implies a reachable server. Add a
