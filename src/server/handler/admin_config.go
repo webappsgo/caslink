@@ -11,75 +11,8 @@ import (
 	"time"
 )
 
-// adminPageData holds common template data for all admin config pages.
-type adminPageData struct {
-	Title    string
-	Username string
-	Version  string
-	Mode     string
-	BasePath string
-	Nav      []adminNavItem
-	Content  template.HTML
-	Flash    string
-	Error    string
-}
-
-// adminNavItem represents a sidebar nav entry.
-type adminNavItem struct {
-	Label  string
-	URL    string
-	Icon   string
-	Active bool
-}
-
-// adminNav builds the sidebar navigation items with the active entry marked.
-func (h *AdminHandler) adminNav(activePath string) []adminNavItem {
-	base := h.basePath()
-	items := []adminNavItem{
-		{Label: "Dashboard", URL: base + "/dashboard", Icon: "📊"},
-		{Label: "Settings", URL: base + "/config/settings", Icon: "⚙️"},
-		{Label: "Branding", URL: base + "/config/branding", Icon: "🎨"},
-		{Label: "SSL/TLS", URL: base + "/config/ssl", Icon: "🔒"},
-		{Label: "Scheduler", URL: base + "/config/scheduler", Icon: "⏰"},
-		{Label: "Email", URL: base + "/config/email", Icon: "📧"},
-		{Label: "Logs", URL: base + "/config/logs", Icon: "📋"},
-		{Label: "Backup", URL: base + "/config/backup", Icon: "💾"},
-		{Label: "Maintenance", URL: base + "/config/maintenance", Icon: "🔧"},
-		{Label: "Updates", URL: base + "/config/updates", Icon: "🔄"},
-		{Label: "Server Info", URL: base + "/config/info", Icon: "ℹ️"},
-		{Label: "Auth", URL: base + "/config/security/auth", Icon: "🔑"},
-		{Label: "API Tokens", URL: base + "/config/security/tokens", Icon: "🪙"},
-		{Label: "Rate Limiting", URL: base + "/config/security/ratelimit", Icon: "⏱️"},
-		{Label: "Firewall", URL: base + "/config/security/firewall", Icon: "🛡️"},
-		{Label: "Allowlist", URL: base + "/config/security/allowlist", Icon: "✅"},
-		{Label: "Tor", URL: base + "/config/network/tor", Icon: "🧅"},
-		{Label: "GeoIP", URL: base + "/config/network/geoip", Icon: "🌐"},
-		{Label: "Blocklists", URL: base + "/config/network/blocklists", Icon: "🚫"},
-		{Label: "Users", URL: base + "/config/users", Icon: "👥"},
-		{Label: "Invites", URL: base + "/config/users/invites", Icon: "✉️"},
-		{Label: "Moderation", URL: base + "/config/moderation/users", Icon: "🛂"},
-		{Label: "Cluster Nodes", URL: base + "/config/cluster/nodes", Icon: "🔗"},
-		{Label: "Add Node", URL: base + "/config/cluster/add", Icon: "➕"},
-		{Label: "Help", URL: base + "/help", Icon: "❓"},
-	}
-	for i, it := range items {
-		if it.URL == base+activePath {
-			items[i].Active = true
-		}
-	}
-	return items
-}
-
-// adminLayout returns the shared HTML layout with sidebar and content.
-// content is trusted HTML built by each individual handler.
-func (h *AdminHandler) adminLayout(w http.ResponseWriter, r *http.Request, title, activePath string, content template.HTML, flash, errMsg string) {
-	admin := h.getAdminFromSession(r)
-	if admin == nil {
-		http.Redirect(w, r, h.basePath(), http.StatusFound)
-		return
-	}
-
-	const layoutTmpl = `<!DOCTYPE html>
+// Parsed once at package init instead of per-request.
+var adminLayoutTmpl = template.Must(template.New("layout").Parse(`<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -158,9 +91,77 @@ func (h *AdminHandler) adminLayout(w http.ResponseWriter, r *http.Request, title
         </main>
     </div>
 </body>
-</html>`
+</html>`))
 
-	t := template.Must(template.New("layout").Parse(layoutTmpl))
+// adminPageData holds common template data for all admin config pages.
+type adminPageData struct {
+	Title    string
+	Username string
+	Version  string
+	Mode     string
+	BasePath string
+	Nav      []adminNavItem
+	Content  template.HTML
+	Flash    string
+	Error    string
+}
+
+// adminNavItem represents a sidebar nav entry.
+type adminNavItem struct {
+	Label  string
+	URL    string
+	Icon   string
+	Active bool
+}
+
+// adminNav builds the sidebar navigation items with the active entry marked.
+func (h *AdminHandler) adminNav(activePath string) []adminNavItem {
+	base := h.basePath()
+	items := []adminNavItem{
+		{Label: "Dashboard", URL: base + "/dashboard", Icon: "📊"},
+		{Label: "Settings", URL: base + "/config/settings", Icon: "⚙️"},
+		{Label: "Branding", URL: base + "/config/branding", Icon: "🎨"},
+		{Label: "SSL/TLS", URL: base + "/config/ssl", Icon: "🔒"},
+		{Label: "Scheduler", URL: base + "/config/scheduler", Icon: "⏰"},
+		{Label: "Email", URL: base + "/config/email", Icon: "📧"},
+		{Label: "Logs", URL: base + "/config/logs", Icon: "📋"},
+		{Label: "Backup", URL: base + "/config/backup", Icon: "💾"},
+		{Label: "Maintenance", URL: base + "/config/maintenance", Icon: "🔧"},
+		{Label: "Updates", URL: base + "/config/updates", Icon: "🔄"},
+		{Label: "Server Info", URL: base + "/config/info", Icon: "ℹ️"},
+		{Label: "Auth", URL: base + "/config/security/auth", Icon: "🔑"},
+		{Label: "API Tokens", URL: base + "/config/security/tokens", Icon: "🪙"},
+		{Label: "Rate Limiting", URL: base + "/config/security/ratelimit", Icon: "⏱️"},
+		{Label: "Firewall", URL: base + "/config/security/firewall", Icon: "🛡️"},
+		{Label: "Allowlist", URL: base + "/config/security/allowlist", Icon: "✅"},
+		{Label: "Tor", URL: base + "/config/network/tor", Icon: "🧅"},
+		{Label: "GeoIP", URL: base + "/config/network/geoip", Icon: "🌐"},
+		{Label: "Blocklists", URL: base + "/config/network/blocklists", Icon: "🚫"},
+		{Label: "Users", URL: base + "/config/users", Icon: "👥"},
+		{Label: "Invites", URL: base + "/config/users/invites", Icon: "✉️"},
+		{Label: "Moderation", URL: base + "/config/moderation/users", Icon: "🛂"},
+		{Label: "Cluster Nodes", URL: base + "/config/cluster/nodes", Icon: "🔗"},
+		{Label: "Add Node", URL: base + "/config/cluster/add", Icon: "➕"},
+		{Label: "Help", URL: base + "/help", Icon: "❓"},
+	}
+	for i, it := range items {
+		if it.URL == base+activePath {
+			items[i].Active = true
+		}
+	}
+	return items
+}
+
+// adminLayout returns the shared HTML layout with sidebar and content.
+// content is trusted HTML built by each individual handler.
+func (h *AdminHandler) adminLayout(w http.ResponseWriter, r *http.Request, title, activePath string, content template.HTML, flash, errMsg string) {
+	admin := h.getAdminFromSession(r)
+	if admin == nil {
+		http.Redirect(w, r, h.basePath(), http.StatusFound)
+		return
+	}
+
+	t := adminLayoutTmpl
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = t.Execute(w, adminPageData{
 		Title:    title,
