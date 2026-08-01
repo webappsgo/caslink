@@ -1,0 +1,326 @@
+package service
+
+import (
+	"bytes"
+	"context"
+	"image/png"
+	"strings"
+	"testing"
+
+	"github.com/webappsgo/caslink/src/server/model"
+)
+
+// seedURL inserts a URL via URLService.CreateURL and returns its ID, so QR
+// tests exercise real url_id values against the full schema (qr_codes.url_id
+// carries a FOREIGN KEY REFERENCES urls(id)).
+func seedURL(t *testing.T, ctx context.Context, urlSvc *URLService, longURL string) int64 {
+	t.Helper()
+
+	created, err := urlSvc.CreateURL(ctx, &model.CreateURLRequest{LongURL: longURL})
+	if err != nil {
+		t.Fatalf("CreateURL failed: %v", err)
+	}
+	return created.ID
+}
+
+// TestGenerateQRCodePNGDefaults covers the happy path: nil options fall back
+// to the documented defaults (png, 200px, square) and the result decodes as
+// a valid PNG image.
+func TestGenerateQRCodePNGDefaults(t *testing.T) {
+	st := newFullSchemaStore(t)
+	urlSvc := NewURLService(st)
+	qrSvc := NewQRService(st)
+	ctx := context.Background()
+
+	urlID := seedURL(t, ctx, urlSvc, "https://example.com/a")
+
+	data, contentType, err := qrSvc.GenerateQRCode(ctx, urlID, "https://example.com/a", nil)
+	if err != nil {
+		t.Fatalf("GenerateQRCode failed: %v", err)
+	}
+	if contentType != "image/png" {
+		t.Errorf("contentType = %q, want %q", contentType, "image/png")
+	}
+	if len(data) == 0 {
+		t.Fatal("expected non-empty PNG data")
+	}
+
+	img, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("generated data is not valid PNG: %v", err)
+	}
+	bounds := img.Bounds()
+	if got := bounds.Max.X - bounds.Min.X; got != 200 {
+		t.Errorf("image width = %d, want 200 (default size)", got)
+	}
+}
+
+// TestGenerateQRCodeSVG covers the svg format branch, verifying the output
+// is well-formed SVG markup rather than PNG bytes.
+func TestGenerateQRCodeSVG(t *testing.T) {
+	st := newFullSchemaStore(t)
+	urlSvc := NewURLService(st)
+	qrSvc := NewQRService(st)
+	ctx := context.Background()
+
+	urlID := seedURL(t, ctx, urlSvc, "https://example.com/svg")
+
+	data, contentType, err := qrSvc.GenerateQRCode(ctx, urlID, "https://example.com/svg", &QRCodeOptions{
+		Format: "svg",
+		Size:   150,
+		Style:  "square",
+	})
+	if err != nil {
+		t.Fatalf("GenerateQRCode failed: %v", err)
+	}
+	if contentType != "image/svg+xml" {
+		t.Errorf("contentType = %q, want %q", contentType, "image/svg+xml")
+	}
+	s := string(data)
+	if !strings.HasPrefix(s, "<svg") {
+		t.Errorf("SVG data does not start with <svg tag: %q", s[:min(40, len(s))])
+	}
+	if !strings.HasSuffix(s, "</svg>") {
+		t.Error("SVG data does not end with </svg>")
+	}
+	if !strings.Contains(s, `width="150"`) {
+		t.Error("SVG data does not reflect requested size 150")
+	}
+}
+
+// TestGenerateQRCodeSizeBoundaries covers the size clamping rules from
+// PART 36: non-positive sizes fall back to 200, and sizes above 1000 are
+// capped at 1000.
+func TestGenerateQRCodeSizeBoundaries(t *testing.T) {
+	tests := []struct {
+		name     string
+		size     int
+		wantSize int
+	}{
+		{"zero size defaults to 200", 0, 200},
+		{"negative size defaults to 200", -5, 200},
+		{"size within range is kept", 500, 500},
+		{"size at max boundary is kept", 1000, 1000},
+		{"size above max is clamped to 1000", 5000, 1000},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			st := newFullSchemaStore(t)
+			urlSvc := NewURLService(st)
+			qrSvc := NewQRService(st)
+			ctx := context.Background()
+
+			urlID := seedURL(t, ctx, urlSvc, "https://example.com/size")
+
+			data, _, err := qrSvc.GenerateQRCode(ctx, urlID, "https://example.com/size", &QRCodeOptions{
+				Format: "png",
+				Size:   tt.size,
+				Style:  "square",
+			})
+			if err != nil {
+				t.Fatalf("GenerateQRCode failed: %v", err)
+			}
+
+			img, err := png.Decode(bytes.NewReader(data))
+			if err != nil {
+				t.Fatalf("generated data is not valid PNG: %v", err)
+			}
+			bounds := img.Bounds()
+			if got := bounds.Max.X - bounds.Min.X; got != tt.wantSize {
+				t.Errorf("image width = %d, want %d", got, tt.wantSize)
+			}
+		})
+	}
+}
+
+// TestGenerateQRCodeCachesResult covers idempotency: generating the same QR
+// code twice must hit the cache on the second call (single row persisted,
+// identical bytes returned) instead of regenerating and re-inserting.
+func TestGenerateQRCodeCachesResult(t *testing.T) {
+	st := newFullSchemaStore(t)
+	urlSvc := NewURLService(st)
+	qrSvc := NewQRService(st)
+	ctx := context.Background()
+
+	urlID := seedURL(t, ctx, urlSvc, "https://example.com/cache")
+	opts := &QRCodeOptions{Format: "png", Size: 300, Style: "square"}
+
+	first, _, err := qrSvc.GenerateQRCode(ctx, urlID, "https://example.com/cache", opts)
+	if err != nil {
+		t.Fatalf("first GenerateQRCode failed: %v", err)
+	}
+
+	second, _, err := qrSvc.GenerateQRCode(ctx, urlID, "https://example.com/cache", opts)
+	if err != nil {
+		t.Fatalf("second GenerateQRCode failed: %v", err)
+	}
+
+	if !bytes.Equal(first, second) {
+		t.Error("cached QR code bytes differ from originally generated bytes")
+	}
+
+	var count int
+	if err := st.ServerDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM qr_codes WHERE url_id = ?`, urlID).Scan(&count); err != nil {
+		t.Fatalf("failed to count qr_codes rows: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("qr_codes row count = %d, want 1 (second call should be a cache hit, not a re-insert)", count)
+	}
+}
+
+// TestGenerateQRCodeDifferentOptionsNotSharedCache ensures the cache key
+// includes format/size/style — a request with different options must not
+// be served the previous request's cached bytes.
+func TestGenerateQRCodeDifferentOptionsNotSharedCache(t *testing.T) {
+	st := newFullSchemaStore(t)
+	urlSvc := NewURLService(st)
+	qrSvc := NewQRService(st)
+	ctx := context.Background()
+
+	urlID := seedURL(t, ctx, urlSvc, "https://example.com/multi")
+
+	small, _, err := qrSvc.GenerateQRCode(ctx, urlID, "https://example.com/multi", &QRCodeOptions{Format: "png", Size: 100, Style: "square"})
+	if err != nil {
+		t.Fatalf("GenerateQRCode (100px) failed: %v", err)
+	}
+	large, _, err := qrSvc.GenerateQRCode(ctx, urlID, "https://example.com/multi", &QRCodeOptions{Format: "png", Size: 400, Style: "square"})
+	if err != nil {
+		t.Fatalf("GenerateQRCode (400px) failed: %v", err)
+	}
+
+	if bytes.Equal(small, large) {
+		t.Error("different sizes produced identical bytes; cache key should be per (format, size, style)")
+	}
+
+	var count int
+	if err := st.ServerDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM qr_codes WHERE url_id = ?`, urlID).Scan(&count); err != nil {
+		t.Fatalf("failed to count qr_codes rows: %v", err)
+	}
+	if count != 2 {
+		t.Errorf("qr_codes row count = %d, want 2 (one per distinct option set)", count)
+	}
+}
+
+// TestClearCache covers eviction: after clearing, a subsequent generation
+// must regenerate (cache miss) rather than error out, and the row is
+// recreated.
+func TestClearCache(t *testing.T) {
+	st := newFullSchemaStore(t)
+	urlSvc := NewURLService(st)
+	qrSvc := NewQRService(st)
+	ctx := context.Background()
+
+	urlID := seedURL(t, ctx, urlSvc, "https://example.com/clear")
+	opts := &QRCodeOptions{Format: "png", Size: 200, Style: "square"}
+
+	if _, _, err := qrSvc.GenerateQRCode(ctx, urlID, "https://example.com/clear", opts); err != nil {
+		t.Fatalf("GenerateQRCode failed: %v", err)
+	}
+
+	if err := qrSvc.ClearCache(ctx, urlID); err != nil {
+		t.Fatalf("ClearCache failed: %v", err)
+	}
+
+	var count int
+	if err := st.ServerDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM qr_codes WHERE url_id = ?`, urlID).Scan(&count); err != nil {
+		t.Fatalf("failed to count qr_codes rows: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("qr_codes row count after ClearCache = %d, want 0", count)
+	}
+
+	// Regeneration after a clear must succeed and repopulate the cache.
+	if _, _, err := qrSvc.GenerateQRCode(ctx, urlID, "https://example.com/clear", opts); err != nil {
+		t.Fatalf("GenerateQRCode after ClearCache failed: %v", err)
+	}
+	if err := st.ServerDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM qr_codes WHERE url_id = ?`, urlID).Scan(&count); err != nil {
+		t.Fatalf("failed to count qr_codes rows: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("qr_codes row count after regeneration = %d, want 1", count)
+	}
+}
+
+// TestClearCacheOnUnknownURL exercises the error/no-op path: clearing a
+// cache for a urlID that was never cached must not error.
+func TestClearCacheOnUnknownURL(t *testing.T) {
+	st := newFullSchemaStore(t)
+	qrSvc := NewQRService(st)
+	ctx := context.Background()
+
+	if err := qrSvc.ClearCache(ctx, 999999); err != nil {
+		t.Errorf("ClearCache on unknown urlID failed: %v", err)
+	}
+}
+
+// TestGenerateQRCodeDoesNotRequirePersistedURL documents that GenerateQRCode
+// encodes the "url" argument directly — it never looks up urlID in the urls
+// table, so a caller passing an unpersisted/unknown urlID still gets a valid
+// QR code back for the destination string given. Best-effort caching is
+// swallowed silently on failure (see saveToCache call site).
+func TestGenerateQRCodeDoesNotRequirePersistedURL(t *testing.T) {
+	st := newFullSchemaStore(t)
+	qrSvc := NewQRService(st)
+	ctx := context.Background()
+
+	data, contentType, err := qrSvc.GenerateQRCode(ctx, 424242, "https://example.com/unpersisted", nil)
+	if err != nil {
+		t.Fatalf("GenerateQRCode with unknown urlID failed: %v", err)
+	}
+	if contentType != "image/png" {
+		t.Errorf("contentType = %q, want %q", contentType, "image/png")
+	}
+	if _, err := png.Decode(bytes.NewReader(data)); err != nil {
+		t.Fatalf("generated data is not valid PNG: %v", err)
+	}
+}
+
+// TestGenerateQRCodeForText covers the standalone helper used for TOTP
+// enrollment QR codes: happy path, boundary defaults, and clamping.
+func TestGenerateQRCodeForText(t *testing.T) {
+	st := newFullSchemaStore(t)
+	qrSvc := NewQRService(st)
+
+	tests := []struct {
+		name     string
+		text     string
+		size     int
+		wantSize int
+	}{
+		{"happy path otpauth URI", "otpauth://totp/Caslink:user@example.com?secret=ABC123&issuer=Caslink", 250, 250},
+		{"zero size defaults to 200", "otpauth://totp/x", 0, 200},
+		{"negative size defaults to 200", "otpauth://totp/x", -1, 200},
+		{"size above max clamped to 1000", "otpauth://totp/x", 4000, 1000},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := qrSvc.GenerateQRCodeForText(tt.text, tt.size)
+			if err != nil {
+				t.Fatalf("GenerateQRCodeForText failed: %v", err)
+			}
+			img, err := png.Decode(bytes.NewReader(data))
+			if err != nil {
+				t.Fatalf("generated data is not valid PNG: %v", err)
+			}
+			bounds := img.Bounds()
+			if got := bounds.Max.X - bounds.Min.X; got != tt.wantSize {
+				t.Errorf("image width = %d, want %d", got, tt.wantSize)
+			}
+		})
+	}
+}
+
+// TestGenerateQRCodeForTextEmptyErrors verifies that empty input surfaces an
+// error rather than a false-positive success — the underlying skip2/go-qrcode
+// library cannot encode a zero-length payload ("no data to encode").
+func TestGenerateQRCodeForTextEmptyErrors(t *testing.T) {
+	st := newFullSchemaStore(t)
+	qrSvc := NewQRService(st)
+
+	if _, err := qrSvc.GenerateQRCodeForText("", 200); err == nil {
+		t.Error("GenerateQRCodeForText(\"\", 200): got nil error, want an error for empty text")
+	}
+}
+

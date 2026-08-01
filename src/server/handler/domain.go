@@ -32,13 +32,13 @@ func (h *DomainHandler) ListUserDomains(w http.ResponseWriter, r *http.Request) 
 	ctx := r.Context()
 	user, ok := getUserFromRequest(r)
 	if !ok {
-		respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "Authentication required"})
+		respondError(w, http.StatusUnauthorized, "Authentication required")
 		return
 	}
 
 	domains, err := h.domainService.GetUserDomains(ctx, user.ID)
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to load domains"})
+		respondError(w, http.StatusInternalServerError, "Failed to load domains")
 		return
 	}
 
@@ -55,27 +55,21 @@ func (h *DomainHandler) AddUserDomain(w http.ResponseWriter, r *http.Request) {
 	// Get user from session
 	user, ok := getUserFromRequest(r)
 	if !ok {
-		respondJSON(w, http.StatusUnauthorized, map[string]string{
-			"error": "Authentication required",
-		})
+		respondError(w, http.StatusUnauthorized, "Authentication required")
 		return
 	}
 
 	// Parse request
 	var req model.AddDomainRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]string{
-			"error": "Invalid request body",
-		})
+		respondError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	// Add domain
 	domain, err := h.domainService.AddDomain(ctx, "user", user.ID, req.Domain)
 	if err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]string{
-			"error": err.Error(),
-		})
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -94,18 +88,14 @@ func (h *DomainHandler) VerifyUserDomain(w http.ResponseWriter, r *http.Request)
 
 	user, ok := getUserFromRequest(r)
 	if !ok {
-		respondJSON(w, http.StatusUnauthorized, map[string]string{
-			"error": "Authentication required",
-		})
+		respondError(w, http.StatusUnauthorized, "Authentication required")
 		return
 	}
 
 	// Resolve domain ID and confirm the caller owns it.
 	domains, err := h.domainService.GetUserDomains(ctx, user.ID)
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]string{
-			"error": "failed to load domains",
-		})
+		respondError(w, http.StatusInternalServerError, "failed to load domains")
 		return
 	}
 	var domainID int64
@@ -116,16 +106,12 @@ func (h *DomainHandler) VerifyUserDomain(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	if domainID == 0 {
-		respondJSON(w, http.StatusNotFound, map[string]string{
-			"error": "domain not found for this user",
-		})
+		respondError(w, http.StatusNotFound, "domain not found for this user")
 		return
 	}
 
 	if err := h.domainService.VerifyDomain(ctx, domainID); err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]string{
-			"error": err.Error(),
-		})
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -142,25 +128,25 @@ func (h *DomainHandler) ListOrgDomains(w http.ResponseWriter, r *http.Request) {
 
 	user, ok := getUserFromRequest(r)
 	if !ok {
-		respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "Authentication required"})
+		respondError(w, http.StatusUnauthorized, "Authentication required")
 		return
 	}
 
 	org, err := h.orgService.GetOrganizationBySlug(ctx, slug)
 	if err != nil {
-		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Organization not found"})
+		respondError(w, http.StatusNotFound, "Organization not found")
 		return
 	}
 
 	_, role, err := h.orgService.IsMember(ctx, org.ID, user.ID)
 	if err != nil || role == "" {
-		respondJSON(w, http.StatusForbidden, map[string]string{"error": "Not a member of this organization"})
+		respondError(w, http.StatusForbidden, "Not a member of this organization")
 		return
 	}
 
 	domains, err := h.domainService.GetOrgDomains(ctx, org.ID)
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to load domains"})
+		respondError(w, http.StatusInternalServerError, "Failed to load domains")
 		return
 	}
 
@@ -177,31 +163,31 @@ func (h *DomainHandler) AddOrgDomain(w http.ResponseWriter, r *http.Request) {
 
 	user, ok := getUserFromRequest(r)
 	if !ok {
-		respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "Authentication required"})
+		respondError(w, http.StatusUnauthorized, "Authentication required")
 		return
 	}
 
 	org, err := h.orgService.GetOrganizationBySlug(ctx, slug)
 	if err != nil {
-		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Organization not found"})
+		respondError(w, http.StatusNotFound, "Organization not found")
 		return
 	}
 
 	_, role, err := h.orgService.IsMember(ctx, org.ID, user.ID)
 	if err != nil || (role != "owner" && role != "admin") {
-		respondJSON(w, http.StatusForbidden, map[string]string{"error": "Owner or admin role required"})
+		respondError(w, http.StatusForbidden, "Owner or admin role required")
 		return
 	}
 
 	var req model.AddDomainRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		respondError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	domain, err := h.domainService.AddDomain(ctx, "org", org.ID, req.Domain)
 	if err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 

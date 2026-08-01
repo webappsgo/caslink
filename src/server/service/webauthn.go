@@ -254,7 +254,29 @@ func (s *WebAuthnService) FinishLogin(userID string, sessionData *webauthn.Sessi
 		return fmt.Errorf("WebAuthn login failed: %w", err)
 	}
 
+	// The go-webauthn library validates the signature but explicitly leaves
+	// the accept-vs-reject decision on a non-increasing sign counter to the
+	// Relying Party (see Authenticator.UpdateCounter doc comment). A sign
+	// count that did not strictly increase beyond the previously stored
+	// value is the WebAuthn spec's defined signal for a possible cloned
+	// authenticator / replayed assertion, so it must be rejected here.
+	if err := cloneWarningError(updatedCredential); err != nil {
+		return err
+	}
+
 	return s.updateCredentialAfterLogin(userID, updatedCredential)
+}
+
+// cloneWarningError returns a non-nil error when cred's authenticator has
+// been flagged by the WebAuthn library as possibly cloned, i.e. the sign
+// counter returned by the authenticator did not strictly increase beyond
+// the previously stored value. Rejecting on this flag is the mitigation
+// for replayed or cloned-authenticator assertions per WebAuthn §7.2 step 17.
+func cloneWarningError(cred *webauthn.Credential) error {
+	if cred != nil && cred.Authenticator.CloneWarning {
+		return fmt.Errorf("webauthn: possible cloned authenticator detected (sign counter did not increase)")
+	}
+	return nil
 }
 
 // GetCredentials returns all passkey credentials stored for userID.

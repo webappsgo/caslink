@@ -59,13 +59,24 @@ func TestAutoDetectDisplayModeTerminalNoDisplay(t *testing.T) {
 	}
 }
 
-// TestAutoDetectDisplayModePipedOutputFallsBackToCLI covers piped/non-TTY
-// stdout with a display present but not a terminal (e.g. `caslink status |
-// cat` in a GUI session) — falls through every branch to CLI.
-func TestAutoDetectDisplayModePipedOutputFallsBackToCLI(t *testing.T) {
+// TestAutoDetectDisplayModePipedOutputNoDisplay covers piped/non-TTY stdout
+// with neither a terminal nor a display attached (e.g. `caslink status |
+// cat` in a headless CI job) — must classify as headless.
+func TestAutoDetectDisplayModePipedOutputNoDisplay(t *testing.T) {
 	env := DisplayEnv{IsTerminal: false, HasDisplay: false, TerminalType: "xterm-256color"}
 	if got := env.autoDetectDisplayMode(); got != DisplayModeHeadless {
 		t.Fatalf("autoDetectDisplayMode() piped, no display = %v, want DisplayModeHeadless", got)
+	}
+}
+
+// TestAutoDetectDisplayModePipedWithDisplayStillGUI documents the actual
+// current behavior: a display being present (HasDisplay) forces GUI mode
+// even when stdout itself is piped/non-terminal and not SSH/mosh — the
+// function only inspects HasDisplay, not IsTerminal, on that branch.
+func TestAutoDetectDisplayModePipedWithDisplayStillGUI(t *testing.T) {
+	env := DisplayEnv{IsTerminal: false, HasDisplay: true, TerminalType: "xterm-256color"}
+	if got := env.autoDetectDisplayMode(); got != DisplayModeGUI {
+		t.Fatalf("autoDetectDisplayMode() piped stdout with display present = %v, want DisplayModeGUI (documents current HasDisplay-wins behavior)", got)
 	}
 }
 
@@ -92,10 +103,10 @@ func TestIsDumbTerminal(t *testing.T) {
 // modes appear simultaneously true.
 func TestIsAutoDetectDisplayModePredicates(t *testing.T) {
 	modes := []struct {
-		mode        DisplayMode
-		wantGUI     bool
-		wantTUI     bool
-		wantCLI     bool
+		mode         DisplayMode
+		wantGUI      bool
+		wantTUI      bool
+		wantCLI      bool
 		wantHeadless bool
 	}{
 		{DisplayModeGUI, true, false, false, false},

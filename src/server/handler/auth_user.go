@@ -88,7 +88,7 @@ func (h *AuthUserHandler) Register(w http.ResponseWriter, r *http.Request) {
 			renderErr(err.Error(), username, email)
 			return
 		}
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := validate.ValidateEmail(email); err != nil {
@@ -96,7 +96,7 @@ func (h *AuthUserHandler) Register(w http.ResponseWriter, r *http.Request) {
 			renderErr(err.Error(), username, email)
 			return
 		}
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if len(password) < 8 {
@@ -104,7 +104,7 @@ func (h *AuthUserHandler) Register(w http.ResponseWriter, r *http.Request) {
 			renderErr("Password must be at least 8 characters", username, email)
 			return
 		}
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Password must be at least 8 characters"})
+		respondError(w, http.StatusBadRequest, "Password must be at least 8 characters")
 		return
 	}
 
@@ -114,7 +114,7 @@ func (h *AuthUserHandler) Register(w http.ResponseWriter, r *http.Request) {
 			renderErr("Unable to complete registration", username, email)
 			return
 		}
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Unable to complete registration"})
+		respondError(w, http.StatusBadRequest, "Unable to complete registration")
 		return
 	}
 
@@ -124,9 +124,7 @@ func (h *AuthUserHandler) Register(w http.ResponseWriter, r *http.Request) {
 			renderErr("Registration succeeded but session creation failed", username, email)
 			return
 		}
-		respondJSON(w, http.StatusInternalServerError, map[string]string{
-			"error": "Registration succeeded but session creation failed",
-		})
+		respondError(w, http.StatusInternalServerError, "Registration succeeded but session creation failed")
 		return
 	}
 
@@ -209,7 +207,7 @@ func (h *AuthUserHandler) Login(w http.ResponseWriter, r *http.Request) {
 			renderErr("Invalid credentials", identifier)
 			return
 		}
-		respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "Invalid credentials"})
+		respondError(w, http.StatusUnauthorized, "Invalid credentials")
 		return
 	}
 
@@ -221,9 +219,7 @@ func (h *AuthUserHandler) Login(w http.ResponseWriter, r *http.Request) {
 				renderErr("Failed to create 2FA session", identifier)
 				return
 			}
-			respondJSON(w, http.StatusInternalServerError, map[string]string{
-				"error": "Failed to create 2FA session",
-			})
+			respondError(w, http.StatusInternalServerError, "Failed to create 2FA session")
 			return
 		}
 
@@ -260,9 +256,7 @@ func (h *AuthUserHandler) Login(w http.ResponseWriter, r *http.Request) {
 			renderErr("Authentication succeeded but session creation failed", identifier)
 			return
 		}
-		respondJSON(w, http.StatusInternalServerError, map[string]string{
-			"error": "Authentication succeeded but session creation failed",
-		})
+		respondError(w, http.StatusInternalServerError, "Authentication succeeded but session creation failed")
 		return
 	}
 
@@ -292,7 +286,11 @@ func (h *AuthUserHandler) Logout(w http.ResponseWriter, r *http.Request) {
 
 	cookie, err := r.Cookie("user_session")
 	if err == nil && cookie.Value != "" {
-		_ = h.authService.DeleteSession(ctx, cookie.Value)
+		// cookie.Value is a user_sessions row (created via
+		// CreateUserSession), not an admin_sessions row, so RevokeSession
+		// (not DeleteSession, which only targets admin_sessions) is
+		// required to actually invalidate it on logout.
+		_ = h.authService.RevokeSession(ctx, cookie.Value)
 	}
 
 	http.SetCookie(w, &http.Cookie{

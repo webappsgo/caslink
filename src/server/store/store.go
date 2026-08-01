@@ -94,9 +94,7 @@ func (s *Store) initServerSchema() error {
 			desktop_url TEXT,
 			tablet_url TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
-			FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 
 		// Clicks table (analytics)

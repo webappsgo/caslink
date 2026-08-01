@@ -39,9 +39,14 @@ func NewPasswordHandler(
 // ForgotPasswordPage renders the password reset request page
 func (h *PasswordHandler) ForgotPasswordPage(w http.ResponseWriter, r *http.Request) {
 	if !h.emailService.SMTPConfigured() {
+		// forgot.html unconditionally references .Success and .Email, so
+		// this struct must carry the same fields as the normal-path struct
+		// below or template execution fails outright (500).
 		data := struct {
 			tmpl.Data
-			Error string
+			Error   string
+			Email   string
+			Success bool
 		}{
 			Data:  newPageData(h.cfg, r, "Reset Password", nil),
 			Error: "Password reset requires email configuration. Please contact your administrator.",
@@ -71,9 +76,7 @@ func (h *PasswordHandler) ForgotPassword(w http.ResponseWriter, r *http.Request)
 			http.Redirect(w, r, "/server/auth/password/forgot", http.StatusSeeOther)
 			return
 		}
-		respondJSON(w, http.StatusServiceUnavailable, map[string]string{
-			"error": "Email features not available",
-		})
+		respondError(w, http.StatusServiceUnavailable, "Email features not available")
 		return
 	}
 
@@ -89,9 +92,7 @@ func (h *PasswordHandler) ForgotPassword(w http.ResponseWriter, r *http.Request)
 			Email string `json:"email"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			respondJSON(w, http.StatusBadRequest, map[string]string{
-				"error": "Invalid request body",
-			})
+			respondError(w, http.StatusBadRequest, "Invalid request body")
 			return
 		}
 		email = req.Email
@@ -169,7 +170,7 @@ func (h *PasswordHandler) ResetPassword(w http.ResponseWriter, r *http.Request) 
 			PasswordConfirm string `json:"password_confirm"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+			respondError(w, http.StatusBadRequest, "Invalid request body")
 			return
 		}
 		password = req.Password
@@ -197,7 +198,7 @@ func (h *PasswordHandler) ResetPassword(w http.ResponseWriter, r *http.Request) 
 			renderErr("Passwords do not match", false)
 			return
 		}
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Passwords do not match"})
+		respondError(w, http.StatusBadRequest, "Passwords do not match")
 		return
 	}
 	if len(password) < 8 {
@@ -205,7 +206,7 @@ func (h *PasswordHandler) ResetPassword(w http.ResponseWriter, r *http.Request) 
 			renderErr("Password must be at least 8 characters", false)
 			return
 		}
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Password must be at least 8 characters"})
+		respondError(w, http.StatusBadRequest, "Password must be at least 8 characters")
 		return
 	}
 
@@ -214,7 +215,7 @@ func (h *PasswordHandler) ResetPassword(w http.ResponseWriter, r *http.Request) 
 			renderErr("Invalid or expired reset link. Please request a new one.", true)
 			return
 		}
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid or expired reset token"})
+		respondError(w, http.StatusBadRequest, "Invalid or expired reset token")
 		return
 	}
 

@@ -239,6 +239,14 @@ func (s *TOTPService) EnableTOTP(userID int64, secret string) ([]string, error) 
 		return nil, fmt.Errorf("failed to store TOTP secret: %w", err)
 	}
 
+	// Mirror the enabled state onto users.totp_enabled — AuthenticateUser and
+	// every other user-lookup query read this column (not totp_secrets) to
+	// decide whether to route login through the 2FA challenge, so without
+	// this update 2FA would be silently unenforceable at login.
+	if _, err = s.store.UsersDB.Exec(`UPDATE users SET totp_enabled = 1 WHERE id = ?`, userID); err != nil {
+		return nil, fmt.Errorf("failed to mark user as TOTP-enabled: %w", err)
+	}
+
 	// Return plaintext recovery keys to show user ONCE per PART 23 line 20026
 	return recoveryKeys, nil
 }
@@ -251,6 +259,12 @@ func (s *TOTPService) DisableTOTP(userID int64) error {
 	_, err := s.store.UsersDB.Exec(query, userID)
 	if err != nil {
 		return fmt.Errorf("failed to delete TOTP secret: %w", err)
+	}
+
+	// Mirror the disabled state onto users.totp_enabled — see EnableTOTP for
+	// why this column (not totp_secrets) is what login-time checks read.
+	if _, err = s.store.UsersDB.Exec(`UPDATE users SET totp_enabled = 0 WHERE id = ?`, userID); err != nil {
+		return fmt.Errorf("failed to mark user as TOTP-disabled: %w", err)
 	}
 
 	// Note: Email notification handled by caller (handler layer has access to EmailService)

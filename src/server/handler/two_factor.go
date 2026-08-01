@@ -95,8 +95,11 @@ func (h *TwoFactorHandler) Verify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Code is valid! Delete temp session and create full session
-	_ = h.authService.DeleteSession(ctx, cookie.Value)
+	// Code is valid! Revoke the temp session and create a full session.
+	// cookie.Value is a user_sessions row (created via CreateUserSession),
+	// not an admin_sessions row, so RevokeSession (not DeleteSession, which
+	// only targets admin_sessions) is required to actually invalidate it.
+	_ = h.authService.RevokeSession(ctx, cookie.Value)
 
 	// Create full session (7 days default)
 	sessionID, err := h.authService.CreateUserSession(ctx, user.ID, false)

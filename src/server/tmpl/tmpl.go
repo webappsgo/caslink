@@ -20,9 +20,20 @@ var staticFS embed.FS
 //go:embed template
 var templateFS embed.FS
 
-// Renderer holds the compiled template set and inline CSS/JS.
+// Renderer holds one compiled template set per page, keyed by embedded path.
+//
+// Every page file defines a block named "content" (see layout/base.html's
+// {{template "content" .}}). html/template associates all named blocks
+// globally within a single *template.Template, so parsing every page into
+// one shared tree makes each page's "content" definition silently overwrite
+// the last one — only the alphabetically-last-parsed page renders correctly
+// and every other page renders that page's content instead of its own. To
+// avoid this collision, each page gets its own clone of the shared base set
+// (layout, nav, inline CSS/JS, funcs), and only that page's file is parsed
+// into the clone.
 type Renderer struct {
-	templates *template.Template
+	base  *template.Template
+	pages map[string]*template.Template
 }
 
 // New parses all templates and loads static assets.
@@ -36,7 +47,7 @@ func New() (*Renderer, error) {
 		return nil, fmt.Errorf("failed to read app.js: %w", err)
 	}
 
-	t := template.New("").Funcs(template.FuncMap{
+	base := template.New("").Funcs(template.FuncMap{
 		// inc returns n+1; used in range loops for 1-based display indices.
 		"inc": func(n int) int { return n + 1 },
 		// join renders a []string (e.g. URL.Tags, URL.GeoCountries) as a
@@ -44,7 +55,26 @@ func New() (*Renderer, error) {
 		"join": func(vals []string) string { return strings.Join(vals, ", ") },
 	})
 
-	// Walk and parse all *.html files.
+	// Parse the shared layout (base, nav) once.
+	layoutData, err := templateFS.ReadFile("template/layout/base.html")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read layout/base.html: %w", err)
+	}
+	if _, err := base.New("template/layout/base.html").Parse(string(layoutData)); err != nil {
+		return nil, fmt.Errorf("failed to parse layout/base.html: %w", err)
+	}
+
+	// Inject inline CSS and JS into base layout helper blocks.
+	if _, err := base.New("inline-css").Parse(string(css)); err != nil {
+		return nil, fmt.Errorf("failed to parse inline-css: %w", err)
+	}
+	if _, err := base.New("inline-js").Parse(string(js)); err != nil {
+		return nil, fmt.Errorf("failed to parse inline-js: %w", err)
+	}
+
+	// Walk and parse every page (*.html outside layout/) into its own clone
+	// of base, so each page's "content" block is isolated from the others.
+	pages := make(map[string]*template.Template)
 	if err := fs.WalkDir(templateFS, "template", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -52,28 +82,27 @@ func New() (*Renderer, error) {
 		if d.IsDir() || filepath.Ext(path) != ".html" {
 			return nil
 		}
+		if strings.HasPrefix(path, "template/layout/") {
+			return nil
+		}
 		data, readErr := templateFS.ReadFile(path)
 		if readErr != nil {
 			return fmt.Errorf("failed to read template %s: %w", path, readErr)
 		}
-		_, parseErr := t.New(path).Parse(string(data))
-		if parseErr != nil {
+		clone, cloneErr := base.Clone()
+		if cloneErr != nil {
+			return fmt.Errorf("failed to clone base template for %s: %w", path, cloneErr)
+		}
+		if _, parseErr := clone.New(path).Parse(string(data)); parseErr != nil {
 			return fmt.Errorf("failed to parse template %s: %w", path, parseErr)
 		}
+		pages[path] = clone
 		return nil
 	}); err != nil {
 		return nil, fmt.Errorf("failed to load templates: %w", err)
 	}
 
-	// Inject inline CSS and JS into base layout helper blocks.
-	if _, err := t.New("inline-css").Parse(string(css)); err != nil {
-		return nil, fmt.Errorf("failed to parse inline-css: %w", err)
-	}
-	if _, err := t.New("inline-js").Parse(string(js)); err != nil {
-		return nil, fmt.Errorf("failed to parse inline-js: %w", err)
-	}
-
-	return &Renderer{templates: t}, nil
+	return &Renderer{base: base, pages: pages}, nil
 }
 
 // Data is the base template context.
@@ -103,10 +132,17 @@ type Flash struct {
 	Message string
 }
 
-// Render executes the named template and writes to w. On render error, writes 500.
+// Render executes the named page template and writes to w. On render error
+// (including an unknown page name), writes 500.
 func (r *Renderer) Render(w http.ResponseWriter, name string, data interface{}) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := r.templates.ExecuteTemplate(w, name, data); err != nil {
+	page, ok := r.pages[name]
+	if !ok {
+		log.Printf("template render error [%s]: unknown template", name)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	if err := page.ExecuteTemplate(w, name, data); err != nil {
 		log.Printf("template render error [%s]: %v", name, err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}
