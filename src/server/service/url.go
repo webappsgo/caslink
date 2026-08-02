@@ -262,7 +262,11 @@ func (s *URLService) UpdateURL(ctx context.Context, shortCode string, req *model
 		return nil, fmt.Errorf("failed to update URL: %w", err)
 	}
 
-	return s.GetURLByCode(ctx, shortCode)
+	// Re-fetch via the raw (non-expiry-checking) path — the write above
+	// just succeeded, so it must never be reported as model.ErrURLExpired
+	// even if the caller set expires_at to a past time (e.g. an admin
+	// "revive an expired link" edit).
+	return s.getURLByCodeRaw(ctx, shortCode)
 }
 
 // DeleteURL permanently removes a short URL per AI.md PART 16

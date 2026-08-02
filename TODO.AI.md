@@ -125,21 +125,6 @@ findings from that audit were fixed directly and are not listed here.
   in the actual current shape) — left unfixed for the same reason as
   above.
 
-- src/server/service/url.go `UpdateURL()` (line ~265): the row update
-  itself is committed via a direct `ExecContext`, but the function's
-  return value comes from a trailing `return s.GetURLByCode(ctx,
-  shortCode)` call, which re-applies `GetURLByCode`'s expiry check to the
-  row it just wrote. Setting `expires_at` to a past time therefore makes
-  `UpdateURL` itself return `model.ErrURLExpired` even though the write
-  succeeded — misleading any caller (e.g. an admin "revive an expired
-  link" edit form) into thinking the update failed. Discovered while
-  writing `src/server/handler/url_test.go` (`TestRedirectURLExpired`
-  locks in the actual current behavior). Needs `UpdateURL` to re-fetch via
-  the raw (non-expiry-checking) path — e.g. `s.getURLByCodeRaw(ctx,
-  shortCode)` — instead of `s.GetURLByCode`, so a successful write is
-  never reported as an error — left unfixed since it's a behavior change
-  to production code, out of scope for a test-only pass.
-
 - src/server/handler/user_security.go `renderTOTPSetup()` (~line 340-361):
   `QRDataURL` is passed to the template as a plain `string`, but the 2FA
   template (`template/page/users/security/2fa.html:47`) renders it inside an

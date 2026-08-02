@@ -305,17 +305,15 @@ func TestRedirectURLExpired(t *testing.T) {
 		t.Fatalf("CreateURL failed: %v", err)
 	}
 	// Force expiry via UpdateURL rather than reaching into the DB directly,
-	// exercising the real code path. The write itself succeeds, but
-	// UpdateURL's return value comes from a trailing GetURLByCode call
-	// that re-applies the expiry check to the row it just wrote — so
-	// setting expires_at into the past makes UpdateURL itself report
-	// model.ErrURLExpired even though the update committed. See
-	// TODO.AI.md's url.go UpdateURL entry.
+	// exercising the real code path. UpdateURL itself must report success
+	// (the write committed) even though the new expires_at is in the past —
+	// it re-fetches via the raw, non-expiry-checking path. The expiry only
+	// takes effect on the next read through RedirectURL/GetURLByCode.
 	expired := time.Now().Add(-1 * time.Hour)
 	if _, err := urlService.UpdateURL(context.Background(), u.ShortCode, &model.UpdateURLRequest{
 		ExpiresAt: &expired,
-	}); err != model.ErrURLExpired {
-		t.Fatalf("UpdateURL (force expiry): got %v, want model.ErrURLExpired", err)
+	}); err != nil {
+		t.Fatalf("UpdateURL (force expiry): got %v, want nil (write succeeded)", err)
 	}
 
 	r := httptest.NewRequest(http.MethodGet, "/"+u.ShortCode, nil)
