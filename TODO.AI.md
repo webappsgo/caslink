@@ -5,17 +5,6 @@ feature-sized, carries real regression risk, or needs a design decision — so i
 was logged here rather than fixed inline during the audit. All small, safe
 findings from that audit were fixed directly and are not listed here.
 
-- src/metrics/metrics.go `normalizePath()`: the third alternative in `idPattern`
-  (`[A-Za-z0-9_-]{3,50}`) matches ANY path segment of 3-50 word chars/hyphens,
-  not just short dynamic slugs — so ordinary static route segments like
-  `/users`, `/orgs`, `/api` are also collapsed to `/:code`, contradicting the
-  function's own doc comment ("Segments that look like UUIDs or pure integers
-  become :id; short alphanumeric slugs become :code"). Discovered while
-  writing `src/metrics/normalize_test.go`. Needs a product decision on
-  intended semantics (e.g. a known-static-segment allowlist, or accepting
-  this as deliberate max-caution behavior) before changing the regex —
-  left unfixed per test-writing task scope.
-
 - src/config/bool.go (lines 12, 16, 26, 50, 63): `ParseBool`/`IsTruthy`/
   `IsFalsy` implement a much shorter truthy/falsy word list than the one
   documented in `.claude/rules/config-rules.md` and
@@ -29,21 +18,6 @@ findings from that audit were fixed directly and are not listed here.
   scope). Needs a decision on whether to expand `bool.go` to match the
   documented word list — left unfixed since this is a behavior change to
   production code, out of scope for a test-only pass.
-
-- src/server/middleware.go `URLNormalizeMiddleware` (line ~676): the
-  "file-like path" trailing-slash exemption can never actually fire. The
-  code takes `last := p[strings.LastIndex(p, "/"):]` to find the final path
-  segment and checks it for a `.`, but this only runs when `p` already ends
-  in `/` — so the last `/` found IS the trailing slash itself, making `last`
-  always exactly `"/"`, which never contains a dot. A request like
-  `/static/app.css/` is therefore always 301-redirected to
-  `/static/app.css`, contradicting the function's own doc comment
-  ("Requests for paths that end with a file extension are exempt"). The
-  intended fix is likely trimming the trailing slash before computing
-  `last`. Discovered while writing `src/server/middleware_test.go` (test
-  `TestURLNormalizeMiddlewareFileLikeTrailingSlashStillRedirects` locks in
-  the actual current behavior) — left unfixed since it's a behavior change
-  to production code, out of scope for a test-only pass.
 
 - src/server/service/url.go (~lines 42-44): `CreateURL` wraps the
   `url.ParseRequestURI` error for a malformed/invalid `long_url` in a plain
