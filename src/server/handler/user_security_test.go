@@ -409,17 +409,15 @@ func TestTwoFactorEnableCorrectPasswordShowsQR(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
-	// renderTOTPSetup passes QRDataURL as a plain string, so html/template's
-	// URL sanitizer (isSafeUrl in html/template/url.go) rejects the "data:"
-	// scheme — it only allows http/https/mailto unless the value is typed
-	// template.URL — and replaces the whole attribute value with the
-	// "#ZgotmplZ" safety placeholder. The QR image therefore never actually
-	// renders. See TODO.AI.md's user_security.go QRDataURL entry.
-	if !strings.Contains(w.Body.String(), "#ZgotmplZ") {
-		t.Error("expected the data: URI to be filtered to the html/template safety placeholder")
+	// renderTOTPSetup types QRDataURL as template.URL, marking it pre-vetted
+	// safe, so html/template's URL sanitizer (isSafeUrl in
+	// html/template/url.go) renders the "data:" URI verbatim instead of
+	// replacing it with the "#ZgotmplZ" safety placeholder.
+	if strings.Contains(w.Body.String(), "#ZgotmplZ") {
+		t.Error("QR code data: URI was filtered to the html/template safety placeholder")
 	}
-	if strings.Contains(w.Body.String(), "data:image/png;base64,") {
-		t.Error("data: URI unexpectedly rendered unfiltered — QRDataURL may now be template.URL-typed; update this test to assert the real image renders")
+	if !strings.Contains(w.Body.String(), "data:image/png;base64,") {
+		t.Error("expected the QR code data: URI to render unfiltered")
 	}
 }
 

@@ -5,23 +5,6 @@ feature-sized, carries real regression risk, or needs a design decision — so i
 was logged here rather than fixed inline during the audit. All small, safe
 findings from that audit were fixed directly and are not listed here.
 
-- src/server/handler/user_security.go `renderTOTPSetup()` (~line 340-361):
-  `QRDataURL` is passed to the template as a plain `string`, but the 2FA
-  template (`template/page/users/security/2fa.html:47`) renders it inside an
-  `<img src="{{.QRDataURL}}">` attribute. html/template's URL sanitizer
-  (`isSafeUrl` in `html/template/url.go`) only allows `http`/`https`/`mailto`
-  schemes for a plain string in a URL-attribute context, so the `data:`
-  scheme is rejected and the entire attribute value is replaced with the
-  `#ZgotmplZ` safety placeholder — the QR code image never actually renders
-  for any user setting up 2FA. Discovered while writing
-  `src/server/handler/user_security_test.go`
-  (`TestTwoFactorEnableCorrectPasswordShowsQR` locks in the actual current
-  behavior — asserts `#ZgotmplZ` appears, not the data URI). Needs
-  `QRDataURL` typed as `template.URL` (mirroring `KeysJSON template.JS` a
-  few lines down in the same file) so html/template treats it as
-  pre-vetted-safe — left unfixed since it's a behavior change to production
-  code, out of scope for a test-only pass.
-
 - src/updater/update.go `DoUpdateFor()` (lines 97-164): the success path
   from a verified download through `replaceBinary` (lines 148-163) is not
   covered by any test. `currentPath` comes from `os.Executable()` with no

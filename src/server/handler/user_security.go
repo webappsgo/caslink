@@ -258,7 +258,7 @@ func (h *UserSecurityHandler) renderTwoFactorPage(w http.ResponseWriter, r *http
 	data := struct {
 		tmpl.Data
 		TOTPEnabled           bool
-		QRDataURL             string
+		QRDataURL             template.URL
 		TOTPSecret            string
 		RecoveryKeysRemaining int
 	}{
@@ -327,7 +327,7 @@ func (h *UserSecurityHandler) renderTOTPPasswordConfirm(w http.ResponseWriter, r
 	data := struct {
 		tmpl.Data
 		TOTPEnabled           bool
-		QRDataURL             string
+		QRDataURL             template.URL
 		TOTPSecret            string
 		RecoveryKeysRemaining int
 	}{
@@ -344,12 +344,15 @@ func (h *UserSecurityHandler) renderTOTPSetup(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	qrDataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(qrImage)
+	// QRDataURL is a data: URI built entirely server-side from a freshly
+	// generated QR code image, never from user input, so it is safe to mark
+	// as pre-vetted for the URL-attribute context below.
+	qrDataURL := template.URL("data:image/png;base64," + base64.StdEncoding.EncodeToString(qrImage))
 
 	data := struct {
 		tmpl.Data
 		TOTPEnabled           bool
-		QRDataURL             string
+		QRDataURL             template.URL
 		TOTPSecret            string
 		RecoveryKeysRemaining int
 	}{
