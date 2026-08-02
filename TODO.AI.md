@@ -45,24 +45,6 @@ findings from that audit were fixed directly and are not listed here.
   the actual current behavior) — left unfixed since it's a behavior change
   to production code, out of scope for a test-only pass.
 
-- src/client/cli/commands.go `doWithFailover()` (lines ~144-177): the doc
-  comment states "Only fail-over on connection errors, not on HTTP 4xx/5xx
-  from the server," but the implementation never actually distinguishes
-  error types — `c.do()` returns a non-nil `error` both for real connection
-  failures AND for a successfully-decoded `{"ok":false,...}` business-error
-  response, and `doWithFailover` sends any non-nil error into the
-  cluster-failover loop. A 4xx/5xx from the primary therefore still tries
-  every configured cluster member, and returns success if any of them
-  happens to answer differently for the same path — silently masking a
-  legitimate "not found"/"forbidden"/etc. response from the primary.
-  Discovered while writing `src/client/cli/commands_test.go` (test
-  `TestDoWithFailover_4xxNotRetried` locks in the actual current behavior).
-  Needs a design decision on how to classify "connection error" vs.
-  "business error" in `do()` (e.g. a typed/sentinel error, or checking the
-  HTTP status code before treating a decoded response as a failover
-  trigger) — left unfixed since it's a behavior change to production code,
-  out of scope for a test-only pass.
-
 - src/updater/update.go `CheckForUpdate()` (lines 38-89): the GitHub API
   base URL is hardcoded (`https://api.github.com/repos/%s/%s/releases...`,
   lines 42/44) with no injectable `http.Client`/base-URL override, unlike

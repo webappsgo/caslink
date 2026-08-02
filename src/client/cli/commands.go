@@ -4,6 +4,7 @@ package cli
 import (
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -137,16 +138,33 @@ func (c *client) refreshCluster() {
 	_ = config.SaveCLIConfig(c.cfg) // non-fatal if save fails
 }
 
+// businessError wraps a successfully-decoded {"ok":false,...} response from
+// the server (an HTTP 4xx/5xx business error), as opposed to a connection-
+// level failure (network error, non-decodable body). doWithFailover must
+// never retry a businessError against other cluster members — the primary
+// was reached and legitimately rejected the request.
+type businessError struct {
+	err error
+}
+
+func (e *businessError) Error() string { return e.err.Error() }
+func (e *businessError) Unwrap() error { return e.err }
+
 // doWithFailover wraps do() with cluster failover per AI.md PART 33.
 // On a connection-level error to the primary, each cluster URL is tried in
 // order. The first success promotes that URL for the rest of the session.
-// 4xx errors (including 401) are never retried — they are caller errors.
+// 4xx/5xx business errors (including 401) are never retried — they are
+// legitimate responses from a reachable primary, not connection failures.
 func (c *client) doWithFailover(method, path string, body io.Reader) (*apiResponse, error) {
 	ar, err := c.do(method, path, body)
 	if err == nil {
 		return ar, nil
 	}
 	// Only fail-over on connection errors, not on HTTP 4xx/5xx from the server.
+	var bizErr *businessError
+	if errors.As(err, &bizErr) {
+		return nil, err
+	}
 	if len(c.cluster) == 0 {
 		return nil, err
 	}
@@ -170,6 +188,9 @@ func (c *client) doWithFailover(method, path string, body io.Reader) (*apiRespon
 			return ar2, nil
 		}
 		c.base = saved
+		if errors.As(err2, &bizErr) {
+			return nil, err2
+		}
 		lastErr = err2
 	}
 	return nil, fmt.Errorf("cannot reach caslink server at any of %d configured URLs (last error: %w)",
@@ -218,9 +239,9 @@ func (c *client) do(method, path string, body io.Reader) (*apiResponse, error) {
 
 	if !ar.OK {
 		if ar.Message != "" {
-			return nil, fmt.Errorf("[%s] %s", ar.Error, ar.Message)
+			return nil, &businessError{err: fmt.Errorf("[%s] %s", ar.Error, ar.Message)}
 		}
-		return nil, fmt.Errorf("server error: %s", ar.Error)
+		return nil, &businessError{err: fmt.Errorf("server error: %s", ar.Error)}
 	}
 	return &ar, nil
 }

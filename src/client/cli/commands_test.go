@@ -295,16 +295,12 @@ func TestDoWithFailover_NoClusterConfigured(t *testing.T) {
 	}
 }
 
-// TestDoWithFailover_4xxNotRetried documents the ACTUAL implemented behavior
-// of doWithFailover (see its "Only fail-over on connection errors, not on
-// HTTP 4xx/5xx from the server" doc comment). The implementation does not
-// actually distinguish connection errors from business (4xx/5xx) errors —
-// any non-nil error from the primary, including a decoded {"ok":false,...}
-// body, sends it into the cluster-failover loop, so a 4xx from the primary
-// still tries (and here, succeeds against) cluster members. This is a
-// discovered discrepancy, logged in TODO.AI.md rather than fixed here (out
-// of scope for test-writing). This test locks in the current, actual
-// behavior.
+// TestDoWithFailover_4xxNotRetried verifies doWithFailover's documented
+// contract ("Only fail-over on connection errors, not on HTTP 4xx/5xx from
+// the server"): a decoded {"ok":false,...} business-error response from a
+// reachable primary must be returned as-is, without trying any cluster
+// member, since the primary was reached and legitimately rejected the
+// request.
 func TestDoWithFailover_4xxNotRetried(t *testing.T) {
 	primaryHits := 0
 	primary := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -324,14 +320,17 @@ func TestDoWithFailover_4xxNotRetried(t *testing.T) {
 	c := newTestClient(primary)
 	c.cluster = []string{clusterSrv.URL}
 	_, err := c.doWithFailover(http.MethodGet, "/links/xyz", nil)
-	if err != nil {
-		t.Fatalf("doWithFailover() error = %v, want nil (current actual behavior — see TODO.AI.md)", err)
+	if err == nil {
+		t.Fatal("doWithFailover() error = nil, want the primary's business error to be returned")
+	}
+	if !strings.Contains(err.Error(), "NOT_FOUND") {
+		t.Errorf("error = %q, want it to contain the primary's business error", err.Error())
 	}
 	if primaryHits != 1 {
 		t.Errorf("primary hit %d times, want 1", primaryHits)
 	}
-	if clusterHits != 1 {
-		t.Errorf("cluster hit %d times, want 1 (current actual behavior — 4xx does trigger failover — see TODO.AI.md)", clusterHits)
+	if clusterHits != 0 {
+		t.Errorf("cluster hit %d times, want 0 (a business error from a reachable primary must not trigger failover)", clusterHits)
 	}
 }
 
