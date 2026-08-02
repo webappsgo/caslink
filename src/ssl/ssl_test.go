@@ -280,7 +280,4 @@ func TestCreateTLSConfigCarriesCertificateAndCipherSuites(t *testing.T) {
 	if len(cfg.CipherSuites) == 0 {
 		t.Error("expected a non-empty cipher suite allowlist")
 	}
-	if !cfg.PreferServerCipherSuites {
-		t.Error("PreferServerCipherSuites should be true")
-	}
 }

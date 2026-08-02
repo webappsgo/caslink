@@ -1,11 +1,13 @@
 package updater
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -184,5 +186,176 @@ func TestVerifyChecksumFromURL_UnreachableServerErrors(t *testing.T) {
 	err := verifyChecksumFromURL(t.Context(), client, path, "caslink-linux-amd64", "http://127.0.0.1:0/checksums.txt")
 	if err == nil {
 		t.Fatal("expected error for unreachable checksum URL, got nil")
+	}
+}
+
+// TestCheckForUpdate_ContextCanceledPropagatesError verifies that a
+// request-level failure surfaces as an error rather than being silently
+// swallowed. CheckForUpdate hard-codes the GitHub API host
+// (api.github.com) with no client/base-URL override, so a canceled
+// context is the only error path reachable without contacting the real
+// network; see TODO.AI.md for the resulting coverage gap on the
+// JSON-decode/branch-matching/"already up to date" logic.
+func TestCheckForUpdate_ContextCanceledPropagatesError(t *testing.T) {
+	for _, branch := range []string{"stable", "", "beta", "daily", "unknown"} {
+		t.Run(branch, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			rel, err := CheckForUpdate(ctx, "1.0.0", branch)
+			if err == nil {
+				t.Fatalf("expected error for canceled context, got nil (release=%+v)", rel)
+			}
+			if rel != nil {
+				t.Errorf("expected nil release alongside an error, got %+v", rel)
+			}
+		})
+	}
+}
+
+// TestDoUpdateFor_NoMatchingAsset verifies the release-has-no-asset error
+// path: if the release's asset list doesn't contain assetName, DoUpdateFor
+// must fail before attempting any network I/O.
+func TestDoUpdateFor_NoMatchingAsset(t *testing.T) {
+	release := &Release{
+		TagName: "v1.2.3",
+		Assets: []Asset{
+			{Name: "some-other-binary", BrowserDownloadURL: "http://example.invalid/x"},
+		},
+	}
+	err := DoUpdateFor(t.Context(), release, "caslink-linux-amd64")
+	if err == nil {
+		t.Fatal("expected error when no asset matches assetName")
+	}
+	if !strings.Contains(err.Error(), "no binary found") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// TestDoUpdate_NoMatchingAsset exercises the DoUpdate wrapper (which
+// delegates to DoUpdateFor with GetBinaryName()); an empty asset list must
+// fail the same way as DoUpdateFor with a non-matching asset.
+func TestDoUpdate_NoMatchingAsset(t *testing.T) {
+	release := &Release{TagName: "v1.2.3"}
+	err := DoUpdate(t.Context(), release)
+	if err == nil {
+		t.Fatal("expected error when release has no assets")
+	}
+	if !strings.Contains(err.Error(), "no binary found") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// TestDoUpdateFor_DownloadRequestCreationError verifies a malformed
+// download URL (invalid percent-encoding) is rejected by
+// http.NewRequestWithContext and surfaced as an error.
+func TestDoUpdateFor_DownloadRequestCreationError(t *testing.T) {
+	release := &Release{
+		Assets: []Asset{
+			{Name: "caslink-linux-amd64", BrowserDownloadURL: "http://example.com/%zz"},
+		},
+	}
+	err := DoUpdateFor(t.Context(), release, "caslink-linux-amd64")
+	if err == nil {
+		t.Fatal("expected error for malformed download URL")
+	}
+}
+
+// TestDoUpdateFor_DownloadNetworkError verifies a connection-level failure
+// while downloading the binary asset (as opposed to a checksum fetch
+// failure, covered elsewhere) is propagated as an error.
+func TestDoUpdateFor_DownloadNetworkError(t *testing.T) {
+	release := &Release{
+		Assets: []Asset{
+			// Port 0 is never reachable.
+			{Name: "caslink-linux-amd64", BrowserDownloadURL: "http://127.0.0.1:0/binary"},
+		},
+	}
+	err := DoUpdateFor(t.Context(), release, "caslink-linux-amd64")
+	if err == nil {
+		t.Fatal("expected network error for unreachable download URL")
+	}
+}
+
+// TestDoUpdateFor_DownloadNon200Status verifies a non-200 HTTP status while
+// fetching the binary asset is treated as a download failure, not silently
+// accepted.
+func TestDoUpdateFor_DownloadNon200Status(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	release := &Release{
+		Assets: []Asset{
+			{Name: "caslink-linux-amd64", BrowserDownloadURL: srv.URL},
+		},
+	}
+	err := DoUpdateFor(t.Context(), release, "caslink-linux-amd64")
+	if err == nil {
+		t.Fatal("expected error for non-200 download status")
+	}
+	if !strings.Contains(err.Error(), "download failed") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// TestDoUpdateFor_ChecksumMismatchStopsBeforeReplace exercises DoUpdateFor's
+// full download-then-verify pipeline against mock HTTP servers for both the
+// binary asset and the checksums.txt asset. A checksum mismatch must return
+// an error and MUST NOT reach replaceBinary/os.Executable() — which would
+// attempt to overwrite the currently-running test binary — so this is the
+// deepest point in DoUpdateFor safely reachable from a unit test.
+func TestDoUpdateFor_ChecksumMismatchStopsBeforeReplace(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/binary", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("fake binary contents"))
+	})
+	mux.HandleFunc("/checksums.txt", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("0000000000000000000000000000000000000000000000000000000000000  caslink-linux-amd64\n"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	release := &Release{
+		Assets: []Asset{
+			{Name: "caslink-linux-amd64", BrowserDownloadURL: srv.URL + "/binary"},
+			{Name: "checksums.txt", BrowserDownloadURL: srv.URL + "/checksums.txt"},
+		},
+	}
+	err := DoUpdateFor(t.Context(), release, "caslink-linux-amd64")
+	if err == nil {
+		t.Fatal("expected checksum verification failure")
+	}
+	if !strings.Contains(err.Error(), "checksum verification failed") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// TestDoUpdateFor_ChecksumAssetRecognizedBySHA256SUMSName verifies the
+// alternate checksum-asset filename ("SHA256SUMS", used by some release
+// tooling instead of "checksums.txt") is also picked up.
+func TestDoUpdateFor_ChecksumAssetRecognizedBySHA256SUMSName(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/binary", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("fake binary contents"))
+	})
+	mux.HandleFunc("/SHA256SUMS", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("0000000000000000000000000000000000000000000000000000000000000  caslink-linux-amd64\n"))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	release := &Release{
+		Assets: []Asset{
+			{Name: "caslink-linux-amd64", BrowserDownloadURL: srv.URL + "/binary"},
+			{Name: "SHA256SUMS", BrowserDownloadURL: srv.URL + "/SHA256SUMS"},
+		},
+	}
+	err := DoUpdateFor(t.Context(), release, "caslink-linux-amd64")
+	if err == nil {
+		t.Fatal("expected checksum verification failure via SHA256SUMS asset")
+	}
+	if !strings.Contains(err.Error(), "checksum verification failed") {
+		t.Errorf("unexpected error (want checksum path to have been used): %v", err)
 	}
 }

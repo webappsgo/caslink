@@ -14,7 +14,16 @@ import (
 
 // withChiURLParam attaches a chi route context carrying the given URL
 // param, mirroring what chi's router does at request-dispatch time.
+//
+// If the request already carries a route context (e.g. from a prior call
+// to this helper), the param is added to that existing context instead of
+// replacing it — otherwise chaining calls to set multiple params (like
+// "slug" then "tokenID") would silently discard all but the last one.
 func withChiURLParam(r *http.Request, name, value string) *http.Request {
+	if rctx := chi.RouteContext(r.Context()); rctx != nil {
+		rctx.URLParams.Add(name, value)
+		return r
+	}
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add(name, value)
 	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))

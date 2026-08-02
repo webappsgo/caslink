@@ -1,12 +1,41 @@
 package main
 
 import (
+	"bytes"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	clientcfg "github.com/webappsgo/caslink/src/client/config"
 )
+
+// captureStdout redirects os.Stdout for the duration of f and returns
+// everything written to it. Reading happens concurrently in a goroutine so
+// output larger than the pipe buffer cannot deadlock the writer.
+func captureStdout(t *testing.T, f func()) string {
+	t.Helper()
+	orig := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe() error = %v", err)
+	}
+	os.Stdout = w
+	outCh := make(chan string, 1)
+	go func() {
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		outCh <- buf.String()
+	}()
+	f()
+	os.Stdout = orig
+	_ = w.Close()
+	out := <-outCh
+	_ = r.Close()
+	return out
+}
 
 func TestHasFlag(t *testing.T) {
 	tests := []struct {
@@ -219,5 +248,150 @@ func TestApplyFlagOverrides_NoFlagsLeavesDefaults(t *testing.T) {
 	}
 	if cfg.Color != "auto" {
 		t.Errorf("Color = %q, want auto (unchanged)", cfg.Color)
+	}
+}
+
+func TestPrintHelp(t *testing.T) {
+	out := captureStdout(t, printHelp)
+	for _, want := range []string{
+		"Usage:", "-h, --help", "-v, --version", "--server URL", "--shell bash|zsh|fish",
+		"login", "logout", "list", "create <url>", "get <code>", "delete <code>",
+		"qr <code>", "stats <code>", "version",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("printHelp() output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestPrintVersion(t *testing.T) {
+	origV := Version
+	defer func() { Version = origV }()
+	Version = "9.9.9"
+
+	out := captureStdout(t, printVersion)
+	want := "caslink-cli 9.9.9\n"
+	if out != want {
+		t.Errorf("printVersion() output = %q, want %q", out, want)
+	}
+}
+
+func TestPrintCompletions_Bash(t *testing.T) {
+	out := captureStdout(t, func() { printCompletions("bash") })
+	if !strings.Contains(out, "bash completion for") {
+		t.Errorf("printCompletions(bash) missing header:\n%s", out)
+	}
+	if !strings.Contains(out, "login logout list create get delete qr stats version") {
+		t.Errorf("printCompletions(bash) missing commands list:\n%s", out)
+	}
+	if !strings.Contains(out, "complete -F _") {
+		t.Errorf("printCompletions(bash) missing complete directive:\n%s", out)
+	}
+}
+
+func TestPrintCompletions_Zsh(t *testing.T) {
+	out := captureStdout(t, func() { printCompletions("zsh") })
+	if !strings.Contains(out, "zsh completion for") {
+		t.Errorf("printCompletions(zsh) missing header:\n%s", out)
+	}
+	if !strings.Contains(out, "compdef _") {
+		t.Errorf("printCompletions(zsh) missing compdef directive:\n%s", out)
+	}
+	if !strings.Contains(out, "login:Authenticate") {
+		t.Errorf("printCompletions(zsh) missing command description:\n%s", out)
+	}
+}
+
+func TestPrintCompletions_Fish(t *testing.T) {
+	out := captureStdout(t, func() { printCompletions("fish") })
+	if !strings.Contains(out, "__fish_use_subcommand -a login") {
+		t.Errorf("printCompletions(fish) missing login subcommand:\n%s", out)
+	}
+	if !strings.Contains(out, "-l output") {
+		t.Errorf("printCompletions(fish) missing --output flag:\n%s", out)
+	}
+}
+
+// runHelperProcess re-invokes the current test binary, selecting only the
+// named test, with GO_TEST_HELPER=1 set so the target test can branch into
+// its "run the exit-triggering code and return" half instead of asserting.
+// This is the standard idiom for testing os.Exit paths in Go, since exiting
+// the actual test process would abort the whole `go test` run.
+func runHelperProcess(t *testing.T, testName string) (stdout, stderr string, exitCode int) {
+	t.Helper()
+	cmd := exec.Command(os.Args[0], "-test.run=^"+testName+"$")
+	cmd.Env = append(os.Environ(), "GO_TEST_HELPER=1")
+	var outBuf, errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+	err := cmd.Run()
+	code := 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			code = exitErr.ExitCode()
+		} else {
+			t.Fatalf("runHelperProcess(%s) unexpected error type: %v", testName, err)
+		}
+	}
+	return outBuf.String(), errBuf.String(), code
+}
+
+func TestPrintCompletions_UnknownShell(t *testing.T) {
+	if os.Getenv("GO_TEST_HELPER") == "1" {
+		printCompletions("powershell")
+		return
+	}
+	_, stderr, code := runHelperProcess(t, "TestPrintCompletions_UnknownShell")
+	if code != 1 {
+		t.Errorf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "Unknown shell: powershell") {
+		t.Errorf("stderr = %q, want it to mention unknown shell", stderr)
+	}
+}
+
+func TestHandleUpdate_UnknownSubcommand(t *testing.T) {
+	if os.Getenv("GO_TEST_HELPER") == "1" {
+		handleUpdate([]string{"--update", "frobnicate"})
+		return
+	}
+	_, stderr, code := runHelperProcess(t, "TestHandleUpdate_UnknownSubcommand")
+	if code != 1 {
+		t.Errorf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "Unknown --update subcommand: frobnicate") {
+		t.Errorf("stderr = %q, want it to mention the unknown subcommand", stderr)
+	}
+}
+
+func TestHandleUpdate_UnknownBranch(t *testing.T) {
+	if os.Getenv("GO_TEST_HELPER") == "1" {
+		handleUpdate([]string{"--update", "branch", "nightly"})
+		return
+	}
+	_, stderr, code := runHelperProcess(t, "TestHandleUpdate_UnknownBranch")
+	if code != 1 {
+		t.Errorf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "Unknown branch: nightly") {
+		t.Errorf("stderr = %q, want it to mention the unknown branch", stderr)
+	}
+}
+
+// TestHandleUpdate_SubcommandParsing covers the "branch" case's channel
+// argument parsing without touching the network: a flag-shaped channel
+// value ("--not-a-channel") must fall into the "Unknown branch" default,
+// proving args[2] is read as a plain value rather than another flag.
+func TestHandleUpdate_SubcommandParsing(t *testing.T) {
+	if os.Getenv("GO_TEST_HELPER") == "1" {
+		handleUpdate([]string{"--update", "branch", "--not-a-channel"})
+		return
+	}
+	_, stderr, code := runHelperProcess(t, "TestHandleUpdate_SubcommandParsing")
+	if code != 1 {
+		t.Errorf("exit code = %d, want 1", code)
+	}
+	if !strings.Contains(stderr, "Unknown branch: --not-a-channel") {
+		t.Errorf("stderr = %q, want it to mention the unknown branch", stderr)
 	}
 }
