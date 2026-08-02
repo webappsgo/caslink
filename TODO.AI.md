@@ -5,17 +5,6 @@ feature-sized, carries real regression risk, or needs a design decision — so i
 was logged here rather than fixed inline during the audit. All small, safe
 findings from that audit were fixed directly and are not listed here.
 
-- src/server/service/admin_users.go `ForceRegenerateRecoveryKeys()`
-  (~lines 179-230): never verifies the target user actually exists before
-  deleting/inserting `recovery_keys` rows for the given `user_id` — calling
-  it for a nonexistent user ID returns `200 OK` with a freshly generated,
-  orphaned set of recovery keys instead of a not-found error. Discovered
-  while writing `src/server/handler/admin_test.go`
-  (`TestAPIRegenerateRecoveryKeysMissingUserStillSucceeds` locks in the
-  actual current behavior). Needs a user-existence check added (e.g. a
-  `GetUser` lookup before the transaction) — left unfixed since it's a
-  behavior change to production code, out of scope for a test-only pass.
-
 - src/server/handler/user_security.go `renderTOTPSetup()` (~line 340-361):
   `QRDataURL` is passed to the template as a plain `string`, but the 2FA
   template (`template/page/users/security/2fa.html:47`) renders it inside an

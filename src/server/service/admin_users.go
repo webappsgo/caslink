@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +12,9 @@ import (
 
 	"github.com/webappsgo/caslink/src/server/store"
 )
+
+// ErrAdminUserNotFound indicates the requested user account does not exist.
+var ErrAdminUserNotFound = errors.New("user not found")
 
 // escapeLikePattern escapes SQL LIKE wildcard characters (% and _) plus the
 // escape character itself, so a raw search term never behaves like a
@@ -179,6 +183,15 @@ func (s *UserAdminService) ActivateUser(ctx context.Context, id int64) error {
 func (s *UserAdminService) ForceRegenerateRecoveryKeys(ctx context.Context, userID int64) ([]string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
+
+	var exists int
+	err := s.store.UsersDB.QueryRowContext(ctx, `SELECT 1 FROM users WHERE id = ?`, userID).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrAdminUserNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify user: %w", err)
+	}
 
 	plainKeys := make([]string, recoveryKeyCount)
 	for i := range plainKeys {

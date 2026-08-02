@@ -404,20 +404,19 @@ func TestAPISuspendAndActivateUserNotFound(t *testing.T) {
 	}
 }
 
-func TestAPIRegenerateRecoveryKeysMissingUserStillSucceeds(t *testing.T) {
+func TestAPIRegenerateRecoveryKeysMissingUserReturnsNotFound(t *testing.T) {
 	h, _, _ := newAdminTestHandler(t)
 
-	// ForceRegenerateRecoveryKeys never checks the user actually exists
-	// (see TODO.AI.md) — it deletes zero matching rows, then inserts new
-	// recovery keys for the given ID regardless. Locked in as actual
-	// current behavior rather than the desired one.
+	// ForceRegenerateRecoveryKeys verifies the target user exists before
+	// deleting/inserting recovery_keys rows, per AI.md PART 9's standard
+	// error code table (NOT_FOUND -> 404).
 	r := httptest.NewRequest(http.MethodPost, "/api/v1/server/admin/config/users/999/recovery-keys", nil)
 	r = withChiParam(r, "id", "999")
 	w := httptest.NewRecorder()
 	h.APIRegenerateRecoveryKeys(w, r)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200 (current behavior does not validate user existence), got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for missing user, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"log"
@@ -750,6 +751,10 @@ func (h *AdminHandler) RegenerateRecoveryKeys(w http.ResponseWriter, r *http.Req
 
 	keys, err := h.userAdminService.ForceRegenerateRecoveryKeys(r.Context(), id)
 	if err != nil {
+		if errors.Is(err, service.ErrAdminUserNotFound) {
+			http.Error(w, "User not found", http.StatusNotFound)
+			return
+		}
 		http.Error(w, "Failed to regenerate recovery keys", http.StatusInternalServerError)
 		return
 	}
@@ -777,6 +782,10 @@ func (h *AdminHandler) APIRegenerateRecoveryKeys(w http.ResponseWriter, r *http.
 
 	keys, err := h.userAdminService.ForceRegenerateRecoveryKeys(r.Context(), id)
 	if err != nil {
+		if errors.Is(err, service.ErrAdminUserNotFound) {
+			respondError(w, http.StatusNotFound, "User not found")
+			return
+		}
 		respondError(w, http.StatusInternalServerError, "Failed to regenerate recovery keys")
 		return
 	}
