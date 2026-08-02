@@ -7,34 +7,27 @@ import (
 	"testing"
 )
 
-// TestNormalizePath documents the ACTUAL current behavior of the
-// label-cardinality-reduction regex from AI.md PART 21. Note: idPattern's
-// third alternative ([A-Za-z0-9_-]{3,50}) matches ANY 3+ char path segment,
-// not just dynamic slugs — so ordinary static segments like "/users"/"/orgs"
-// are also collapsed to ":code", and because the digit alternative is tried
-// before the UUID alternative, a UUID segment that happens to start with
-// digits (e.g. "550e8400-...") is only partially matched, leaking the raw
-// suffix into the label. This is a real behavior gap from the function's own
-// doc comment — logged in TODO.AI.md rather than silently "fixed" here,
-// since the intended semantics need a product decision. These assertions
-// pin down current behavior so a future intentional change is visible as a
-// deliberate test update, not a silent regression.
+// TestNormalizePath verifies the label-cardinality-reduction regex from
+// AI.md PART 21: only path segments that look like UUIDs or pure integers
+// are replaced with ":id". Static route segments and short slugs are left
+// unchanged, and a UUID that happens to start with digits still matches in
+// full (the UUID alternative is tried before the digit alternative).
 func TestNormalizePath(t *testing.T) {
 	tests := []struct {
 		name string
 		in   string
 		want string
 	}{
-		{"short 2-char segment left alone (below 3-char minimum)", "/r", "/r"},
+		{"short 2-char segment left alone", "/r", "/r"},
 		{"root path", "/", "/"},
-		{"static word segment is collapsed to :code (documented gap)", "/users", "/:code"},
-		{"numeric id after a static word", "/users/12345", "/:code/:id"},
-		{"uuid starting with a digit is only partially normalized (documented gap)",
+		{"static word segment left unchanged", "/users", "/users"},
+		{"numeric id after a static word", "/users/12345", "/users/:id"},
+		{"uuid starting with a digit is fully normalized",
 			"/users/550e8400-e29b-41d4-a716-446655440000",
-			"/:code/:ide8400-e29b-41d4-a716-446655440000"},
-		{"short slug becomes code", "/r/abc123", "/r/:code"},
-		{"multiple numeric segments interleaved with static words", "/orgs/42/users/7", "/:code/:id/:code/:id"},
-		{"2-char segment (v1) is preserved, others collapsed", "/api/v1/tokens/999", "/:code/v1/:code/:id"},
+			"/users/:id"},
+		{"short slug left unchanged", "/r/abc123", "/r/abc123"},
+		{"multiple numeric segments interleaved with static words", "/orgs/42/users/7", "/orgs/:id/users/:id"},
+		{"2-char segment (v1) and other static segments preserved", "/api/v1/tokens/999", "/api/v1/tokens/:id"},
 		{"empty string", "", ""},
 	}
 
@@ -124,11 +117,10 @@ func TestMiddlewareRecordsRequestMetrics(t *testing.T) {
 	handler.ServeHTTP(scrapeRec, scrapeReq)
 	body := scrapeRec.Body.String()
 
-	// "/orgs/42/users" -> "orgs" and "users" both match the generic
-	// [A-Za-z0-9_-]{3,50} alternative and collapse to :code, while "42"
-	// collapses to :id — see the TestNormalizePath doc comment for why.
+	// "/orgs/42/users" -> only the numeric segment "42" is normalized to
+	// :id; the static "orgs"/"users" segments are left unchanged.
 	for _, want := range []string{
-		`caslink_http_requests_total{method="POST",path="/:code/:id/:code",status="201"} 1`,
+		`caslink_http_requests_total{method="POST",path="/orgs/:id/users",status="201"} 1`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("/metrics response missing %q\nfull body:\n%s", want, body)

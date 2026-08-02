@@ -266,26 +266,21 @@ func New(version, commit, buildDate string, includeRuntime, includeSystem bool, 
 	return m, handler
 }
 
-// idPattern matches path segments that look like numeric IDs, UUIDs, or
-// short codes (3–50 chars of word chars/hyphens) so they can be replaced with
-// a low-cardinality placeholder before being used as Prometheus label values.
+// idPattern matches path segments that look like numeric IDs or UUIDs so
+// they can be replaced with a low-cardinality placeholder before being used
+// as Prometheus label values. The UUID alternative is tried before the
+// digit alternative so a UUID that happens to start with digits still
+// matches in full instead of only its leading numeric prefix.
 var idPattern = regexp.MustCompile(
-	`/([0-9]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[A-Za-z0-9_-]{3,50})`,
+	`/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[0-9]+)`,
 )
 
-// normalizePath replaces high-cardinality path segments with ":id" or ":code"
-// so that the Prometheus label cardinality stays bounded. Segments that look
-// like UUIDs or pure integers become ":id"; short alphanumeric slugs become ":code".
+// normalizePath replaces high-cardinality path segments with ":id" so that
+// Prometheus label cardinality stays bounded, per AI.md PART 21. Only
+// segments that look like UUIDs or pure integers are replaced; static route
+// segments and short slugs are left unchanged.
 func normalizePath(p string) string {
-	return idPattern.ReplaceAllStringFunc(p, func(seg string) string {
-		inner := seg[1:] // strip leading /
-		// UUID or pure integer → :id
-		if isUUID(inner) || isInt(inner) {
-			return "/:id"
-		}
-		// Short slug (like a short URL code) → :code
-		return "/:code"
-	})
+	return idPattern.ReplaceAllString(p, "/:id")
 }
 
 func isUUID(s string) bool {
