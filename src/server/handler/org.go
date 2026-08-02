@@ -120,7 +120,14 @@ func (h *OrgHandler) CreateOrgPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := newPageData(h.config, r, "Create Organization", user)
+	data := struct {
+		tmpl.Data
+		OrgName        string
+		OrgSlug        string
+		OrgDescription string
+	}{
+		Data: newPageData(h.config, r, "Create Organization", user),
+	}
 	h.renderer.Render(w, "template/page/orgs/new.html", data)
 }
 
