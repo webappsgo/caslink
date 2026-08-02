@@ -311,6 +311,23 @@ func RateLimitMiddleware(rl *RateLimiter) func(http.Handler) http.Handler {
 	}
 }
 
+// realIPMiddleware sets the request's RemoteAddr from the same
+// X-Forwarded-For / X-Real-IP precedence as realIP() below, so that
+// r.RemoteAddr reads consistently for every downstream handler/middleware
+// (access logging, rate limiting, audit trail) without depending on
+// go-chi/chi/v5/middleware.RealIP, which is deprecated upstream for
+// unconditionally trusting those headers regardless of proxy configuration.
+// This preserves the app's existing trust model (same headers, same
+// precedence) rather than introducing new trusted-proxy validation.
+func realIPMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ip := realIP(r); ip != "" {
+			r.RemoteAddr = ip
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // realIP extracts the real client IP, respecting X-Forwarded-For / X-Real-IP.
 func realIP(r *http.Request) string {
 	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {

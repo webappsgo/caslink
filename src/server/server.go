@@ -218,7 +218,7 @@ func (s *Server) setupMiddleware() {
 	s.router.Use(middleware.RequestID)
 
 	// Real IP middleware
-	s.router.Use(middleware.RealIP)
+	s.router.Use(realIPMiddleware)
 
 	// Access logging middleware. Spec PART 11 wants structured access
 	// logs in both development and production for the audit trail.
