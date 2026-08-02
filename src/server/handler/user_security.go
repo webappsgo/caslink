@@ -198,9 +198,29 @@ func (h *UserSecurityHandler) handleSessionRevocation(w http.ResponseWriter, r *
 		return
 	}
 
-	// Revoke the session
-	err := h.authService.RevokeSession(r.Context(), sessionID)
+	// AuthService.RevokeSession deletes by session ID alone with no owner
+	// check, so ownership must be verified here first — otherwise any
+	// authenticated user could revoke another user's session (IDOR) simply
+	// by knowing or guessing its ID.
+	sessions, err := h.authService.GetUserSessions(r.Context(), user.ID, "user")
 	if err != nil {
+		http.Error(w, "Failed to load sessions", http.StatusInternalServerError)
+		return
+	}
+	owned := false
+	for _, s := range sessions {
+		if s.ID == sessionID {
+			owned = true
+			break
+		}
+	}
+	if !owned {
+		http.Error(w, "Session not found", http.StatusForbidden)
+		return
+	}
+
+	// Revoke the session
+	if err := h.authService.RevokeSession(r.Context(), sessionID); err != nil {
 		http.Error(w, "Failed to revoke session", http.StatusInternalServerError)
 		return
 	}
