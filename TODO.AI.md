@@ -59,24 +59,6 @@ findings from that audit were fixed directly and are not listed here.
   pre-vetted-safe — left unfixed since it's a behavior change to production
   code, out of scope for a test-only pass.
 
-- src/server/handler/user_security.go (27 call sites, e.g. lines 492, 511,
-  517, 533, 541, 593, 601, 608, 638, 646, 653, 661, 684, 692, 698, 706, 713,
-  720): the same `respondJSON`-instead-of-`respondError` misuse already
-  logged for `src/server/handler/org.go` above, independently present in
-  this file too. Every error path calls
-  `respondJSON(w, status, map[string]interface{}{"ok": false, "error": "CODE", ...})`,
-  but `respondJSON` (helpers.go:100-106) unconditionally wraps its argument
-  again as `{"ok":true,"data":{...}}}`, contradicting its own doc comment
-  ("callers MUST NOT pre-wrap data themselves"). Every error response from
-  this file therefore reports top-level `ok:true` with the real
-  `ok`/`error`/`message` fields nested one level deeper at `.data.*`.
-  Discovered while writing `src/server/handler/user_security_test.go`
-  (`TestPasskeyActionWebAuthnNotConfigured`,
-  `TestPasskeyActionDeleteNoSuchCredentialFails` lock in the actual current
-  shape). Needs every error call site in this file switched from
-  `respondJSON` to `respondError` — left unfixed since it's a wide behavior
-  change to production code, out of scope for a test-only pass.
-
 - src/updater/update.go `DoUpdateFor()` (lines 97-164): the success path
   from a verified download through `replaceBinary` (lines 148-163) is not
   covered by any test. `currentPath` comes from `os.Executable()` with no

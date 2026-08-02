@@ -597,24 +597,16 @@ func TestPasskeyActionWebAuthnNotConfigured(t *testing.T) {
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d: %s", w.Code, w.Body.String())
 	}
-	// handlePasskeyAction calls respondJSON with an already-wrapped
-	// {"ok":false,"error":...} map, but respondJSON unconditionally wraps
-	// its argument again as {"ok":true,"data":{...}} (helpers.go:100-101
-	// forbids pre-wrapped callers, but this call site does it anyway) — the
-	// same respondJSON-misuse pattern already logged for org.go. The real
-	// error code therefore lands at .data.error, and the top-level "ok" is
-	// always true. See TODO.AI.md's user_security.go respondJSON entry.
+	// Canonical single-wrap error shape: {"ok":false,"error":"CODE","message":"..."}.
 	var env struct {
-		OK   bool `json:"ok"`
-		Data struct {
-			OK    bool   `json:"ok"`
-			Error string `json:"error"`
-		} `json:"data"`
+		OK      bool   `json:"ok"`
+		Error   string `json:"error"`
+		Message string `json:"message"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
 		t.Fatalf("decode failed: %v", err)
 	}
-	if !env.OK || env.Data.OK || env.Data.Error != "WEBAUTHN_NOT_CONFIGURED" {
+	if env.OK || env.Error != "MAINTENANCE" || env.Message != "WebAuthn is not configured on this server." {
 		t.Errorf("unexpected envelope: %+v", env)
 	}
 }
@@ -662,19 +654,18 @@ func TestPasskeyActionDeleteNoSuchCredentialFails(t *testing.T) {
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
 	}
-	// Same respondJSON double-wrap as TestPasskeyActionWebAuthnNotConfigured
-	// above — see TODO.AI.md's user_security.go respondJSON entry.
+	// Canonical single-wrap error shape: {"ok":false,"error":"CODE","message":"..."}.
+	// handlePasskeyAction passes DeleteCredential's error text as the message,
+	// and the code is derived from the 400 status.
 	var env struct {
-		OK   bool `json:"ok"`
-		Data struct {
-			OK    bool   `json:"ok"`
-			Error string `json:"error"`
-		} `json:"data"`
+		OK      bool   `json:"ok"`
+		Error   string `json:"error"`
+		Message string `json:"message"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
 		t.Fatalf("decode failed: %v", err)
 	}
-	if !env.OK || env.Data.OK || env.Data.Error != "DELETE_FAILED" {
+	if env.OK || env.Error != "BAD_REQUEST" || env.Message == "" {
 		t.Errorf("unexpected envelope: %+v", env)
 	}
 }
