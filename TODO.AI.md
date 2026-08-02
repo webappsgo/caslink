@@ -57,16 +57,6 @@ findings from that audit were fixed directly and are not listed here.
   this case instead of a bare wrapped error — left unfixed since it's a
   behavior change to production code, out of scope for a test-only pass.
 
-- src/server/handler/admin.go `APIUserList()` (~lines 661-680): returns
-  `{"users":[...],"total":N,"page":N}` directly instead of the canonical
-  list envelope `{"data":[...],"pagination":{"page","limit","total","pages"}}`
-  required by `.claude/rules/api-rules.md`. Discovered while writing
-  `src/server/handler/admin_test.go`
-  (`TestAPIUserListReturnsUsersTotalPage` locks in the actual current
-  shape). Needs a decision on migrating the response shape (and updating
-  any client/CLI/JS consumers) — left unfixed since it's a behavior change
-  to production code, out of scope for a test-only pass.
-
 - src/server/service/admin_users.go `ForceRegenerateRecoveryKeys()`
   (~lines 179-230): never verifies the target user actually exists before
   deleting/inserting `recovery_keys` rows for the given `user_id` — calling

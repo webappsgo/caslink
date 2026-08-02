@@ -326,7 +326,7 @@ func TestUserDetailAuthenticatedNotFound(t *testing.T) {
 	}
 }
 
-func TestAPIUserListReturnsUsersTotalPage(t *testing.T) {
+func TestAPIUserListReturnsCanonicalEnvelope(t *testing.T) {
 	h, _, _ := newAdminTestHandler(t)
 
 	r := httptest.NewRequest(http.MethodGet, "/api/v1/server/admin/config/users", nil)
@@ -336,19 +336,29 @@ func TestAPIUserListReturnsUsersTotalPage(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
-	// APIUserList does not use the canonical {"ok":true,"data":...} envelope —
-	// it returns {"users":[...],"total":N,"page":N} directly. Locked in as
-	// actual current behavior; see TODO.AI.md for the spec deviation.
+	// APIUserList must use the canonical list envelope per AI.md PART 9 /
+	// .claude/rules/api-rules.md: {"ok":true,"data":[...],"pagination":{...}}.
 	var body struct {
-		Users any `json:"users"`
-		Total any `json:"total"`
-		Page  any `json:"page"`
+		OK         bool `json:"ok"`
+		Data       any  `json:"data"`
+		Pagination struct {
+			Page  int `json:"page"`
+			Limit int `json:"limit"`
+			Total int `json:"total"`
+			Pages int `json:"pages"`
+		} `json:"pagination"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if body.Page == nil {
-		t.Fatalf("expected a page field, got %s", w.Body.String())
+	if !body.OK {
+		t.Fatalf("expected ok:true, got %s", w.Body.String())
+	}
+	if body.Pagination.Page != 1 {
+		t.Errorf("pagination.page = %d, want 1", body.Pagination.Page)
+	}
+	if body.Pagination.Limit != 50 {
+		t.Errorf("pagination.limit = %d, want 50", body.Pagination.Limit)
 	}
 }
 

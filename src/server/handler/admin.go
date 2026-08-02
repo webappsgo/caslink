@@ -671,11 +671,13 @@ func (h *AdminHandler) APIUserList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Canonical list envelope per AI.md PART 9 / .claude/rules/api-rules.md:
+	// {"ok":true,"data":[...],"pagination":{"page","limit","total","pages"}}.
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"users": users,
-		"total": total,
-		"page":  page,
+	_ = json.NewEncoder(w).Encode(APIResponse{
+		OK:         true,
+		Data:       users,
+		Pagination: NewPagination(page, 50, total),
 	})
 }
 
