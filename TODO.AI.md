@@ -68,34 +68,6 @@ findings from that audit were fixed directly and are not listed here.
   `GetUser` lookup before the transaction) — left unfixed since it's a
   behavior change to production code, out of scope for a test-only pass.
 
-- src/server/handler/org.go (32 call sites): nearly every error response
-  calls `respondJSON(w, status, map[string]string{"error": "..."})` instead
-  of `respondError`. `respondJSON` (src/server/handler/helpers.go:102-106)
-  unconditionally wraps its argument as `{"ok":true,"data":...}`, so these
-  error bodies come back as `{"ok":true,"data":{"error":"..."}}` — `ok:true`
-  even for 400/403/404/500 responses — instead of the canonical
-  `{"ok":false,"error":"CODE","message":"..."}` shape required by
-  `.claude/rules/api-rules.md`. Discovered while writing
-  `src/server/handler/org_test.go` (`decodeErrorEnvelope` and
-  `TestAPICreateOrgInvalidSlug` lock in the actual current shape). Needs
-  every error call site in org.go switched from `respondJSON` to
-  `respondError` — left unfixed since it's a wide behavior change to
-  production code, out of scope for a test-only pass.
-
-  Addendum: two success-path call sites in the same file compound the
-  problem in the other direction — `APICreateOrgToken` (line ~556) and
-  `APIListOrgTokens` (line ~595) each pass an already-wrapped
-  `map[string]interface{}{"ok":true, ...}` into `respondJSON`, which wraps
-  it again, directly contradicting `respondJSON`'s own doc comment
-  ("callers MUST NOT pre-wrap data themselves" — helpers.go:100-101). The
-  plaintext token from `APICreateOrgToken` and the token list from
-  `APIListOrgTokens` both land one level deeper than the canonical shape
-  (`.data.token` / `.data.data` instead of `.token` / `.data`). Discovered
-  while writing `src/server/handler/org_test.go`
-  (`TestAPICreateOrgTokenSuccessOwner`, `TestAPIListOrgTokensSuccess` lock
-  in the actual current shape) — left unfixed for the same reason as
-  above.
-
 - src/server/handler/user_security.go `renderTOTPSetup()` (~line 340-361):
   `QRDataURL` is passed to the template as a plain `string`, but the 2FA
   template (`template/page/users/security/2fa.html:47`) renders it inside an

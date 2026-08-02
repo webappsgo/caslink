@@ -46,23 +46,22 @@ func registerTestUser(t *testing.T, authService *service.AuthService, username, 
 	return u
 }
 
-// decodeErrorEnvelope decodes the map[string]string{"error": ...} shape used
-// throughout org.go's JSON handlers.
-// decodeErrorEnvelope unwraps an org.go JSON error body. Most org.go error
-// paths call respondJSON (not respondError) with a bare
-// map[string]string{"error": "..."}, so respondJSON's own {"ok":true,
-// "data":...} wrapping still applies even to error responses — the body is
-// {"ok":true,"data":{"error":"..."}}, not the canonical {"ok":false,
-// "error":"CODE"} shape (see TODO.AI.md). This locks in the actual shape.
+// decodeErrorEnvelope decodes the canonical {"ok":false,"error":"CODE",
+// "message":"..."} error shape used throughout org.go's JSON handlers.
 func decodeErrorEnvelope(t *testing.T, body []byte) map[string]string {
 	t.Helper()
 	var env struct {
-		Data map[string]string `json:"data"`
+		OK      bool   `json:"ok"`
+		Error   string `json:"error"`
+		Message string `json:"message"`
 	}
 	if err := json.Unmarshal(body, &env); err != nil {
 		t.Fatalf("decode failed: %v (%s)", err, body)
 	}
-	return env.Data
+	if env.OK {
+		t.Fatalf("expected ok:false, got ok:true (%s)", body)
+	}
+	return map[string]string{"error": env.Error, "message": env.Message}
 }
 
 // ---------------------------------------------------------------------
@@ -709,8 +708,11 @@ func TestAPICreateOrgInvalidSlug(t *testing.T) {
 		t.Fatalf("expected 400, got %d", w.Code)
 	}
 	env := decodeErrorEnvelope(t, w.Body.Bytes())
-	if env["error"] != "Invalid slug format" {
-		t.Errorf("unexpected error message: %q", env["error"])
+	if env["error"] != "BAD_REQUEST" {
+		t.Errorf("unexpected error code: %q", env["error"])
+	}
+	if env["message"] != "Invalid slug format" {
+		t.Errorf("unexpected error message: %q", env["message"])
 	}
 }
 
@@ -983,22 +985,17 @@ func TestAPICreateOrgTokenSuccessOwner(t *testing.T) {
 		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 
-	// APICreateOrgToken passes a pre-wrapped {"ok":true,"token":...,"data":...}
-	// map into respondJSON, which wraps it again as {"ok":true,"data":{...}}
-	// despite respondJSON's own doc comment forbidding pre-wrapped callers —
-	// see TODO.AI.md's org.go respondJSON-misuse entry. The plaintext token
-	// therefore lands at .data.token, not the top-level .token.
+	// Canonical single-wrap shape: {"ok":true,"data":{"token":...,"org_token":...}}.
 	var env struct {
 		OK   bool `json:"ok"`
 		Data struct {
-			OK    bool   `json:"ok"`
 			Token string `json:"token"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
 		t.Fatalf("decode failed: %v", err)
 	}
-	if !env.OK || !env.Data.OK || env.Data.Token == "" {
+	if !env.OK || env.Data.Token == "" {
 		t.Errorf("expected ok=true and a non-empty plaintext token, got %+v", env)
 	}
 }
@@ -1046,19 +1043,15 @@ func TestAPIListOrgTokensSuccess(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	// APIListOrgTokens double-wraps for the same reason as
-	// APICreateOrgToken above — see TODO.AI.md — so the token list lands
-	// at .data.data, not the top-level .data.
+	// Canonical single-wrap shape: {"ok":true,"data":[...tokens]}.
 	var env struct {
-		Data struct {
-			Data []map[string]interface{} `json:"data"`
-		} `json:"data"`
+		Data []map[string]interface{} `json:"data"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
 		t.Fatalf("decode failed: %v", err)
 	}
-	if len(env.Data.Data) != 1 {
-		t.Fatalf("expected 1 token, got %d", len(env.Data.Data))
+	if len(env.Data) != 1 {
+		t.Fatalf("expected 1 token, got %d", len(env.Data))
 	}
 }
 

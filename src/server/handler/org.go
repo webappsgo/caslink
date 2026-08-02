@@ -404,7 +404,7 @@ func (h *OrgHandler) OrgMembersAction(w http.ResponseWriter, r *http.Request) {
 func (h *OrgHandler) APIListOrgs(w http.ResponseWriter, r *http.Request) {
 	user, ok := getUserFromRequest(r)
 	if !ok {
-		respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "Authentication required"})
+		respondError(w, http.StatusUnauthorized, "Authentication required")
 		return
 	}
 
@@ -413,7 +413,7 @@ func (h *OrgHandler) APIListOrgs(w http.ResponseWriter, r *http.Request) {
 
 	orgs, err := h.orgService.GetUserOrganizations(ctx, user.ID)
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to load organizations"})
+		respondError(w, http.StatusInternalServerError, "Failed to load organizations")
 		return
 	}
 
@@ -424,23 +424,23 @@ func (h *OrgHandler) APIListOrgs(w http.ResponseWriter, r *http.Request) {
 func (h *OrgHandler) APICreateOrg(w http.ResponseWriter, r *http.Request) {
 	user, ok := getUserFromRequest(r)
 	if !ok {
-		respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "Authentication required"})
+		respondError(w, http.StatusUnauthorized, "Authentication required")
 		return
 	}
 
 	var req model.CreateOrgRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
+		respondError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	if len(req.Name) < 3 || len(req.Name) > 40 {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Organization name must be between 3 and 40 characters"})
+		respondError(w, http.StatusBadRequest, "Organization name must be between 3 and 40 characters")
 		return
 	}
 
 	if req.Slug != "" && !slugRegex.MatchString(req.Slug) {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid slug format"})
+		respondError(w, http.StatusBadRequest, "Invalid slug format")
 		return
 	}
 
@@ -449,7 +449,7 @@ func (h *OrgHandler) APICreateOrg(w http.ResponseWriter, r *http.Request) {
 
 	org, err := h.orgService.CreateOrganization(ctx, user.ID, req.Name, req.Slug)
 	if err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -460,7 +460,7 @@ func (h *OrgHandler) APICreateOrg(w http.ResponseWriter, r *http.Request) {
 func (h *OrgHandler) APIGetOrg(w http.ResponseWriter, r *http.Request) {
 	user, ok := getUserFromRequest(r)
 	if !ok {
-		respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "Authentication required"})
+		respondError(w, http.StatusUnauthorized, "Authentication required")
 		return
 	}
 
@@ -471,13 +471,13 @@ func (h *OrgHandler) APIGetOrg(w http.ResponseWriter, r *http.Request) {
 
 	org, err := h.orgService.GetOrganizationBySlug(ctx, slug)
 	if err != nil {
-		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Organization not found"})
+		respondError(w, http.StatusNotFound, "Organization not found")
 		return
 	}
 
 	isMember, _, err := h.orgService.IsMember(ctx, org.ID, user.ID)
 	if err != nil || !isMember {
-		respondJSON(w, http.StatusForbidden, map[string]string{"error": "Access denied"})
+		respondError(w, http.StatusForbidden, "Access denied")
 		return
 	}
 
@@ -488,7 +488,7 @@ func (h *OrgHandler) APIGetOrg(w http.ResponseWriter, r *http.Request) {
 func (h *OrgHandler) APIGetMembers(w http.ResponseWriter, r *http.Request) {
 	user, ok := getUserFromRequest(r)
 	if !ok {
-		respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "Authentication required"})
+		respondError(w, http.StatusUnauthorized, "Authentication required")
 		return
 	}
 
@@ -499,19 +499,19 @@ func (h *OrgHandler) APIGetMembers(w http.ResponseWriter, r *http.Request) {
 
 	org, err := h.orgService.GetOrganizationBySlug(ctx, slug)
 	if err != nil {
-		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Organization not found"})
+		respondError(w, http.StatusNotFound, "Organization not found")
 		return
 	}
 
 	isMember, _, err := h.orgService.IsMember(ctx, org.ID, user.ID)
 	if err != nil || !isMember {
-		respondJSON(w, http.StatusForbidden, map[string]string{"error": "Access denied"})
+		respondError(w, http.StatusForbidden, "Access denied")
 		return
 	}
 
 	members, err := h.orgService.GetOrgMembers(ctx, org.ID)
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to load members"})
+		respondError(w, http.StatusInternalServerError, "Failed to load members")
 		return
 	}
 
@@ -523,7 +523,7 @@ func (h *OrgHandler) APIGetMembers(w http.ResponseWriter, r *http.Request) {
 func (h *OrgHandler) APICreateOrgToken(w http.ResponseWriter, r *http.Request) {
 	user, ok := getUserFromRequest(r)
 	if !ok {
-		respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "Authentication required"})
+		respondError(w, http.StatusUnauthorized, "Authentication required")
 		return
 	}
 
@@ -533,13 +533,13 @@ func (h *OrgHandler) APICreateOrgToken(w http.ResponseWriter, r *http.Request) {
 
 	org, err := h.orgService.GetOrganizationBySlug(ctx, slug)
 	if err != nil {
-		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Organization not found"})
+		respondError(w, http.StatusNotFound, "Organization not found")
 		return
 	}
 
 	isMember, role, err := h.orgService.IsMember(ctx, org.ID, user.ID)
 	if err != nil || !isMember || (role != "owner" && role != "admin") {
-		respondJSON(w, http.StatusForbidden, map[string]string{"error": "Only org owners and admins can create tokens"})
+		respondError(w, http.StatusForbidden, "Only org owners and admins can create tokens")
 		return
 	}
 
@@ -548,7 +548,7 @@ func (h *OrgHandler) APICreateOrgToken(w http.ResponseWriter, r *http.Request) {
 		Permissions []string `json:"permissions"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "name is required"})
+		respondError(w, http.StatusBadRequest, "name is required")
 		return
 	}
 	if req.Permissions == nil {
@@ -557,14 +557,15 @@ func (h *OrgHandler) APICreateOrgToken(w http.ResponseWriter, r *http.Request) {
 
 	tok, plainToken, err := h.orgService.CreateOrgToken(ctx, org.ID, user.ID, req.Name, req.Permissions)
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to create token"})
+		respondError(w, http.StatusInternalServerError, "Failed to create token")
 		return
 	}
 
+	// Pass the raw data directly — respondJSON already wraps it as
+	// {"ok":true,"data":{...}}; pre-wrapping here would double-wrap it.
 	respondJSON(w, http.StatusCreated, map[string]interface{}{
-		"ok":    true,
-		"token": plainToken,
-		"data":  tok,
+		"token":     plainToken,
+		"org_token": tok,
 	})
 }
 
@@ -573,7 +574,7 @@ func (h *OrgHandler) APICreateOrgToken(w http.ResponseWriter, r *http.Request) {
 func (h *OrgHandler) APIListOrgTokens(w http.ResponseWriter, r *http.Request) {
 	user, ok := getUserFromRequest(r)
 	if !ok {
-		respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "Authentication required"})
+		respondError(w, http.StatusUnauthorized, "Authentication required")
 		return
 	}
 
@@ -583,23 +584,25 @@ func (h *OrgHandler) APIListOrgTokens(w http.ResponseWriter, r *http.Request) {
 
 	org, err := h.orgService.GetOrganizationBySlug(ctx, slug)
 	if err != nil {
-		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Organization not found"})
+		respondError(w, http.StatusNotFound, "Organization not found")
 		return
 	}
 
 	isMember, _, err := h.orgService.IsMember(ctx, org.ID, user.ID)
 	if err != nil || !isMember {
-		respondJSON(w, http.StatusForbidden, map[string]string{"error": "Access denied"})
+		respondError(w, http.StatusForbidden, "Access denied")
 		return
 	}
 
 	tokens, err := h.orgService.ListOrgTokens(ctx, org.ID)
 	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, map[string]string{"error": "Failed to list tokens"})
+		respondError(w, http.StatusInternalServerError, "Failed to list tokens")
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "data": tokens})
+	// Pass tokens directly — respondJSON already wraps it as
+	// {"ok":true,"data":tokens}; pre-wrapping here would double-wrap it.
+	respondJSON(w, http.StatusOK, tokens)
 }
 
 // APIRevokeOrgToken handles DELETE /api/v1/orgs/{slug}/tokens/{tokenID}
@@ -607,7 +610,7 @@ func (h *OrgHandler) APIListOrgTokens(w http.ResponseWriter, r *http.Request) {
 func (h *OrgHandler) APIRevokeOrgToken(w http.ResponseWriter, r *http.Request) {
 	user, ok := getUserFromRequest(r)
 	if !ok {
-		respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "Authentication required"})
+		respondError(w, http.StatusUnauthorized, "Authentication required")
 		return
 	}
 
@@ -615,7 +618,7 @@ func (h *OrgHandler) APIRevokeOrgToken(w http.ResponseWriter, r *http.Request) {
 	tokenIDStr := chi.URLParam(r, "tokenID")
 	tokenID, err := strconv.ParseInt(tokenIDStr, 10, 64)
 	if err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "Invalid token ID"})
+		respondError(w, http.StatusBadRequest, "Invalid token ID")
 		return
 	}
 
@@ -624,22 +627,22 @@ func (h *OrgHandler) APIRevokeOrgToken(w http.ResponseWriter, r *http.Request) {
 
 	org, err := h.orgService.GetOrganizationBySlug(ctx, slug)
 	if err != nil {
-		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Organization not found"})
+		respondError(w, http.StatusNotFound, "Organization not found")
 		return
 	}
 
 	isMember, role, err := h.orgService.IsMember(ctx, org.ID, user.ID)
 	if err != nil || !isMember || (role != "owner" && role != "admin") {
-		respondJSON(w, http.StatusForbidden, map[string]string{"error": "Only org owners and admins can revoke tokens"})
+		respondError(w, http.StatusForbidden, "Only org owners and admins can revoke tokens")
 		return
 	}
 
 	if err := h.orgService.RevokeOrgToken(ctx, tokenID, org.ID); err != nil {
-		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Token not found"})
+		respondError(w, http.StatusNotFound, "Token not found")
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{"ok": true})
+	respondJSON(w, http.StatusOK, nil)
 }
 
 // APITransferOrgOwnership handles POST /api/v1/orgs/{slug}/transfer
@@ -647,7 +650,7 @@ func (h *OrgHandler) APIRevokeOrgToken(w http.ResponseWriter, r *http.Request) {
 func (h *OrgHandler) APITransferOrgOwnership(w http.ResponseWriter, r *http.Request) {
 	user, ok := getUserFromRequest(r)
 	if !ok {
-		respondJSON(w, http.StatusUnauthorized, map[string]string{"error": "Authentication required"})
+		respondError(w, http.StatusUnauthorized, "Authentication required")
 		return
 	}
 
@@ -657,7 +660,7 @@ func (h *OrgHandler) APITransferOrgOwnership(w http.ResponseWriter, r *http.Requ
 		NewOwnerID int64 `json:"new_owner_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.NewOwnerID == 0 {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": "new_owner_id is required"})
+		respondError(w, http.StatusBadRequest, "new_owner_id is required")
 		return
 	}
 
@@ -666,14 +669,14 @@ func (h *OrgHandler) APITransferOrgOwnership(w http.ResponseWriter, r *http.Requ
 
 	org, err := h.orgService.GetOrganizationBySlug(ctx, slug)
 	if err != nil {
-		respondJSON(w, http.StatusNotFound, map[string]string{"error": "Organization not found"})
+		respondError(w, http.StatusNotFound, "Organization not found")
 		return
 	}
 
 	if err := h.orgService.TransferOwnership(ctx, org.ID, user.ID, req.NewOwnerID); err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		respondError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{"ok": true, "message": "Ownership transferred"})
+	respondJSON(w, http.StatusOK, map[string]interface{}{"message": "Ownership transferred"})
 }
