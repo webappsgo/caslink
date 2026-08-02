@@ -5,20 +5,6 @@ feature-sized, carries real regression risk, or needs a design decision — so i
 was logged here rather than fixed inline during the audit. All small, safe
 findings from that audit were fixed directly and are not listed here.
 
-- src/config/bool.go (lines 12, 16, 26, 50, 63): `ParseBool`/`IsTruthy`/
-  `IsFalsy` implement a much shorter truthy/falsy word list than the one
-  documented in `.claude/rules/config-rules.md` and
-  `.claude/rules/testing-rules.md`. Implemented truthy: `y t yep yup yeah
-  aye si oui`; documented truthy adds `1 yes true on ok enable enabled da
-  hai affirmative accept allow grant sure totally`. Implemented falsy: `n f
-  nope nah nay nein non`; documented falsy adds `0 no false off disable
-  disabled niet iie lie negative reject block revoke deny never noway`.
-  Discovered while writing `src/config/bool_test.go` (tests were written
-  against actual implemented behavior, not the spec, per test-writing task
-  scope). Needs a decision on whether to expand `bool.go` to match the
-  documented word list — left unfixed since this is a behavior change to
-  production code, out of scope for a test-only pass.
-
 - src/server/service/url.go (~lines 42-44): `CreateURL` wraps the
   `url.ParseRequestURI` error for a malformed/invalid `long_url` in a plain
   `fmt.Errorf` instead of a `model.Err*` sentinel, so the handler's

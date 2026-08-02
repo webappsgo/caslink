@@ -686,10 +686,18 @@ func applyEnvOverrides(cfg *Config) {
 
 	// SSL / Let's Encrypt (booleans use ParseBool per AI.md PART 12)
 	if v := envStr("SSL_ENABLED"); v != "" {
-		cfg.Server.SSL.Enabled = ParseBool(v)
+		if b, err := ParseBool(v, cfg.Server.SSL.Enabled); err == nil {
+			cfg.Server.SSL.Enabled = b
+		} else {
+			fmt.Fprintf(os.Stderr, "config: warning: invalid SSL_ENABLED value %q, keeping default\n", v)
+		}
 	}
 	if v := envStr("LE_ENABLED"); v != "" {
-		cfg.Server.SSL.LetsEncrypt.Enabled = ParseBool(v)
+		if b, err := ParseBool(v, cfg.Server.SSL.LetsEncrypt.Enabled); err == nil {
+			cfg.Server.SSL.LetsEncrypt.Enabled = b
+		} else {
+			fmt.Fprintf(os.Stderr, "config: warning: invalid LE_ENABLED value %q, keeping default\n", v)
+		}
 	}
 	if v := envStr("LE_EMAIL"); v != "" {
 		cfg.Server.SSL.LetsEncrypt.Email = v
@@ -698,12 +706,20 @@ func applyEnvOverrides(cfg *Config) {
 		cfg.Server.SSL.LetsEncrypt.Challenge = v
 	}
 	if v := envStr("LE_STAGING"); v != "" {
-		cfg.Server.SSL.LetsEncrypt.Staging = ParseBool(v)
+		if b, err := ParseBool(v, cfg.Server.SSL.LetsEncrypt.Staging); err == nil {
+			cfg.Server.SSL.LetsEncrypt.Staging = b
+		} else {
+			fmt.Fprintf(os.Stderr, "config: warning: invalid LE_STAGING value %q, keeping default\n", v)
+		}
 	}
 
 	// Rate limiting
 	if v := envStr("RATE_LIMIT_ENABLED"); v != "" {
-		cfg.Server.RateLimit.Enabled = ParseBool(v)
+		if b, err := ParseBool(v, cfg.Server.RateLimit.Enabled); err == nil {
+			cfg.Server.RateLimit.Enabled = b
+		} else {
+			fmt.Fprintf(os.Stderr, "config: warning: invalid RATE_LIMIT_ENABLED value %q, keeping default\n", v)
+		}
 	}
 	if v := envStr("RATE_LIMIT_REQUESTS"); v != "" {
 		if n := parseInt(v); n > 0 {
@@ -713,7 +729,11 @@ func applyEnvOverrides(cfg *Config) {
 
 	// Metrics
 	if v := envStr("METRICS_ENABLED"); v != "" {
-		cfg.Server.Metrics.Enabled = ParseBool(v)
+		if b, err := ParseBool(v, cfg.Server.Metrics.Enabled); err == nil {
+			cfg.Server.Metrics.Enabled = b
+		} else {
+			fmt.Fprintf(os.Stderr, "config: warning: invalid METRICS_ENABLED value %q, keeping default\n", v)
+		}
 	}
 	if v := envStr("METRICS_TOKEN"); v != "" {
 		cfg.Server.Metrics.Token = v
@@ -721,12 +741,20 @@ func applyEnvOverrides(cfg *Config) {
 
 	// GeoIP
 	if v := envStr("GEOIP_ENABLED"); v != "" {
-		cfg.Server.GeoIP.Enabled = ParseBool(v)
+		if b, err := ParseBool(v, cfg.Server.GeoIP.Enabled); err == nil {
+			cfg.Server.GeoIP.Enabled = b
+		} else {
+			fmt.Fprintf(os.Stderr, "config: warning: invalid GEOIP_ENABLED value %q, keeping default\n", v)
+		}
 	}
 
 	// Email / SMTP
 	if v := envStr("EMAIL_ENABLED"); v != "" {
-		cfg.Server.Notifications.Email.Enabled = ParseBool(v)
+		if b, err := ParseBool(v, cfg.Server.Notifications.Email.Enabled); err == nil {
+			cfg.Server.Notifications.Email.Enabled = b
+		} else {
+			fmt.Fprintf(os.Stderr, "config: warning: invalid EMAIL_ENABLED value %q, keeping default\n", v)
+		}
 	}
 	if v := envStr("SMTP_HOST"); v != "" {
 		cfg.Server.Notifications.Email.SMTP.Host = v
@@ -761,10 +789,18 @@ func applyEnvOverrides(cfg *Config) {
 		}
 	}
 	if v := envStr("ANALYTICS_ENABLED"); v != "" {
-		cfg.Caslink.Analytics.Enabled = ParseBool(v)
+		if b, err := ParseBool(v, cfg.Caslink.Analytics.Enabled); err == nil {
+			cfg.Caslink.Analytics.Enabled = b
+		} else {
+			fmt.Fprintf(os.Stderr, "config: warning: invalid ANALYTICS_ENABLED value %q, keeping default\n", v)
+		}
 	}
 	if v := envStr("ANONYMIZE_IPS"); v != "" {
-		cfg.Caslink.Analytics.AnonymizeIPs = ParseBool(v)
+		if b, err := ParseBool(v, cfg.Caslink.Analytics.AnonymizeIPs); err == nil {
+			cfg.Caslink.Analytics.AnonymizeIPs = b
+		} else {
+			fmt.Fprintf(os.Stderr, "config: warning: invalid ANONYMIZE_IPS value %q, keeping default\n", v)
+		}
 	}
 }
 

@@ -69,7 +69,7 @@ func Detect(cliMode string, configMode string) Mode {
 	}
 
 	// Check DEBUG flag (common in containers)
-	if config.ParseBool(os.Getenv("DEBUG")) {
+	if config.MustParseBool(os.Getenv("DEBUG"), false) {
 		return Development
 	}
 
