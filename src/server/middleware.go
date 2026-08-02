@@ -690,9 +690,12 @@ func URLNormalizeMiddleware(next http.Handler) http.Handler {
 
 		if p != "/" && strings.HasSuffix(p, "/") {
 			// Keep the slash if the last path segment looks like a file.
-			last := p[strings.LastIndex(p, "/"):]
+			// Trim the trailing slash first so LastIndex finds the slash
+			// before the final segment, not the trailing slash itself.
+			trimmed := strings.TrimSuffix(p, "/")
+			last := trimmed[strings.LastIndex(trimmed, "/"):]
 			if !strings.Contains(last, ".") {
-				canonical := strings.TrimSuffix(p, "/")
+				canonical := trimmed
 				if r.URL.RawQuery != "" {
 					canonical += "?" + r.URL.RawQuery
 				}

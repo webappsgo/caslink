@@ -760,22 +760,18 @@ func TestURLNormalizeMiddlewareExemptsRoot(t *testing.T) {
 	}
 }
 
-// TestURLNormalizeMiddlewareFileLikeTrailingSlashStillRedirects documents
-// the ACTUAL implemented behavior of the "file-like path" exemption
-// (see doc comment on URLNormalizeMiddleware: "Requests for paths that end
-// with a file extension are exempt"). The exemption checks the segment
-// after the LAST "/" in the path for a ".", but when the path itself ends
-// in "/", that last "/" IS the trailing slash, so the checked segment is
-// always just "/" and never contains a dot — the exemption can never fire
-// for any trailing-slash path, file-like or not. This is a discovered
-// discrepancy, logged in TODO.AI.md rather than fixed here (out of scope
-// for test-writing). This test locks in the current, actual behavior.
-func TestURLNormalizeMiddlewareFileLikeTrailingSlashStillRedirects(t *testing.T) {
+// TestURLNormalizeMiddlewareFileLikeTrailingSlashExempt verifies the
+// "file-like path" exemption documented on URLNormalizeMiddleware:
+// "Requests for paths that end with a file extension are exempt". The
+// trailing slash is trimmed before checking the last path segment for a
+// dot, so a file-like path with a trailing slash is passed through
+// unchanged instead of being redirected.
+func TestURLNormalizeMiddlewareFileLikeTrailingSlashExempt(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/static/app.css/", nil)
 	w := httptest.NewRecorder()
 	URLNormalizeMiddleware(okHandler()).ServeHTTP(w, req)
-	if w.Code != http.StatusMovedPermanently {
-		t.Errorf("path %q: status = %d, want 301 (current actual behavior — see TODO.AI.md)", "/static/app.css/", w.Code)
+	if w.Code != http.StatusOK {
+		t.Errorf("path %q: status = %d, want 200 (file-like path is exempt from trailing-slash redirect)", "/static/app.css/", w.Code)
 	}
 }
 
