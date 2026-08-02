@@ -40,7 +40,7 @@ func (s *URLService) SetGeoIP(g *geoip.Service) {
 func (s *URLService) CreateURL(ctx context.Context, req *model.CreateURLRequest) (*model.URL, error) {
 	// Validate URL
 	if _, err := url.ParseRequestURI(req.LongURL); err != nil {
-		return nil, fmt.Errorf("invalid URL: %w", err)
+		return nil, fmt.Errorf("%w: %v", model.ErrInvalidURL, err)
 	}
 
 	// Generate or validate short code
@@ -432,7 +432,7 @@ func (s *URLService) LookupCountry(ipAddress string) string {
 func (s *URLService) CreateURLForUser(ctx context.Context, userID int64, req *model.CreateURLRequest) (*model.URL, error) {
 	// Validate URL
 	if _, err := url.ParseRequestURI(req.LongURL); err != nil {
-		return nil, fmt.Errorf("invalid URL: %w", err)
+		return nil, fmt.Errorf("%w: %v", model.ErrInvalidURL, err)
 	}
 
 	var shortCode string
@@ -511,7 +511,7 @@ func (s *URLService) CreateURLForUser(ctx context.Context, userID int64, req *mo
 // PART 16 org-owned-link modeling.
 func (s *URLService) CreateURLForOrg(ctx context.Context, orgID int64, req *model.CreateURLRequest) (*model.URL, error) {
 	if _, err := url.ParseRequestURI(req.LongURL); err != nil {
-		return nil, fmt.Errorf("invalid URL: %w", err)
+		return nil, fmt.Errorf("%w: %v", model.ErrInvalidURL, err)
 	}
 
 	var shortCode string

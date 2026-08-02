@@ -95,10 +95,10 @@ func TestCreateURLInvalidBody(t *testing.T) {
 }
 
 // TestCreateURLMalformedTarget verifies an unparseable target URL is
-// rejected. The underlying service returns a generic wrapped error (not one
-// of the model sentinel errors), so the handler currently falls through to a
-// 500 SERVER_ERROR rather than a 400 — this test locks in that actual
-// behavior; see report for the accuracy note.
+// rejected with 400 BAD_REQUEST. The service wraps model.ErrInvalidURL for
+// this case, and the handler maps it to 400 via errors.Is, per AI.md PART 9's
+// standard error codes (client input errors are BAD_REQUEST, not
+// SERVER_ERROR).
 func TestCreateURLMalformedTarget(t *testing.T) {
 	h, _, _ := newURLTestHandler(t)
 
@@ -108,8 +108,8 @@ func TestCreateURLMalformedTarget(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.CreateURL(w, r)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500 for malformed target URL, got %d: %s", w.Code, w.Body.String())
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for malformed target URL, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

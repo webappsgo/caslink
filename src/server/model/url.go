@@ -138,4 +138,5 @@ var (
 	ErrURLExpired        = errors.New("URL has expired")
 	ErrInvalidCustomCode = errors.New("invalid custom code")
 	ErrReservedWord      = errors.New("short code is a reserved word")
+	ErrInvalidURL        = errors.New("invalid URL")
 )

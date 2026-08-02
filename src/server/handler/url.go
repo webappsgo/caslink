@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"strconv"
@@ -106,6 +107,10 @@ func (h *URLHandler) CreateURL(w http.ResponseWriter, r *http.Request) {
 		}
 		if err == model.ErrInvalidCustomCode {
 			respondError(w, http.StatusBadRequest, "Invalid custom code")
+			return
+		}
+		if errors.Is(err, model.ErrInvalidURL) {
+			respondError(w, http.StatusBadRequest, "Invalid URL")
 			return
 		}
 		respondError(w, http.StatusInternalServerError, "Failed to create URL")

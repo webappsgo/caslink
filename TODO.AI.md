@@ -5,18 +5,6 @@ feature-sized, carries real regression risk, or needs a design decision — so i
 was logged here rather than fixed inline during the audit. All small, safe
 findings from that audit were fixed directly and are not listed here.
 
-- src/server/service/url.go (~lines 42-44): `CreateURL` wraps the
-  `url.ParseRequestURI` error for a malformed/invalid `long_url` in a plain
-  `fmt.Errorf` instead of a `model.Err*` sentinel, so the handler's
-  error-mapping switch in `src/server/handler/url.go` (~lines 98-113) falls
-  through to `500 SERVER_ERROR` instead of `400 BAD_REQUEST` for this input.
-  Not security-relevant, just the wrong status code for a client error.
-  Discovered while writing `src/server/handler/url_test.go`
-  (`TestCreateURLMalformedTarget` locks in the actual current behavior).
-  Needs `CreateURL` to return a `model.ErrValidation`-style sentinel for
-  this case instead of a bare wrapped error — left unfixed since it's a
-  behavior change to production code, out of scope for a test-only pass.
-
 - src/server/service/admin_users.go `ForceRegenerateRecoveryKeys()`
   (~lines 179-230): never verifies the target user actually exists before
   deleting/inserting `recovery_keys` rows for the given `user_id` — calling
