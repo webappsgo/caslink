@@ -2,6 +2,7 @@ package updater
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -191,11 +192,7 @@ func TestVerifyChecksumFromURL_UnreachableServerErrors(t *testing.T) {
 
 // TestCheckForUpdate_ContextCanceledPropagatesError verifies that a
 // request-level failure surfaces as an error rather than being silently
-// swallowed. CheckForUpdate hard-codes the GitHub API host
-// (api.github.com) with no client/base-URL override, so a canceled
-// context is the only error path reachable without contacting the real
-// network; see TODO.AI.md for the resulting coverage gap on the
-// JSON-decode/branch-matching/"already up to date" logic.
+// swallowed.
 func TestCheckForUpdate_ContextCanceledPropagatesError(t *testing.T) {
 	for _, branch := range []string{"stable", "", "beta", "daily", "unknown"} {
 		t.Run(branch, func(t *testing.T) {
@@ -209,6 +206,145 @@ func TestCheckForUpdate_ContextCanceledPropagatesError(t *testing.T) {
 				t.Errorf("expected nil release alongside an error, got %+v", rel)
 			}
 		})
+	}
+}
+
+// withMockGitHubAPI points CheckForUpdate at an httptest.Server for the
+// duration of the test, via the apiBaseURL injection seam, restoring the
+// real GitHub host on cleanup.
+func withMockGitHubAPI(t *testing.T, handler http.HandlerFunc) {
+	t.Helper()
+	srv := httptest.NewServer(handler)
+	t.Cleanup(srv.Close)
+	prev := apiBaseURL
+	apiBaseURL = srv.URL
+	t.Cleanup(func() { apiBaseURL = prev })
+}
+
+// TestCheckForUpdate_NotFoundReturnsNilRelease verifies the "no releases
+// yet" 404 branch reports no update available, not an error, per PART 23
+// ("ALWAYS use HTTP 404 from GitHub API as 'no update available'").
+func TestCheckForUpdate_NotFoundReturnsNilRelease(t *testing.T) {
+	withMockGitHubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	})
+	rel, err := CheckForUpdate(t.Context(), "1.0.0", "stable")
+	if err != nil {
+		t.Fatalf("CheckForUpdate() error = %v, want nil", err)
+	}
+	if rel != nil {
+		t.Errorf("CheckForUpdate() release = %+v, want nil", rel)
+	}
+}
+
+// TestCheckForUpdate_NonOKNonNotFoundStatusErrors verifies a GitHub API
+// error status other than 404 surfaces as an error.
+func TestCheckForUpdate_NonOKNonNotFoundStatusErrors(t *testing.T) {
+	withMockGitHubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	rel, err := CheckForUpdate(t.Context(), "1.0.0", "stable")
+	if err == nil {
+		t.Fatal("CheckForUpdate() expected error for 500 status, got nil")
+	}
+	if rel != nil {
+		t.Errorf("CheckForUpdate() release = %+v, want nil alongside an error", rel)
+	}
+}
+
+// TestCheckForUpdate_StableAlreadyUpToDate verifies the tag-comparison
+// short-circuit: when the latest release's tag matches the current version
+// (with or without a "v" prefix), CheckForUpdate reports no update.
+func TestCheckForUpdate_StableAlreadyUpToDate(t *testing.T) {
+	for _, tag := range []string{"1.0.0", "v1.0.0"} {
+		t.Run(tag, func(t *testing.T) {
+			withMockGitHubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+				_ = json.NewEncoder(w).Encode(Release{TagName: tag})
+			})
+			rel, err := CheckForUpdate(t.Context(), "1.0.0", "stable")
+			if err != nil {
+				t.Fatalf("CheckForUpdate() error = %v, want nil", err)
+			}
+			if rel != nil {
+				t.Errorf("CheckForUpdate() release = %+v, want nil (already up to date)", rel)
+			}
+		})
+	}
+}
+
+// TestCheckForUpdate_StableNewerReleaseReturned verifies the success path:
+// a differently-tagged latest release is decoded and returned.
+func TestCheckForUpdate_StableNewerReleaseReturned(t *testing.T) {
+	withMockGitHubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(Release{TagName: "v2.0.0"})
+	})
+	rel, err := CheckForUpdate(t.Context(), "1.0.0", "stable")
+	if err != nil {
+		t.Fatalf("CheckForUpdate() error = %v, want nil", err)
+	}
+	if rel == nil || rel.TagName != "v2.0.0" {
+		t.Errorf("CheckForUpdate() release = %+v, want TagName v2.0.0", rel)
+	}
+}
+
+// TestCheckForUpdate_StableMalformedJSONErrors verifies the stable-branch
+// decode-failure path.
+func TestCheckForUpdate_StableMalformedJSONErrors(t *testing.T) {
+	withMockGitHubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("not json"))
+	})
+	if _, err := CheckForUpdate(t.Context(), "1.0.0", "stable"); err == nil {
+		t.Fatal("CheckForUpdate() expected decode error, got nil")
+	}
+}
+
+// TestCheckForUpdate_NonStableMalformedJSONErrors verifies the non-stable
+// (releases-list) branch's decode-failure path.
+func TestCheckForUpdate_NonStableMalformedJSONErrors(t *testing.T) {
+	withMockGitHubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("not json"))
+	})
+	if _, err := CheckForUpdate(t.Context(), "1.0.0", "beta"); err == nil {
+		t.Fatal("CheckForUpdate() expected decode error, got nil")
+	}
+}
+
+// TestCheckForUpdate_NonStableMatchesFirstQualifyingRelease exercises the
+// per-branch release-matching loop over the /releases list: it must skip
+// releases that don't match the requested branch or that equal the current
+// version, and return the first one that does qualify.
+func TestCheckForUpdate_NonStableMatchesFirstQualifyingRelease(t *testing.T) {
+	withMockGitHubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode([]Release{
+			{TagName: "v1.0.0"},                    // matches branch but equals current version
+			{TagName: "20260730060000-beta"},        // qualifies
+			{TagName: "20260601060000-beta"},        // would also qualify, but not first
+		})
+	})
+	rel, err := CheckForUpdate(t.Context(), "1.0.0", "beta")
+	if err != nil {
+		t.Fatalf("CheckForUpdate() error = %v, want nil", err)
+	}
+	if rel == nil || rel.TagName != "20260730060000-beta" {
+		t.Errorf("CheckForUpdate() release = %+v, want TagName 20260730060000-beta", rel)
+	}
+}
+
+// TestCheckForUpdate_NonStableNoQualifyingReleaseReturnsNil verifies that
+// when nothing in the releases list matches the branch, CheckForUpdate
+// reports no update rather than an error.
+func TestCheckForUpdate_NonStableNoQualifyingReleaseReturnsNil(t *testing.T) {
+	withMockGitHubAPI(t, func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode([]Release{
+			{TagName: "v1.0.0", Prerelease: false},
+		})
+	})
+	rel, err := CheckForUpdate(t.Context(), "1.0.0", "beta")
+	if err != nil {
+		t.Fatalf("CheckForUpdate() error = %v, want nil", err)
+	}
+	if rel != nil {
+		t.Errorf("CheckForUpdate() release = %+v, want nil (no qualifying release)", rel)
 	}
 }
 

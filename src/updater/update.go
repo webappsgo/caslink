@@ -20,6 +20,16 @@ const (
 	githubRepo = "caslink"
 )
 
+// apiBaseURL is the GitHub API host. It is an unexported var (not a const)
+// so tests can point CheckForUpdate at an httptest.Server instead of the
+// real network, the same way DoUpdateFor is already mockable via its
+// caller-supplied asset URLs.
+var apiBaseURL = "https://api.github.com"
+
+// httpClientTimeout is the CheckForUpdate request timeout, overridable by
+// tests that need a shorter bound than the production default.
+var httpClientTimeout = 30 * time.Second
+
 // Release represents a GitHub release.
 type Release struct {
 	TagName    string  `json:"tag_name"`
@@ -39,12 +49,12 @@ func CheckForUpdate(ctx context.Context, currentVersion, branch string) (*Releas
 	var apiURL string
 	switch branch {
 	case "stable", "":
-		apiURL = fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", githubOrg, githubRepo)
+		apiURL = fmt.Sprintf("%s/repos/%s/%s/releases/latest", apiBaseURL, githubOrg, githubRepo)
 	default:
-		apiURL = fmt.Sprintf("https://api.github.com/repos/%s/%s/releases", githubOrg, githubRepo)
+		apiURL = fmt.Sprintf("%s/repos/%s/%s/releases", apiBaseURL, githubOrg, githubRepo)
 	}
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: httpClientTimeout}
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)
 	if err != nil {
 		return nil, err

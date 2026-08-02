@@ -45,25 +45,6 @@ findings from that audit were fixed directly and are not listed here.
   the actual current behavior) — left unfixed since it's a behavior change
   to production code, out of scope for a test-only pass.
 
-- src/updater/update.go `CheckForUpdate()` (lines 38-89): the GitHub API
-  base URL is hardcoded (`https://api.github.com/repos/%s/%s/releases...`,
-  lines 42/44) with no injectable `http.Client`/base-URL override, unlike
-  `DoUpdateFor`, whose download/checksum URLs come from caller-supplied
-  `Release.Assets[].BrowserDownloadURL` and so ARE mockable via
-  `httptest.Server`. As a result, only `CheckForUpdate`'s request-creation
-  and transport-error branches (exercised in
-  `src/updater/update_test.go` via `TestCheckForUpdate_ContextCanceledPropagatesError`
-  using an already-canceled context) are unit-testable; the 404 "no
-  releases" branch, JSON-decode success/failure, the "already up to date"
-  tag comparison, and the per-branch release-matching loop over `releases`
-  all require an actual response body from `api.github.com` and cannot be
-  reached without hitting the real network or adding a base-URL/client
-  injection point. Consider adding an unexported `apiBaseURL` var (or a
-  `*http.Client`/base-URL parameter) the way `DoUpdateFor` already supports
-  via its asset URLs, so the rest of `CheckForUpdate` can be covered the
-  same way. Left unfixed — behavior change to production code, out of
-  scope for a test-only pass.
-
 - src/server/service/url.go (~lines 42-44): `CreateURL` wraps the
   `url.ParseRequestURI` error for a malformed/invalid `long_url` in a plain
   `fmt.Errorf` instead of a `model.Err*` sentinel, so the handler's
