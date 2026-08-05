@@ -16,7 +16,7 @@ file tracks the batch (>5 findings) and is deleted once every item is resolved.
 
 ## Pass 4: Documentation
 - [ ] docs/configuration.md: undocumented runtime env vars (DEBUG, APP_URL, APP_ENV/ENV/ENVIRONMENT) and config sections (seo, compliance, trusted_proxies, compression); SMTP_TLS gap
-- [ ] service/email.go: hardcoded http://localhost:64521 APP_URL default and localhost fallbacks in generated email links/vars — violates binary-rules no-hardcode-localhost/port; resolve {proto}://{FQDN}[:port] from config
+- [x] service/email.go: hardcoded http://localhost:64521 APP_URL default and localhost fallbacks in generated email links/vars — FIXED, EmailService.baseURL()/fqdn() resolve {proto}://{fqdn}[:port] from config with :80/:443 stripping
 
 ## Pass 6: Code Flow Trace
 - [ ] config.IsTruthy/IsFalsy, mode.GetModeInfo, paths.WritePIDFile/RemovePIDFile, paths.ResolvePath: exported but no callers — decide wire-up vs remove (some are spec-mandated helpers)

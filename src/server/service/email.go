@@ -110,6 +110,52 @@ func (s *EmailService) fromEmail() string {
 	return "no-reply@localhost"
 }
 
+// fqdn resolves the public host name for links in emails. Emails are sent
+// outside any HTTP request, so proxy-header detection is unavailable; the
+// order is FQDN env > DOMAIN env (first of a comma list) > config
+// server.fqdn > "localhost" (per AI.md PART 12 FQDN resolution, minus the
+// request-scoped proxy step). Never a hardcoded runtime host.
+func (s *EmailService) fqdn() string {
+	if v := os.Getenv("FQDN"); v != "" {
+		return v
+	}
+	if v := os.Getenv("DOMAIN"); v != "" {
+		if i := strings.IndexByte(v, ','); i >= 0 {
+			v = v[:i]
+		}
+		if v = strings.TrimSpace(v); v != "" {
+			return v
+		}
+	}
+	if s.config != nil && s.config.Server.FQDN != "" {
+		return s.config.Server.FQDN
+	}
+	return "localhost"
+}
+
+// baseURL resolves the {proto}://{fqdn}[:port] base for links in emails.
+// An explicit APP_URL env var still wins (operator override); otherwise it
+// is built from config: https when SSL is enabled else http, the resolved
+// fqdn, and the configured port with :80/:443 stripped per AI.md PART 15.
+func (s *EmailService) baseURL() string {
+	if v := os.Getenv("APP_URL"); v != "" {
+		return strings.TrimRight(v, "/")
+	}
+	proto := "http"
+	port := 0
+	if s.config != nil {
+		if s.config.Server.SSL.Enabled {
+			proto = "https"
+		}
+		port = s.config.Server.Port
+	}
+	host := s.fqdn()
+	if port > 0 && !(proto == "http" && port == 80) && !(proto == "https" && port == 443) {
+		return fmt.Sprintf("%s://%s:%d", proto, host, port)
+	}
+	return fmt.Sprintf("%s://%s", proto, host)
+}
+
 // SMTPConfigured checks if SMTP is configured and working
 // Per PART 26: No SMTP = No emails
 func (s *EmailService) SMTPConfigured() bool {
@@ -190,8 +236,8 @@ func (s *EmailService) SendPasswordReset(email, resetLink, ip string) error {
 	// Load and render template per PART 26 line 22910-22943
 	vars := map[string]string{
 		"app_name":        "Caslink",
-		"app_url":         getEnvOrDefault("APP_URL", "http://localhost:64521"),
-		"fqdn":            getEnvOrDefault("FQDN", "localhost"),
+		"app_url":         s.baseURL(),
+		"fqdn":            s.fqdn(),
 		"recipient_email": email,
 		"reset_link":      resetLink,
 		"ip":              ip,
@@ -214,8 +260,8 @@ func (s *EmailService) SendPasswordChanged(email, username, ip, method string) e
 
 	vars := map[string]string{
 		"app_name":           "Caslink",
-		"app_url":            getEnvOrDefault("APP_URL", "http://localhost:64521"),
-		"fqdn":               getEnvOrDefault("FQDN", "localhost"),
+		"app_url":            s.baseURL(),
+		"fqdn":               s.fqdn(),
 		"recipient_email":    email,
 		"recipient_username": username,
 		"ip":                 ip,
@@ -239,8 +285,8 @@ func (s *EmailService) SendEmailVerification(email, verifyLink string) error {
 
 	vars := map[string]string{
 		"app_name":        "Caslink",
-		"app_url":         getEnvOrDefault("APP_URL", "http://localhost:64521"),
-		"fqdn":            getEnvOrDefault("FQDN", "localhost"),
+		"app_url":         s.baseURL(),
+		"fqdn":            s.fqdn(),
 		"recipient_email": email,
 		"verify_link":     verifyLink,
 		"timestamp":       time.Now().Format("2006-01-02 15:04:05 MST"),
@@ -263,18 +309,18 @@ func (s *EmailService) SendWelcome(email, username string, isAdmin bool) error {
 	template := welcomeUserTemplate
 	vars := map[string]string{
 		"app_name":           "Caslink",
-		"app_url":            getEnvOrDefault("APP_URL", "http://localhost:64521"),
-		"fqdn":               getEnvOrDefault("FQDN", "localhost"),
+		"app_url":            s.baseURL(),
+		"fqdn":               s.fqdn(),
 		"recipient_email":    email,
 		"recipient_username": username,
-		"login_url":          getEnvOrDefault("APP_URL", "http://localhost:64521") + "/server/auth/login",
-		"profile_url":        getEnvOrDefault("APP_URL", "http://localhost:64521") + "/users/profile",
+		"login_url":          s.baseURL() + "/server/auth/login",
+		"profile_url":        s.baseURL() + "/users/profile",
 		"admin_email":        getEnvOrDefault("ADMIN_EMAIL", "admin@localhost"),
 	}
 
 	if isAdmin {
 		template = welcomeAdminTemplate
-		vars["admin_url"] = getEnvOrDefault("APP_URL", "http://localhost:64521") + "/server/admin"
+		vars["admin_url"] = s.baseURL() + "/server/admin"
 		vars["admin_username"] = username
 	}
 
@@ -295,8 +341,8 @@ func (s *EmailService) SendTestEmail(to, appVersion string) error {
 
 	vars := map[string]string{
 		"app_name":    "Caslink",
-		"app_url":     getEnvOrDefault("APP_URL", "http://localhost:64521"),
-		"fqdn":        getEnvOrDefault("FQDN", "localhost"),
+		"app_url":     s.baseURL(),
+		"fqdn":        s.fqdn(),
 		"timestamp":   time.Now().Format("2006-01-02 15:04:05 MST"),
 		"app_version": appVersion,
 		"smtp_host":   s.smtpHost(),

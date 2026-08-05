@@ -3,6 +3,8 @@ package service
 import (
 	"strings"
 	"testing"
+
+	"github.com/webappsgo/caslink/src/config"
 )
 
 // TestRenderTemplateVariableSubstitution verifies {variable} placeholders in
@@ -234,6 +236,92 @@ func TestEmailServiceSMTPConfigResolutionEnvOverridesConfig(t *testing.T) {
 		t.Setenv("SMTP_FROM_EMAIL", "")
 		if got := svc.fromEmail(); got != "no-reply@localhost" {
 			t.Errorf("fromEmail() = %q, want default %q", got, "no-reply@localhost")
+		}
+	})
+}
+
+// newEmailCfg builds a minimal config for the URL resolvers.
+func newEmailCfg(fqdn string, port int, ssl bool) *config.Config {
+	cfg := &config.Config{}
+	cfg.Server.FQDN = fqdn
+	cfg.Server.Port = port
+	cfg.Server.SSL.Enabled = ssl
+	return cfg
+}
+
+// TestEmailFQDNResolution verifies host resolution order: FQDN env > DOMAIN
+// env (first of a comma list) > config > "localhost".
+func TestEmailFQDNResolution(t *testing.T) {
+	t.Run("config value", func(t *testing.T) {
+		t.Setenv("FQDN", "")
+		t.Setenv("DOMAIN", "")
+		svc := &EmailService{config: newEmailCfg("caslink.example.com", 8080, false)}
+		if got := svc.fqdn(); got != "caslink.example.com" {
+			t.Errorf("fqdn() = %q, want config value", got)
+		}
+	})
+
+	t.Run("nil config falls back to localhost", func(t *testing.T) {
+		t.Setenv("FQDN", "")
+		t.Setenv("DOMAIN", "")
+		svc := &EmailService{config: nil}
+		if got := svc.fqdn(); got != "localhost" {
+			t.Errorf("fqdn() = %q, want localhost", got)
+		}
+	})
+
+	t.Run("FQDN env wins over config", func(t *testing.T) {
+		t.Setenv("FQDN", "env.example.net")
+		svc := &EmailService{config: newEmailCfg("cfg.example.com", 80, false)}
+		if got := svc.fqdn(); got != "env.example.net" {
+			t.Errorf("fqdn() = %q, want env value", got)
+		}
+	})
+
+	t.Run("DOMAIN env first of comma list", func(t *testing.T) {
+		t.Setenv("FQDN", "")
+		t.Setenv("DOMAIN", "primary.example.com, alt.example.com")
+		svc := &EmailService{config: nil}
+		if got := svc.fqdn(); got != "primary.example.com" {
+			t.Errorf("fqdn() = %q, want primary.example.com", got)
+		}
+	})
+}
+
+// TestEmailBaseURL verifies proto/host/port assembly and :80/:443 stripping,
+// and that an explicit APP_URL env override wins.
+func TestEmailBaseURL(t *testing.T) {
+	cases := []struct {
+		name string
+		fqdn string
+		port int
+		ssl  bool
+		want string
+	}{
+		{"http non-standard port", "caslink.example.com", 8080, false, "http://caslink.example.com:8080"},
+		{"http port 80 stripped", "caslink.example.com", 80, false, "http://caslink.example.com"},
+		{"https port 443 stripped", "caslink.example.com", 443, true, "https://caslink.example.com"},
+		{"https non-standard port", "caslink.example.com", 8443, true, "https://caslink.example.com:8443"},
+		{"zero port omitted", "caslink.example.com", 0, false, "http://caslink.example.com"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("APP_URL", "")
+			t.Setenv("FQDN", "")
+			t.Setenv("DOMAIN", "")
+			svc := &EmailService{config: newEmailCfg(tc.fqdn, tc.port, tc.ssl)}
+			if got := svc.baseURL(); got != tc.want {
+				t.Errorf("baseURL() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+
+	t.Run("APP_URL env override wins and trims trailing slash", func(t *testing.T) {
+		t.Setenv("APP_URL", "https://override.example.com/")
+		svc := &EmailService{config: newEmailCfg("cfg.example.com", 8080, false)}
+		if got := svc.baseURL(); got != "https://override.example.com" {
+			t.Errorf("baseURL() = %q, want override without trailing slash", got)
 		}
 	})
 }
