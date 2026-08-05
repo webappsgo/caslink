@@ -283,6 +283,16 @@ func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Password-protected links must be unlocked before any redirect. This
+	// enforces the advertised "password protection" link option (IDEA.md);
+	// without it the stored Argon2id hash would be decorative and anyone
+	// with the short code could follow the link.
+	if service.URLRequiresPassword(url) {
+		if !h.unlockURLOrPrompt(w, r, url) {
+			return
+		}
+	}
+
 	ipAddress := realClientIP(r)
 	userAgent := r.UserAgent()
 	referrer := r.Referer()
@@ -321,6 +331,48 @@ func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
 
 	// Redirect to the (possibly device-targeted, UTM-tagged) destination
 	http.Redirect(w, r, dest, http.StatusFound)
+}
+
+// unlockURLOrPrompt gates a password-protected redirect. It returns true only
+// when the caller supplied the correct password (via a POSTed form field or a
+// ?password= query param). Otherwise it responds — a JSON 401 for API clients,
+// an HTML unlock prompt for browsers (progressive enhancement / no-JS per
+// AI.md PART 16) — and returns false so the caller must stop.
+func (h *URLHandler) unlockURLOrPrompt(w http.ResponseWriter, r *http.Request, u *model.URL) bool {
+	var provided string
+	var submitted bool
+	if r.Method == http.MethodPost {
+		if err := r.ParseForm(); err == nil {
+			provided = r.PostFormValue("password")
+			submitted = true
+		}
+	} else if q := r.URL.Query().Get("password"); q != "" {
+		provided = q
+		submitted = true
+	}
+
+	if submitted && service.VerifyURLPassword(u, provided) {
+		return true
+	}
+
+	if r.Header.Get("Accept") == "application/json" {
+		respondError(w, http.StatusUnauthorized, "This link is password protected")
+		return false
+	}
+
+	data := struct {
+		tmpl.Data
+		Code  string
+		Error string
+	}{
+		Data: newPageData(h.cfg, r, "Password Required", nil),
+		Code: u.ShortCode,
+	}
+	if submitted {
+		data.Error = "Incorrect password. Please try again."
+	}
+	h.renderer.Render(w, "template/page/link/password.html", data)
+	return false
 }
 
 // checkURLOwnership verifies the Bearer-authenticated caller is allowed to

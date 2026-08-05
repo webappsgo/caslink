@@ -267,6 +267,110 @@ func TestRedirectURLFound(t *testing.T) {
 	}
 }
 
+// TestRedirectURLPasswordProtectedPrompts verifies a password-protected link
+// is NOT redirected when no password is supplied — it must render the unlock
+// prompt (HTTP 200, no Location) instead of leaking the destination.
+func TestRedirectURLPasswordProtectedPrompts(t *testing.T) {
+	h, urlService, _ := newURLTestHandler(t)
+
+	u, err := urlService.CreateURL(context.Background(), &model.CreateURLRequest{
+		LongURL:  "https://example.com/secret",
+		Password: "s3cret-pass",
+	})
+	if err != nil {
+		t.Fatalf("CreateURL failed: %v", err)
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/"+u.ShortCode, nil)
+	r = withChiURLParam(r, "code", u.ShortCode)
+	w := httptest.NewRecorder()
+	h.RedirectURL(w, r)
+
+	if w.Code == http.StatusFound {
+		t.Fatalf("password-protected link redirected without a password (leak)")
+	}
+	if loc := w.Header().Get("Location"); loc != "" {
+		t.Errorf("expected no Location header, got %q", loc)
+	}
+}
+
+// TestRedirectURLPasswordWrong verifies a wrong password re-prompts rather
+// than redirecting.
+func TestRedirectURLPasswordWrong(t *testing.T) {
+	h, urlService, _ := newURLTestHandler(t)
+
+	u, err := urlService.CreateURL(context.Background(), &model.CreateURLRequest{
+		LongURL:  "https://example.com/secret",
+		Password: "s3cret-pass",
+	})
+	if err != nil {
+		t.Fatalf("CreateURL failed: %v", err)
+	}
+
+	form := "password=wrong-guess"
+	r := httptest.NewRequest(http.MethodPost, "/"+u.ShortCode, strings.NewReader(form))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r = withChiURLParam(r, "code", u.ShortCode)
+	w := httptest.NewRecorder()
+	h.RedirectURL(w, r)
+
+	if w.Code == http.StatusFound {
+		t.Fatalf("wrong password was accepted (redirected)")
+	}
+}
+
+// TestRedirectURLPasswordCorrect verifies the correct password unlocks the
+// redirect to the real destination.
+func TestRedirectURLPasswordCorrect(t *testing.T) {
+	h, urlService, _ := newURLTestHandler(t)
+
+	u, err := urlService.CreateURL(context.Background(), &model.CreateURLRequest{
+		LongURL:  "https://example.com/secret",
+		Password: "s3cret-pass",
+	})
+	if err != nil {
+		t.Fatalf("CreateURL failed: %v", err)
+	}
+
+	form := "password=s3cret-pass"
+	r := httptest.NewRequest(http.MethodPost, "/"+u.ShortCode, strings.NewReader(form))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r = withChiURLParam(r, "code", u.ShortCode)
+	w := httptest.NewRecorder()
+	h.RedirectURL(w, r)
+
+	if w.Code != http.StatusFound {
+		t.Fatalf("correct password did not unlock redirect, got %d", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "https://example.com/secret" {
+		t.Errorf("expected redirect to destination, got %q", loc)
+	}
+}
+
+// TestRedirectURLPasswordJSON verifies API clients get a 401 rather than an
+// HTML prompt for a locked link.
+func TestRedirectURLPasswordJSON(t *testing.T) {
+	h, urlService, _ := newURLTestHandler(t)
+
+	u, err := urlService.CreateURL(context.Background(), &model.CreateURLRequest{
+		LongURL:  "https://example.com/secret",
+		Password: "s3cret-pass",
+	})
+	if err != nil {
+		t.Fatalf("CreateURL failed: %v", err)
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/"+u.ShortCode, nil)
+	r.Header.Set("Accept", "application/json")
+	r = withChiURLParam(r, "code", u.ShortCode)
+	w := httptest.NewRecorder()
+	h.RedirectURL(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for locked link over JSON, got %d", w.Code)
+	}
+}
+
 func TestRedirectURLNotFound(t *testing.T) {
 	h, _, _ := newURLTestHandler(t)
 

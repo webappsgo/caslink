@@ -824,8 +824,11 @@ func (s *Server) setupRoutes() {
 	s.router.Get("/robots.txt", s.robotsTxt)
 	s.router.Get("/sitemap.xml", s.sitemapXML)
 
-	// Short URL redirect (must be last to not catch other routes)
+	// Short URL redirect (must be last to not catch other routes). POST is
+	// accepted for the same code so a password-protected link's unlock form
+	// (progressive enhancement / no-JS, PART 16) submits back to the same URL.
 	s.router.Get("/{code}", urlHandler.RedirectURL)
+	s.router.Post("/{code}", urlHandler.RedirectURL)
 }
 
 // wellKnownSecurityTxt serves RFC 9116 security.txt at /.well-known/security.txt.

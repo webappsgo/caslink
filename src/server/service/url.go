@@ -36,6 +36,24 @@ func (s *URLService) SetGeoIP(g *geoip.Service) {
 	s.geo = g
 }
 
+// URLRequiresPassword reports whether the URL is password-protected and must
+// be unlocked before a redirect is served. Password protection is an
+// advertised link option (IDEA.md "Link options"); the redirect path MUST
+// consult this before honoring the destination.
+func URLRequiresPassword(u *model.URL) bool {
+	return u.PasswordHash != nil && *u.PasswordHash != ""
+}
+
+// VerifyURLPassword reports whether plaintext matches the URL's stored
+// Argon2id password hash, using the same constant-time verifier as account
+// passwords (AI.md PART 11). Returns false for an unprotected URL.
+func VerifyURLPassword(u *model.URL, plaintext string) bool {
+	if u.PasswordHash == nil || *u.PasswordHash == "" {
+		return false
+	}
+	return verifyPasswordArgon2id(plaintext, *u.PasswordHash)
+}
+
 // CreateURL creates a new shortened URL
 func (s *URLService) CreateURL(ctx context.Context, req *model.CreateURLRequest) (*model.URL, error) {
 	// Validate URL
