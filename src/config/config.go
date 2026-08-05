@@ -27,6 +27,7 @@ type ServerConfig struct {
 	Daemonize bool   `yaml:"daemonize"`
 	PIDFile   bool   `yaml:"pidfile"`
 
+	Healthz        HealthzConfig        `yaml:"healthz"`
 	Branding       BrandingConfig       `yaml:"branding"`
 	SEO            SEOConfig            `yaml:"seo"`
 	Admin          AdminConfig          `yaml:"admin"`
@@ -49,6 +50,19 @@ type ServerConfig struct {
 	Tor            TorConfig            `yaml:"tor"`
 	Backup         BackupConfig         `yaml:"backup"`
 	Compliance     ComplianceConfig     `yaml:"compliance"`
+}
+
+// HealthzConfig controls the health endpoints per AI.md PART 13. The
+// versioned /api/v1/server/healthz and the /server/healthz page are always
+// registered; the bare-root /healthz alias is opt-in.
+type HealthzConfig struct {
+	Root HealthzRootConfig `yaml:"root"`
+}
+
+// HealthzRootConfig gates the optional root-level /healthz alias. Default
+// false: /healthz is only served when server.healthz.root.enabled is true.
+type HealthzRootConfig struct {
+	Enabled bool `yaml:"enabled"`
 }
 
 // BackupConfig holds backup encryption/retention configuration per AI.md
@@ -872,6 +886,9 @@ func DefaultConfig() *Config {
 			FQDN:      hostname,
 			Daemonize: false,
 			PIDFile:   true,
+			Healthz: HealthzConfig{
+				Root: HealthzRootConfig{Enabled: false},
+			},
 			Branding: BrandingConfig{
 				Title:        "caslink",
 				Tagline:      "",

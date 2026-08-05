@@ -22,8 +22,8 @@ Feature-sized gaps are deferred to TODO.AI.md with reasoning (never silently dro
 - [x] docker: Dockerfile sets `ENV MODE=development` on the production image (PART 27) `docker/Dockerfile` — FIXED
 - [x] service: Linux escalation order missing `su` and `doas` (PART 24) `src/svcmgr/svcmgr_linux.go` — FIXED
 - [x] health: `checks.cache` field missing from health response (PART 13) `src/server/handler/health.go` — FIXED
-- [ ] health: `/healthz` root alias registered unconditionally — gate on `server.healthz.root.enabled` (PART 13) `src/server/server.go` + config
-- [ ] api: unversioned `/api/healthz` alias missing; non-spec `/api/v1/healthz` present instead (PART 14) `src/server/server.go`
+- [x] health: `/healthz` root alias registered unconditionally — gate on `server.healthz.root.enabled` (PART 13) `src/server/server.go` + config — FIXED
+- [x] api: unversioned `/api/healthz` alias missing; non-spec `/api/v1/healthz` present instead (PART 14) `src/server/server.go` — FIXED
 - [ ] api: list default page size 50, spec says 250 (PART 14) `src/server/handler/helpers.go`
 - [ ] admin: `/server/admin/help` is an illegal direct child — move under `config/` (PART 17) `src/server/server.go`
 - [ ] css: desktop-first `max-width` breakpoint — invert to mobile-first (PART 16) `src/server/tmpl/static/css/app.css`

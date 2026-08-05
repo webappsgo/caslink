@@ -404,9 +404,13 @@ func (s *Server) setupRoutes() {
 	}
 
 	// Well-known / health — no auth, no CSRF
-	// /healthz is a direct handler (per PART 13: never redirect /healthz to /server/healthz)
+	// /server/healthz is always registered (PART 13). The bare-root /healthz
+	// alias is opt-in via server.healthz.root.enabled; when enabled it mounts
+	// the same handler directly (never a redirect to /server/healthz).
 	s.router.Get("/server/healthz", handler.HealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String()))
-	s.router.Get("/healthz", handler.HealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String()))
+	if s.config.Server.Healthz.Root.Enabled {
+		s.router.Get("/healthz", handler.HealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String()))
+	}
 	s.router.Get("/version", handler.VersionHandler(s.Version, s.CommitID, s.BuildDate))
 
 	// Swagger/OpenAPI documentation per spec PART 14 + IDEA.md:
@@ -689,20 +693,23 @@ func (s *Server) setupRoutes() {
 	// /api/autodiscover — NOT versioned; clients call this before knowing the API version (AI.md PART 14).
 	s.router.Get("/api/autodiscover", handler.AutodiscoverHandler(s.Version, s.config, func() *apktor.TorManager { return s.torManager }))
 
+	// /api/healthz — unversioned direct alias (AI.md PART 14). Serves the same
+	// JSON handler as /api/v1/server/healthz, mounted directly (no redirect).
+	s.router.Get("/api/healthz", handler.APIHealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String(), s.store, func() *apktor.TorManager { return s.torManager }, func() (reqTotal, reqs24h, activeConn int64) {
+		reqTotal = atomic.LoadInt64(&s.reqTotal)
+		activeConn = atomic.LoadInt64(&s.activeConn)
+		for i := range s.reqWindow {
+			reqs24h += atomic.LoadInt64(&s.reqWindow[i])
+		}
+		return
+	}))
+
 	// API v1
 	s.router.Route("/api/v1", func(r chi.Router) {
 		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled, s.mode.IsDevelopment()))
 
 		// Public endpoints (no auth)
 		r.Get("/server/healthz", handler.APIHealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String(), s.store, func() *apktor.TorManager { return s.torManager }, func() (reqTotal, reqs24h, activeConn int64) {
-			reqTotal = atomic.LoadInt64(&s.reqTotal)
-			activeConn = atomic.LoadInt64(&s.activeConn)
-			for i := range s.reqWindow {
-				reqs24h += atomic.LoadInt64(&s.reqWindow[i])
-			}
-			return
-		}))
-		r.Get("/healthz", handler.APIHealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String(), s.store, func() *apktor.TorManager { return s.torManager }, func() (reqTotal, reqs24h, activeConn int64) {
 			reqTotal = atomic.LoadInt64(&s.reqTotal)
 			activeConn = atomic.LoadInt64(&s.activeConn)
 			for i := range s.reqWindow {
