@@ -13,7 +13,7 @@ Feature-sized gaps are deferred to TODO.AI.md with reasoning (never silently dro
 - [x] scheduler: 7 non-skippable tasks (session/token cleanup, log_rotation, healthcheck_self, tor_health, cluster_heartbeat, ssl_renewal) are disableable via config — force enabled (PART 19) `src/scheduler/scheduler.go` — FIXED
 - [x] backup: no disk-space pre-check; `backup.skipped_disk_full` never emitted (PART 22) `src/backup/backup.go` — FIXED
 - [x] tor: `Start()` overwrites existing torrc via updateTorrc — only create-if-absent on startup (PART 32) `src/tor/service.go` — FIXED
-- [ ] metrics: `/{code}` short-slug path label is unbounded cardinality — use chi RoutePattern (PART 21) `src/metrics/metrics.go`
+- [x] metrics: `/{code}` short-slug path label is unbounded cardinality — use chi RoutePattern (PART 21) `src/metrics/metrics.go` — FIXED
 - [ ] domains: AddDomain never enforces max_domains_per_user/org, reserved, or blocked_patterns though error vars already defined (PART 36) `src/.../domain.go`
 
 ## Fix now — config / docs

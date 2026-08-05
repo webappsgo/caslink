@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -329,7 +330,17 @@ func (m *Metrics) Middleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(rw, r)
 
+		// Prefer chi's registered route pattern (e.g. "/{code}") over the raw
+		// URL path so high-cardinality path segments — short-slugs, IDs, UUIDs —
+		// collapse to a single bounded label value (AI.md PART 21: never use an
+		// unbounded value as a metric label). Fall back to numeric-ID
+		// normalization when no pattern is available (unmatched routes/404s).
 		labelPath := normalizePath(r.URL.Path)
+		if rctx := chi.RouteContext(r.Context()); rctx != nil {
+			if pattern := rctx.RoutePattern(); pattern != "" {
+				labelPath = pattern
+			}
+		}
 		duration := time.Since(start).Seconds()
 		statusStr := strconv.Itoa(rw.status)
 
