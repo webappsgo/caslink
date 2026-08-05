@@ -36,6 +36,28 @@ func (s *URLService) SetGeoIP(g *geoip.Service) {
 	s.geo = g
 }
 
+// validateDestinationURL parses a user-supplied redirect target and rejects
+// anything that is not an absolute http:// or https:// URL. Restricting the
+// scheme stops javascript:, data:, file: and similar dangerous schemes from
+// being stored and later served as a redirect target, which a browser would
+// otherwise execute when following the short link (open-redirect / redirect
+// XSS). Returns nil for a valid http/https target.
+func validateDestinationURL(raw string) error {
+	parsed, err := url.ParseRequestURI(raw)
+	if err != nil {
+		return err
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+	default:
+		return fmt.Errorf("unsupported URL scheme %q: only http and https are allowed", parsed.Scheme)
+	}
+	if parsed.Host == "" {
+		return fmt.Errorf("URL must include a host")
+	}
+	return nil
+}
+
 // URLRequiresPassword reports whether the URL is password-protected and must
 // be unlocked before a redirect is served. Password protection is an
 // advertised link option (IDEA.md "Link options"); the redirect path MUST
@@ -57,7 +79,7 @@ func VerifyURLPassword(u *model.URL, plaintext string) bool {
 // CreateURL creates a new shortened URL
 func (s *URLService) CreateURL(ctx context.Context, req *model.CreateURLRequest) (*model.URL, error) {
 	// Validate URL
-	if _, err := url.ParseRequestURI(req.LongURL); err != nil {
+	if err := validateDestinationURL(req.LongURL); err != nil {
 		return nil, fmt.Errorf("%w: %v", model.ErrInvalidURL, err)
 	}
 
@@ -166,7 +188,7 @@ func (s *URLService) UpdateURL(ctx context.Context, shortCode string, req *model
 
 	longURL := existing.LongURL
 	if req.LongURL != nil {
-		if _, err := url.ParseRequestURI(*req.LongURL); err != nil {
+		if err := validateDestinationURL(*req.LongURL); err != nil {
 			return nil, fmt.Errorf("invalid URL: %w", err)
 		}
 		longURL = *req.LongURL
@@ -448,7 +470,7 @@ func (s *URLService) LookupCountry(ipAddress string) string {
 // CreateURLForUser creates a shortened URL owned by the given userID.
 func (s *URLService) CreateURLForUser(ctx context.Context, userID int64, req *model.CreateURLRequest) (*model.URL, error) {
 	// Validate URL
-	if _, err := url.ParseRequestURI(req.LongURL); err != nil {
+	if err := validateDestinationURL(req.LongURL); err != nil {
 		return nil, fmt.Errorf("%w: %v", model.ErrInvalidURL, err)
 	}
 
@@ -526,7 +548,7 @@ func (s *URLService) CreateURLForUser(ctx context.Context, userID int64, req *mo
 // CreateURLForUser but sets org_id instead of user_id, per AI.md PART 35 and
 // PART 16 org-owned-link modeling.
 func (s *URLService) CreateURLForOrg(ctx context.Context, orgID int64, req *model.CreateURLRequest) (*model.URL, error) {
-	if _, err := url.ParseRequestURI(req.LongURL); err != nil {
+	if err := validateDestinationURL(req.LongURL); err != nil {
 		return nil, fmt.Errorf("%w: %v", model.ErrInvalidURL, err)
 	}
 
@@ -838,19 +860,19 @@ func buildLinkOptions(req *model.CreateURLRequest) (linkOptions, error) {
 		opts.utmContent = strPtr(req.UTMContent)
 	}
 	if req.MobileURL != "" {
-		if _, err := url.ParseRequestURI(req.MobileURL); err != nil {
+		if err := validateDestinationURL(req.MobileURL); err != nil {
 			return opts, fmt.Errorf("invalid mobile_url: %w", err)
 		}
 		opts.mobileURL = strPtr(req.MobileURL)
 	}
 	if req.DesktopURL != "" {
-		if _, err := url.ParseRequestURI(req.DesktopURL); err != nil {
+		if err := validateDestinationURL(req.DesktopURL); err != nil {
 			return opts, fmt.Errorf("invalid desktop_url: %w", err)
 		}
 		opts.desktopURL = strPtr(req.DesktopURL)
 	}
 	if req.TabletURL != "" {
-		if _, err := url.ParseRequestURI(req.TabletURL); err != nil {
+		if err := validateDestinationURL(req.TabletURL); err != nil {
 			return opts, fmt.Errorf("invalid tablet_url: %w", err)
 		}
 		opts.tabletURL = strPtr(req.TabletURL)

@@ -161,6 +161,36 @@ func TestUpdateURLRejectsInvalidURL(t *testing.T) {
 	}
 }
 
+// TestValidateDestinationURL locks in the http/https-only scheme allowlist —
+// a regression here would let javascript:/data:/file: targets be stored and
+// served as redirects.
+func TestValidateDestinationURL(t *testing.T) {
+	valid := []string{
+		"https://example.com/x",
+		"http://example.com",
+		"HTTPS://Example.com/Path?q=1",
+	}
+	for _, u := range valid {
+		if err := validateDestinationURL(u); err != nil {
+			t.Errorf("validateDestinationURL(%q) = %v, want nil", u, err)
+		}
+	}
+	invalid := []string{
+		"javascript:alert(1)",
+		"data:text/html,<script>alert(1)</script>",
+		"file:///etc/passwd",
+		"ftp://example.com/x",
+		"not a url",
+		"https://",
+		"/relative/path",
+	}
+	for _, u := range invalid {
+		if err := validateDestinationURL(u); err == nil {
+			t.Errorf("validateDestinationURL(%q) = nil, want error", u)
+		}
+	}
+}
+
 func TestUpdateURLCanReviveExpiredLink(t *testing.T) {
 	st := newTestURLStore(t)
 	svc := NewURLService(st)
