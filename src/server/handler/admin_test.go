@@ -357,8 +357,8 @@ func TestAPIUserListReturnsCanonicalEnvelope(t *testing.T) {
 	if body.Pagination.Page != 1 {
 		t.Errorf("pagination.page = %d, want 1", body.Pagination.Page)
 	}
-	if body.Pagination.Limit != 50 {
-		t.Errorf("pagination.limit = %d, want 50", body.Pagination.Limit)
+	if body.Pagination.Limit != 250 {
+		t.Errorf("pagination.limit = %d, want 250", body.Pagination.Limit)
 	}
 }
 

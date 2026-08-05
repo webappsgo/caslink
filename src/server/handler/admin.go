@@ -664,9 +664,17 @@ func (h *AdminHandler) APIUserList(w http.ResponseWriter, r *http.Request) {
 	if page < 1 {
 		page = 1
 	}
+	// Default page size 250 per AI.md PART 14; ListUsers/NewPagination clamp
+	// the effective limit to the same 250 ceiling.
+	limit := 250
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
 	search := r.URL.Query().Get("q")
 
-	users, total, err := h.userAdminService.ListUsers(r.Context(), page, 50, search)
+	users, total, err := h.userAdminService.ListUsers(r.Context(), page, limit, search)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "Failed to load users")
 		return
@@ -678,7 +686,7 @@ func (h *AdminHandler) APIUserList(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(APIResponse{
 		OK:         true,
 		Data:       users,
-		Pagination: NewPagination(page, 50, total),
+		Pagination: NewPagination(page, limit, total),
 	})
 }
 

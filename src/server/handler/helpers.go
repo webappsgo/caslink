@@ -84,7 +84,7 @@ type Pagination struct {
 // NewPagination builds a Pagination value and clamps limit to sane bounds.
 func NewPagination(page, limit, total int) *Pagination {
 	if limit <= 0 {
-		limit = 50
+		limit = 250
 	}
 	if limit > 250 {
 		limit = 250

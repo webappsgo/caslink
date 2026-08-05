@@ -24,7 +24,7 @@ Feature-sized gaps are deferred to TODO.AI.md with reasoning (never silently dro
 - [x] health: `checks.cache` field missing from health response (PART 13) `src/server/handler/health.go` — FIXED
 - [x] health: `/healthz` root alias registered unconditionally — gate on `server.healthz.root.enabled` (PART 13) `src/server/server.go` + config — FIXED
 - [x] api: unversioned `/api/healthz` alias missing; non-spec `/api/v1/healthz` present instead (PART 14) `src/server/server.go` — FIXED
-- [ ] api: list default page size 50, spec says 250 (PART 14) `src/server/handler/helpers.go`
+- [x] api: list default page size 50, spec says 250 (PART 14) `src/server/handler/helpers.go` (+ url/admin/audit list defaults) — FIXED
 - [ ] admin: `/server/admin/help` is an illegal direct child — move under `config/` (PART 17) `src/server/server.go`
 - [ ] css: desktop-first `max-width` breakpoint — invert to mobile-first (PART 16) `src/server/tmpl/static/css/app.css`
 

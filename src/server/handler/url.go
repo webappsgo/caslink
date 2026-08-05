@@ -186,9 +186,9 @@ func (h *URLHandler) ListURLs(w http.ResponseWriter, r *http.Request) {
 			page = n
 		}
 	}
-	limit := 50
+	limit := 250
 	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 200 {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 250 {
 			limit = n
 		}
 	}

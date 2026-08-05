@@ -630,7 +630,7 @@ func (s *URLService) ListByUser(ctx context.Context, userID int64, limit int) ([
 // per AI.md PART 14 query-param pagination convention (?page&limit).
 func (s *URLService) ListByUserPage(ctx context.Context, userID int64, limit, offset int) ([]*model.URL, error) {
 	if limit <= 0 {
-		limit = 50
+		limit = 250
 	}
 	if offset < 0 {
 		offset = 0
@@ -669,7 +669,7 @@ func (s *URLService) CountByUser(ctx context.Context, userID int64) (int, error)
 // mirroring ListByUserPage for org-scoped Bearer tokens.
 func (s *URLService) ListByOrgPage(ctx context.Context, orgID int64, limit, offset int) ([]*model.URL, error) {
 	if limit <= 0 {
-		limit = 50
+		limit = 250
 	}
 	if offset < 0 {
 		offset = 0

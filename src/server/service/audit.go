@@ -61,7 +61,7 @@ func (a *AuditService) ListEvents(ctx context.Context, page, limit int) ([]Audit
 		page = 1
 	}
 	if limit <= 0 || limit > 250 {
-		limit = 50
+		limit = 250
 	}
 	offset := (page - 1) * limit
 

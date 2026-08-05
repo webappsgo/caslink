@@ -99,7 +99,7 @@ func TestSplitFormList(t *testing.T) {
 	}
 }
 
-// TestNewPaginationClamping verifies limit clamping (default 50 on <=0,
+// TestNewPaginationClamping verifies limit clamping (default 250 on <=0,
 // cap 250) and page defaulting to 1 on <=0.
 func TestNewPaginationClamping(t *testing.T) {
 	tests := []struct {
@@ -110,7 +110,7 @@ func TestNewPaginationClamping(t *testing.T) {
 		wantLimit        int
 		wantPages        int
 	}{
-		{"defaults", 0, 0, 100, 1, 50, 2},
+		{"defaults", 0, 0, 100, 1, 250, 1},
 		{"limit too high", 1, 1000, 10, 1, 250, 1},
 		{"exact division", 2, 25, 50, 2, 25, 2},
 		{"remainder rounds up", 1, 10, 25, 1, 10, 3},

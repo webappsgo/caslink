@@ -56,8 +56,8 @@ func (s *UserAdminService) ListUsers(ctx context.Context, page, limit int, searc
 	if page < 1 {
 		page = 1
 	}
-	if limit <= 0 || limit > 200 {
-		limit = 50
+	if limit <= 0 || limit > 250 {
+		limit = 250
 	}
 	offset := (page - 1) * limit
 
