@@ -16,9 +16,9 @@ import (
 // refuse to persist a hash in that case rather than silently substituting
 // a weak one.
 func hashPasswordArgon2id(password string) (string, error) {
-	// Argon2id parameters (OWASP recommendations)
+	// Argon2id parameters (OWASP 2023, per AI.md PART 11)
 	const (
-		time    = 1
+		time    = 3
 		memory  = 64 * 1024 // 64 MB
 		threads = 4
 		keyLen  = 32
@@ -36,7 +36,7 @@ func hashPasswordArgon2id(password string) (string, error) {
 	b64Salt := base64.RawStdEncoding.EncodeToString(salt)
 	b64Hash := base64.RawStdEncoding.EncodeToString(hash)
 
-	// Format: $argon2id$v=19$m=65536,t=1,p=4$salt$hash
+	// Format: $argon2id$v=19$m=65536,t=3,p=4$salt$hash
 	return fmt.Sprintf("$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s",
 		memory, time, threads, b64Salt, b64Hash), nil
 }
