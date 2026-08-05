@@ -18,8 +18,8 @@ Feature-sized gaps are deferred to TODO.AI.md with reasoning (never silently dro
 
 ## Fix now — config / docs
 
-- [ ] docker: Dockerfile bakes LABEL blocks (must be CI metadata-action) (PART 27) `docker/Dockerfile`
-- [ ] docker: Dockerfile sets `ENV MODE=development` on the production image (PART 27) `docker/Dockerfile`
+- [x] docker: Dockerfile bakes LABEL blocks (must be CI metadata-action) (PART 27) `docker/Dockerfile` — FIXED
+- [x] docker: Dockerfile sets `ENV MODE=development` on the production image (PART 27) `docker/Dockerfile` — FIXED
 - [ ] service: Linux escalation order missing `su` and `doas` (PART 24) `src/svcmgr/svcmgr_linux.go`
 - [ ] health: `checks.cache` field missing from health response (PART 13) `src/server/handler/health.go`
 - [ ] health: `/healthz` root alias registered unconditionally — gate on `server.healthz.root.enabled` (PART 13) `src/server/server.go` + config

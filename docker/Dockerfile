@@ -25,31 +25,9 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -buildvcs=false -trim
 # =============================================================================
 FROM alpine:latest
 
-# ARGs for build-time values (set by docker build --build-arg)
-ARG VERSION=dev
-ARG BUILD_DATE
-ARG COMMIT_ID
-ARG LICENSE=MIT
-
-# Static Labels
-LABEL maintainer="casjay <git-admin@casjaysdev.pro>" \
-      org.opencontainers.image.vendor="webappsgo" \
-      org.opencontainers.image.authors="casjay <git-admin@casjaysdev.pro>" \
-      org.opencontainers.image.title="caslink" \
-      org.opencontainers.image.base.name="caslink" \
-      org.opencontainers.image.description="Containerized version of caslink" \
-      org.opencontainers.image.url="https://github.com/webappsgo/caslink" \
-      org.opencontainers.image.source="https://github.com/webappsgo/caslink" \
-      org.opencontainers.image.documentation="https://github.com/webappsgo/caslink" \
-      org.opencontainers.image.vcs-type="Git" \
-      com.github.containers.toolbox="false"
-
-# Dynamic Labels (from ARGs)
-LABEL org.opencontainers.image.licenses="${LICENSE}" \
-      org.opencontainers.image.created="${BUILD_DATE}" \
-      org.opencontainers.image.version="${VERSION}" \
-      org.opencontainers.image.schema-version="${VERSION}" \
-      org.opencontainers.image.revision="${COMMIT_ID}"
+# OCI labels are intentionally NOT baked here — CI applies all
+# org.opencontainers.image.* metadata at build time via docker/metadata-action
+# (labels:/annotations:), per AI.md PART 27.
 
 # Install required packages including Tor
 RUN apk add --no-cache \
@@ -76,9 +54,10 @@ COPY docker/Dockerfile /root/Dockerfile
 RUN chmod 755 /usr/local/bin/*
 
 # Set environment
-# Note: Tor auto-enabled because tor binary is installed above
-ENV MODE=development \
-    TZ=America/New_York
+# Note: Tor auto-enabled because tor binary is installed above.
+# MODE is intentionally unset — the binary defaults to production; only the
+# dev/test compose files set MODE (AI.md PART 27).
+ENV TZ=America/New_York
 
 # Expose internal port (always 80)
 EXPOSE 80
