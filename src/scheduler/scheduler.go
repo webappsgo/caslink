@@ -209,6 +209,25 @@ func (s *Scheduler) addTasks() {
 			schedule: s.cfg.ClusterHeartbeatCron, enabled: s.cfg.ClusterHeartbeatEnabled, fn: s.clusterHeartbeat}),
 	}
 
+	// Critical tasks are non-skippable (AI.md PART 19): they must never be
+	// disabled via config or the admin panel, so force them enabled regardless
+	// of the cfg value. Their schedule stays configurable — only the on/off
+	// switch is locked on.
+	nonSkippable := map[string]bool{
+		"session_cleanup":   true,
+		"token_cleanup":     true,
+		"log_rotation":      true,
+		"ssl_renewal":       true,
+		"healthcheck_self":  true,
+		"tor_health":        true,
+		"cluster_heartbeat": true,
+	}
+	for _, t := range defs {
+		if nonSkippable[t.id] {
+			t.enabled = true
+		}
+	}
+
 	s.tasks = s.tasks[:0]
 	for _, t := range defs {
 		cs, err := parseCronSchedule(t.schedule)

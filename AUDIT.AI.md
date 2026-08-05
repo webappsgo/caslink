@@ -10,7 +10,7 @@ Feature-sized gaps are deferred to TODO.AI.md with reasoning (never silently dro
 
 - [x] updater: installs unverified binary when release has no `.sha256` asset — refuse (PART 23) `src/updater/update.go` — FIXED
 - [x] service: privilege drop runs BEFORE port bind — bind privileged port while root, then drop (PART 8/24) `src/main.go` + `src/server/server.go` — FIXED
-- [ ] scheduler: 7 non-skippable tasks (session/token cleanup, log_rotation, healthcheck_self, tor_health, cluster_heartbeat, ssl_renewal) are disableable via config — force enabled (PART 19) `src/scheduler/scheduler.go`
+- [x] scheduler: 7 non-skippable tasks (session/token cleanup, log_rotation, healthcheck_self, tor_health, cluster_heartbeat, ssl_renewal) are disableable via config — force enabled (PART 19) `src/scheduler/scheduler.go` — FIXED
 - [ ] backup: no disk-space pre-check; `backup.skipped_disk_full` never emitted (PART 22) `src/backup/backup.go`
 - [ ] tor: `Start()` overwrites existing torrc via updateTorrc — only create-if-absent on startup (PART 32) `src/tor/service.go`
 - [ ] metrics: `/{code}` short-slug path label is unbounded cardinality — use chi RoutePattern (PART 21) `src/metrics/metrics.go`
