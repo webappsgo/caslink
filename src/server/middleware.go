@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/webappsgo/caslink/src/config"
 	appmetrics "github.com/webappsgo/caslink/src/metrics"
 	"github.com/webappsgo/caslink/src/server/handler"
 	"github.com/webappsgo/caslink/src/server/service"
@@ -311,21 +312,29 @@ func RateLimitMiddleware(rl *RateLimiter) func(http.Handler) http.Handler {
 	}
 }
 
-// realIPMiddleware sets the request's RemoteAddr from the same
-// X-Forwarded-For / X-Real-IP precedence as realIP() below, so that
-// r.RemoteAddr reads consistently for every downstream handler/middleware
-// (access logging, rate limiting, audit trail) without depending on
-// go-chi/chi/v5/middleware.RealIP, which is deprecated upstream for
-// unconditionally trusting those headers regardless of proxy configuration.
-// This preserves the app's existing trust model (same headers, same
-// precedence) rather than introducing new trusted-proxy validation.
-func realIPMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if ip := realIP(r); ip != "" {
-			r.RemoteAddr = ip
-		}
-		next.ServeHTTP(w, r)
-	})
+// realIPMiddleware rewrites r.RemoteAddr to the real client IP, but only
+// honors X-Forwarded-For / X-Real-IP when the connecting TCP peer is a
+// trusted reverse proxy (default private/loopback ranges plus the
+// operator-configured additional list), per AI.md PART 12 / config-rules.md.
+// For an untrusted direct peer the forwarded headers are attacker-controlled,
+// so they are stripped here — the single chokepoint — before any downstream
+// consumer (rate limiter, access log, blocklist, GeoIP, account lockout,
+// audit trail) can be spoofed by a forged header. trustedAdditional is the
+// configured server.trusted_proxies.additional list.
+func realIPMiddleware(trustedAdditional []string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if config.IsTrustedProxy(config.PeerIP(r.RemoteAddr), trustedAdditional) {
+				if ip := realIP(r); ip != "" {
+					r.RemoteAddr = ip
+				}
+			} else {
+				r.Header.Del("X-Forwarded-For")
+				r.Header.Del("X-Real-IP")
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // realIP extracts the real client IP, respecting X-Forwarded-For / X-Real-IP.

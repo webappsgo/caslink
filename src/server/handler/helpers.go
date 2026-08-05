@@ -12,8 +12,11 @@ import (
 )
 
 // realClientIP extracts the real client IP, respecting X-Forwarded-For /
-// X-Real-IP ahead of a trusted reverse proxy (mirrors server.realIP, which
-// this package cannot import directly without an import cycle).
+// X-Real-IP. Trust is enforced upstream: realIPMiddleware strips these
+// headers for any peer that is not a configured trusted proxy, so by the
+// time a handler calls this the headers are only present for trusted
+// proxy chains (mirrors server.realIP, which this package cannot import
+// directly without an import cycle).
 func realClientIP(r *http.Request) string {
 	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
 		parts := strings.SplitN(fwd, ",", 2)

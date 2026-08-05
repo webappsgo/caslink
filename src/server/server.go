@@ -217,8 +217,8 @@ func (s *Server) setupMiddleware() {
 	// Request ID middleware
 	s.router.Use(middleware.RequestID)
 
-	// Real IP middleware
-	s.router.Use(realIPMiddleware)
+	// Real IP middleware — only trusts X-Forwarded-* from configured proxies
+	s.router.Use(realIPMiddleware(s.config.Server.TrustedProxies.Additional))
 
 	// Access logging middleware. Spec PART 11 wants structured access
 	// logs in both development and production for the audit trail.
