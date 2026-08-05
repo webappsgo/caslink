@@ -76,17 +76,14 @@ func (tm *TorManager) Start() error {
 	keyDir := filepath.Join(tm.dataDir, "tor", "site")
 	keyFile := filepath.Join(keyDir, "hs_ed25519_secret_key")
 
+	// Only create torrc when absent — never overwrite an existing torrc on
+	// startup (AI.md PART 32). Regeneration happens exclusively on an explicit
+	// admin config save (updateTorrc), not here, so an operator's manual edits
+	// survive restarts.
 	torrcContent := []byte(getTorConfig(tm.cfg))
-	created, err := ensureTorrc(torrcPath, torrcContent)
-	if err != nil {
+	if _, err := ensureTorrc(torrcPath, torrcContent); err != nil {
 		log.Printf("[tor] WARN: could not write torrc: %v", err)
 		return nil
-	}
-	if !created {
-		// Overwrite with current config on subsequent starts.
-		if err := updateTorrc(torrcPath, torrcContent); err != nil {
-			log.Printf("[tor] WARN: could not update torrc: %v", err)
-		}
 	}
 
 	startConf := &binetor.StartConf{
