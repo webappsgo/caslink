@@ -950,8 +950,11 @@ func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/server/auth/login", http.StatusFound)
 }
 
-// Start starts the HTTP server
-func (s *Server) Start(address string, port int) error {
+// Start starts the HTTP server. afterBind, when non-nil, is invoked after all
+// privileged ports are bound but before any traffic is served — this is where
+// the caller drops root privileges (PART 8 step 6: bind privileged ports while
+// still root, THEN drop). A nil afterBind skips the drop (used in tests).
+func (s *Server) Start(address string, port int, afterBind func() error) error {
 	// Auto-select port if not specified
 	if port == 0 {
 		port = selectRandomPort()
@@ -983,10 +986,48 @@ func (s *Server) Start(address string, port int) error {
 		IdleTimeout:  idleTimeout,
 	}
 
-	// Write PID file after the http.Server struct is set up but before
-	// ListenAndServe so that --status can locate us immediately. Skip inside
-	// containers (PART 8): the runtime supervises the process and a
-	// namespace-local PID is meaningless when read across namespaces.
+	// Bind the main listener while still root so a privileged port (80/443)
+	// binds successfully; privileges are dropped in afterBind immediately after
+	// (PART 8 step 6). Binding here rather than inside ListenAndServe is what
+	// lets the bind run as root and the serve run as the dropped user.
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("failed to bind %s: %w", addr, err)
+	}
+
+	// Bind the TLS-ALPN-01 :443 listener (also privileged) before dropping.
+	// autocert.Manager.TLSConfig() includes the "acme-tls/1" ALPN protocol
+	// required by RFC 8737; the challenge server must be reachable on port 443.
+	var tlsSrv *http.Server
+	var tlsLn net.Listener
+	if s.acmeManager != nil &&
+		(s.config.Server.SSL.LetsEncrypt.Challenge == "tls-alpn-01" ||
+			s.config.Server.SSL.LetsEncrypt.Challenge == "") {
+		tlsSrv = &http.Server{
+			Addr:         ":443",
+			Handler:      s.router,
+			TLSConfig:    s.acmeManager.TLSConfig(),
+			ReadTimeout:  s.server.ReadTimeout,
+			WriteTimeout: s.server.WriteTimeout,
+			IdleTimeout:  s.server.IdleTimeout,
+		}
+		tlsLn, err = net.Listen("tcp", ":443")
+		if err != nil {
+			log.Printf("HTTPS (TLS-ALPN-01) bind failed (non-fatal — HTTP still running): %v", err)
+			tlsSrv = nil
+		}
+	}
+
+	// All privileged ports are now bound — drop root before serving any traffic.
+	if afterBind != nil {
+		if err := afterBind(); err != nil {
+			log.Printf("Warning: could not drop privileges: %v", err)
+		}
+	}
+
+	// Write PID file after the drop (PART 8 step 12) so the file is owned by the
+	// dropped user. Skip inside containers (PART 8): the runtime supervises the
+	// process and a namespace-local PID is meaningless read across namespaces.
 	if s.pidFile != "" && s.config.Server.PIDFile && !mode.IsContainer() {
 		if err := paths.WritePIDFile(s.pidFile); err != nil {
 			log.Printf("Warning: could not write PID file %s: %v", s.pidFile, err)
@@ -1002,35 +1043,23 @@ func (s *Server) Start(address string, port int) error {
 	// Start scheduler
 	s.scheduler.Start()
 
-	// Start server in goroutine
+	// Serve on the already-bound listener (bound as root above, served as the
+	// dropped user).
 	go func() {
 		log.Printf("Server starting on %s (mode: %s)", addr, s.mode)
-		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := s.server.Serve(ln); err != nil && err != http.ErrServerClosed {
 			// Exit code 1 (general error) per AI.md's CLI Exit Codes table.
 			log.Printf("Server failed: %v", err)
 			os.Exit(1)
 		}
 	}()
 
-	// Start TLS-ALPN-01 listener when Let's Encrypt is configured (AI.md PART 15).
-	// autocert.Manager.TLSConfig() includes the "acme-tls/1" ALPN protocol required
-	// by RFC 8737 for TLS-ALPN-01 challenges. It also issues and renews certificates.
-	// This listener runs on port 443 (required by RFC 8737 — ALPN-01 challenge
-	// server must be reachable on port 443).
-	if s.acmeManager != nil &&
-		(s.config.Server.SSL.LetsEncrypt.Challenge == "tls-alpn-01" ||
-			s.config.Server.SSL.LetsEncrypt.Challenge == "") {
-		tlsSrv := &http.Server{
-			Addr:         ":443",
-			Handler:      s.router,
-			TLSConfig:    s.acmeManager.TLSConfig(),
-			ReadTimeout:  s.server.ReadTimeout,
-			WriteTimeout: s.server.WriteTimeout,
-			IdleTimeout:  s.server.IdleTimeout,
-		}
+	// Serve TLS-ALPN-01 on the pre-bound :443 listener (AI.md PART 15). It also
+	// issues and renews certificates via autocert.
+	if tlsSrv != nil {
 		go func() {
 			log.Printf("HTTPS (TLS-ALPN-01) listener starting on :443")
-			if err := tlsSrv.ListenAndServeTLS("", ""); err != nil && err != http.ErrServerClosed {
+			if err := tlsSrv.ServeTLS(tlsLn, "", ""); err != nil && err != http.ErrServerClosed {
 				log.Printf("HTTPS listener error (non-fatal — HTTP still running): %v", err)
 			}
 		}()
