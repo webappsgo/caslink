@@ -96,27 +96,50 @@ func ensureServiceUser() error {
 	return nil
 }
 
-// escalateIfNeeded re-executes the binary with sudo when not running as root.
-// Returns nil and continues when already root.
+// escalateIfNeeded re-executes the binary as root when not already root.
+// Returns nil and continues when already root. Escalators are tried in the
+// AI.md PART 24 Linux order: sudo → su → pkexec → doas.
 func escalateIfNeeded() error {
 	if os.Getuid() == 0 {
 		return nil
 	}
-	// Try sudo first, then pkexec.
-	for _, escalator := range []string{"sudo", "pkexec"} {
-		if _, err := exec.LookPath(escalator); err == nil {
-			args := append([]string{"/proc/self/exe"}, os.Args[1:]...)
-			cmd := exec.Command(escalator, args...)
-			cmd.Stdin = os.Stdin
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("%s: %w", escalator, err)
-			}
-			os.Exit(0)
+	// sudo, pkexec and doas all take the command and its args directly.
+	// su is different: it needs `su root -c "<command>"`, so it is handled
+	// separately below.
+	for _, escalator := range []string{"sudo", "su", "pkexec", "doas"} {
+		path, err := exec.LookPath(escalator)
+		if err != nil {
+			continue
 		}
+		var cmd *exec.Cmd
+		if escalator == "su" {
+			cmd = exec.Command(path, "root", "-c", suCommandLine())
+		} else {
+			args := append([]string{"/proc/self/exe"}, os.Args[1:]...)
+			cmd = exec.Command(path, args...)
+		}
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("%s: %w", escalator, err)
+		}
+		os.Exit(0)
 	}
-	return fmt.Errorf("root privileges required; install sudo or pkexec, or run as root")
+	return fmt.Errorf("root privileges required; install sudo, su, pkexec, or doas, or run as root")
+}
+
+// suCommandLine builds the shell command string passed to `su root -c`,
+// re-executing this binary with the original arguments. Each argument is
+// single-quoted so paths or values containing spaces survive the shell.
+func suCommandLine() string {
+	parts := make([]string, 0, len(os.Args))
+	parts = append(parts, "/proc/self/exe")
+	parts = append(parts, os.Args[1:]...)
+	for i, p := range parts {
+		parts[i] = "'" + strings.ReplaceAll(p, "'", `'\''`) + "'"
+	}
+	return strings.Join(parts, " ")
 }
 
 func install(m *Manager) error {
