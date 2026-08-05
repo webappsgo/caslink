@@ -6,22 +6,82 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
+	"github.com/webappsgo/caslink/src/config"
+	"github.com/webappsgo/caslink/src/server/model"
 	"github.com/webappsgo/caslink/src/server/store"
 )
 
 // DomainService handles custom domain operations
 type DomainService struct {
 	store *store.Store
+	cfg   config.CustomDomainsConfig
 }
 
 // NewDomainService creates a new domain service
-func NewDomainService(st *store.Store) *DomainService {
+func NewDomainService(st *store.Store, cfg config.CustomDomainsConfig) *DomainService {
 	return &DomainService{
 		store: st,
+		cfg:   cfg,
 	}
+}
+
+// isReservedDomain reports whether domain matches any configured reserved
+// entry. An entry beginning with "*." matches the bare suffix ("*.local" →
+// "local") and any domain ending in that suffix ("host.local"); every other
+// entry is an exact (case-insensitive) match.
+func (s *DomainService) isReservedDomain(domain string) bool {
+	d := strings.ToLower(strings.TrimSuffix(domain, "."))
+	for _, entry := range s.cfg.Reserved {
+		e := strings.ToLower(strings.TrimSpace(entry))
+		if e == "" {
+			continue
+		}
+		if strings.HasPrefix(e, "*.") {
+			suffix := e[1:] // ".local"
+			if d == e[2:] || strings.HasSuffix(d, suffix) {
+				return true
+			}
+			continue
+		}
+		if d == e {
+			return true
+		}
+	}
+	return false
+}
+
+// matchesBlockedPattern reports whether domain matches any configured
+// blocked_patterns regex. Invalid patterns are skipped (fail-open on the
+// individual pattern, never on the whole check).
+func (s *DomainService) matchesBlockedPattern(domain string) bool {
+	d := strings.ToLower(strings.TrimSuffix(domain, "."))
+	for _, pat := range s.cfg.BlockedPatterns {
+		p := strings.TrimSpace(pat)
+		if p == "" {
+			continue
+		}
+		re, err := regexp.Compile(p)
+		if err != nil {
+			continue
+		}
+		if re.MatchString(d) {
+			return true
+		}
+	}
+	return false
+}
+
+// domainLimitFor returns the configured max domains for the given owner type
+// (0 = unlimited).
+func (s *DomainService) domainLimitFor(ownerType string) int {
+	if ownerType == "org" {
+		return s.cfg.MaxDomainsPerOrg
+	}
+	return s.cfg.MaxDomainsPerUser
 }
 
 // CustomDomain represents a custom domain
@@ -47,6 +107,15 @@ type CustomDomain struct {
 
 // AddDomain adds a new custom domain for a user or organization
 func (s *DomainService) AddDomain(ctx context.Context, ownerType string, ownerID int64, domain string) (*CustomDomain, error) {
+	// Reject reserved domains and blocked TLD patterns before any DB work
+	// (PART 36). These are policy rejections independent of ownership.
+	if s.isReservedDomain(domain) {
+		return nil, model.ErrDomainReserved
+	}
+	if s.matchesBlockedPattern(domain) {
+		return nil, model.ErrDomainBlockedPattern
+	}
+
 	// Check if domain already exists
 	var count int
 	err := s.store.UsersDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM custom_domains WHERE domain = ?", domain).Scan(&count)
@@ -54,7 +123,21 @@ func (s *DomainService) AddDomain(ctx context.Context, ownerType string, ownerID
 		return nil, fmt.Errorf("failed to check domain: %w", err)
 	}
 	if count > 0 {
-		return nil, fmt.Errorf("domain already exists")
+		return nil, model.ErrDomainAlreadyExists
+	}
+
+	// Enforce per-owner domain limit (0 = unlimited, PART 36).
+	if limit := s.domainLimitFor(ownerType); limit > 0 {
+		var owned int
+		err := s.store.UsersDB.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM custom_domains WHERE owner_type = ? AND owner_id = ?",
+			ownerType, ownerID).Scan(&owned)
+		if err != nil {
+			return nil, fmt.Errorf("failed to count owner domains: %w", err)
+		}
+		if owned >= limit {
+			return nil, model.ErrDomainLimitReached
+		}
 	}
 
 	// Determine if apex or subdomain. An apex (registrable root) domain has

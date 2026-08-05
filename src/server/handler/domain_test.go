@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/webappsgo/caslink/src/config"
 	"github.com/webappsgo/caslink/src/server/service"
 )
 
@@ -15,7 +16,7 @@ func newDomainTestHandler(t *testing.T) (*DomainHandler, *service.OrgService, *s
 	t.Helper()
 
 	st := newSchemaTestStore(t)
-	domainService := service.NewDomainService(st)
+	domainService := service.NewDomainService(st, config.CustomDomainsConfig{})
 	orgService := service.NewOrgService(st)
 	authService := service.NewAuthService(st)
 

@@ -14,7 +14,7 @@ Feature-sized gaps are deferred to TODO.AI.md with reasoning (never silently dro
 - [x] backup: no disk-space pre-check; `backup.skipped_disk_full` never emitted (PART 22) `src/backup/backup.go` — FIXED
 - [x] tor: `Start()` overwrites existing torrc via updateTorrc — only create-if-absent on startup (PART 32) `src/tor/service.go` — FIXED
 - [x] metrics: `/{code}` short-slug path label is unbounded cardinality — use chi RoutePattern (PART 21) `src/metrics/metrics.go` — FIXED
-- [ ] domains: AddDomain never enforces max_domains_per_user/org, reserved, or blocked_patterns though error vars already defined (PART 36) `src/.../domain.go`
+- [x] domains: AddDomain never enforces max_domains_per_user/org, reserved, or blocked_patterns though error vars already defined (PART 36) `src/.../domain.go` — FIXED
 
 ## Fix now — config / docs
 

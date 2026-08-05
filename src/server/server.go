@@ -151,7 +151,7 @@ func New(cfg *config.Config, appMode mode.Mode, dataDir, logDir, pidFile string,
 			// TLS handshake re-checks the configured hosts first (no DB hit
 			// for the common case), then falls back to the custom-domains
 			// table for verified, active, non-wildcard domains.
-			domainSvc := service.NewDomainService(db)
+			domainSvc := service.NewDomainService(db, cfg.Server.Features.CustomDomains)
 			staticHosts := make(map[string]bool, len(hosts))
 			for _, h := range hosts {
 				staticHosts[h] = true
@@ -321,7 +321,7 @@ func (s *Server) setupRoutes() {
 	qrService := service.NewQRService(s.store)
 	qrService.SetMetrics(s.metrics)
 	orgService := service.NewOrgService(s.store)
-	domainService := service.NewDomainService(s.store)
+	domainService := service.NewDomainService(s.store, s.config.Server.Features.CustomDomains)
 	analyticsService := service.NewAnalyticsService(s.store)
 	bulkService := service.NewBulkService(s.store, urlService)
 	userAdminService := service.NewUserAdminService(s.store)

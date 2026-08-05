@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/webappsgo/caslink/src/config"
+	"github.com/webappsgo/caslink/src/server/model"
 	"github.com/webappsgo/caslink/src/server/store"
 	_ "modernc.org/sqlite"
 )
@@ -60,7 +62,7 @@ func newTestDomainStore(t *testing.T) *store.Store {
 
 func TestAddDomainIsApexDetection(t *testing.T) {
 	st := newTestDomainStore(t)
-	s := NewDomainService(st)
+	s := NewDomainService(st, config.CustomDomainsConfig{})
 	ctx := context.Background()
 
 	cases := []struct {
@@ -84,9 +86,63 @@ func TestAddDomainIsApexDetection(t *testing.T) {
 	}
 }
 
+func TestAddDomainEnforcement(t *testing.T) {
+	ctx := context.Background()
+	cfg := config.CustomDomainsConfig{
+		MaxDomainsPerUser: 2,
+		MaxDomainsPerOrg:  20,
+		Reserved:          []string{"localhost", "*.local", "*.test", "*.example", "*.invalid"},
+		BlockedPatterns:   []string{".*\\.(gov|mil|edu)$"},
+	}
+
+	t.Run("reserved rejected", func(t *testing.T) {
+		s := NewDomainService(newTestDomainStore(t), cfg)
+		for _, d := range []string{"localhost", "foo.local", "bar.test", "acme.example", "x.invalid"} {
+			if _, err := s.AddDomain(ctx, "user", 1, d); err != model.ErrDomainReserved {
+				t.Errorf("AddDomain(%q) err = %v, want ErrDomainReserved", d, err)
+			}
+		}
+	})
+
+	t.Run("blocked pattern rejected", func(t *testing.T) {
+		s := NewDomainService(newTestDomainStore(t), cfg)
+		for _, d := range []string{"agency.gov", "base.mil", "school.edu"} {
+			if _, err := s.AddDomain(ctx, "user", 1, d); err != model.ErrDomainBlockedPattern {
+				t.Errorf("AddDomain(%q) err = %v, want ErrDomainBlockedPattern", d, err)
+			}
+		}
+	})
+
+	t.Run("per-user limit enforced", func(t *testing.T) {
+		s := NewDomainService(newTestDomainStore(t), cfg)
+		if _, err := s.AddDomain(ctx, "user", 1, "one.com"); err != nil {
+			t.Fatalf("AddDomain(one.com) unexpected err: %v", err)
+		}
+		if _, err := s.AddDomain(ctx, "user", 1, "two.com"); err != nil {
+			t.Fatalf("AddDomain(two.com) unexpected err: %v", err)
+		}
+		if _, err := s.AddDomain(ctx, "user", 1, "three.com"); err != model.ErrDomainLimitReached {
+			t.Errorf("AddDomain(three.com) err = %v, want ErrDomainLimitReached", err)
+		}
+		// A different owner is unaffected by the first owner's count.
+		if _, err := s.AddDomain(ctx, "user", 2, "other.com"); err != nil {
+			t.Errorf("AddDomain for second user unexpected err: %v", err)
+		}
+	})
+
+	t.Run("zero limit is unlimited", func(t *testing.T) {
+		s := NewDomainService(newTestDomainStore(t), config.CustomDomainsConfig{MaxDomainsPerUser: 0})
+		for i := 0; i < 5; i++ {
+			if _, err := s.AddDomain(ctx, "user", 1, fmt.Sprintf("d%d.com", i)); err != nil {
+				t.Fatalf("AddDomain unexpected err with unlimited quota: %v", err)
+			}
+		}
+	})
+}
+
 func TestIsDomainVerifiedActive(t *testing.T) {
 	st := newTestDomainStore(t)
-	s := NewDomainService(st)
+	s := NewDomainService(st, config.CustomDomainsConfig{})
 	ctx := context.Background()
 
 	cd, err := s.AddDomain(ctx, "user", 1, "example.com")
