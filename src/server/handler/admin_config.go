@@ -145,7 +145,7 @@ func (h *AdminHandler) adminNav(activePath string) []adminNavItem {
 		{Label: "Moderation", URL: base + "/config/moderation/users", Icon: "🛂"},
 		{Label: "Cluster Nodes", URL: base + "/config/cluster/nodes", Icon: "🔗"},
 		{Label: "Add Node", URL: base + "/config/cluster/add", Icon: "➕"},
-		{Label: "Help", URL: base + "/help", Icon: "❓"},
+		{Label: "Help", URL: base + "/config/help", Icon: "❓"},
 	}
 	for i, it := range items {
 		if it.URL == base+activePath {
@@ -1831,7 +1831,7 @@ func (h *AdminHandler) ConfigClusterAddAction(w http.ResponseWriter, r *http.Req
 // Help
 // --------------------------------------------------------------------------
 
-// AdminHelp handles GET /server/{adminPath}/help
+// AdminHelp handles GET /server/{adminPath}/config/help
 func (h *AdminHandler) AdminHelp(w http.ResponseWriter, r *http.Request) {
 	content := fmt.Sprintf(`
 <h1>Admin Help</h1>
@@ -1870,7 +1870,7 @@ caslink --update yes</pre>
 		template.HTMLEscapeString(h.mode),
 		h.basePath(),
 	)
-	h.adminLayout(w, r, "Help", "/help", template.HTML(content), "", "")
+	h.adminLayout(w, r, "Help", "/config/help", template.HTML(content), "", "")
 }
 
 // --------------------------------------------------------------------------

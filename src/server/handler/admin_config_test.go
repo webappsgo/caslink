@@ -41,7 +41,7 @@ func adminConfigGETCases() []configGETCase {
 		{"ConfigModerationUsers", "/server/admin/config/moderation/users", func(h *AdminHandler) http.HandlerFunc { return h.ConfigModerationUsers }},
 		{"ConfigClusterNodes", "/server/admin/config/cluster/nodes", func(h *AdminHandler) http.HandlerFunc { return h.ConfigClusterNodes }},
 		{"ConfigClusterAdd", "/server/admin/config/cluster/add", func(h *AdminHandler) http.HandlerFunc { return h.ConfigClusterAdd }},
-		{"AdminHelp", "/server/admin/help", func(h *AdminHandler) http.HandlerFunc { return h.AdminHelp }},
+		{"AdminHelp", "/server/admin/config/help", func(h *AdminHandler) http.HandlerFunc { return h.AdminHelp }},
 	}
 }
 

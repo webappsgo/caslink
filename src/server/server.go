@@ -682,8 +682,9 @@ func (s *Server) setupRoutes() {
 			ar.Get("/config/cluster/add", adminHandler.ConfigClusterAdd)
 			ar.Post("/config/cluster/add", adminHandler.ConfigClusterAddAction)
 
-			// Help
-			ar.Get("/help", adminHandler.AdminHelp)
+			// Help — under config/ per PART 17 (only {admin_username} and
+			// config may be direct children of /server/{admin_path}/).
+			ar.Get("/config/help", adminHandler.AdminHelp)
 		})
 	})
 
