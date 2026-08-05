@@ -23,6 +23,12 @@ import (
 // "Compliance Mode Enforcement": backups must not run unencrypted.
 var ErrCompliancePasswordRequired = errors.New("backup encryption password required: compliance mode is enabled and no backup is allowed unencrypted")
 
+// ErrSkippedDiskFull is returned when a backup is aborted before creation
+// because the target filesystem is too full, per AI.md PART 22: free space
+// must be at least twice the most recent backup's size, and overall disk
+// usage must stay at or below disk_threshold (default 90%).
+var ErrSkippedDiskFull = errors.New("backup skipped: insufficient disk space")
+
 // Options controls how a backup is created per AI.md PART 22.
 type Options struct {
 	// Password encrypts the archive with AES-256-GCM using an Argon2id-derived
@@ -34,6 +40,10 @@ type Options struct {
 	CreatedBy string
 	// AppVersion is recorded in manifest.json.
 	AppVersion string
+	// DiskThreshold is the maximum disk-usage percentage (0-100) allowed before
+	// a backup is skipped. Zero (or out of range) falls back to the PART 22
+	// default of 90.
+	DiskThreshold int
 }
 
 func (o Options) validate() error {
@@ -43,6 +53,66 @@ func (o Options) validate() error {
 	return nil
 }
 
+func (o Options) diskThreshold() int {
+	if o.DiskThreshold <= 0 || o.DiskThreshold > 100 {
+		return 90
+	}
+	return o.DiskThreshold
+}
+
+// precheckDiskSpace aborts a backup before any bytes are written when the
+// target filesystem cannot safely hold a new backup (AI.md PART 22): overall
+// disk usage must stay at or below the threshold, and free space must be at
+// least twice the most recent backup's size. It fails open — an inability to
+// stat the filesystem never blocks the backup.
+func precheckDiskSpace(backupDir string, threshold int) error {
+	if backupDir == "" {
+		return nil
+	}
+	total, free, err := diskCapacity(backupDir)
+	if err != nil || total == 0 {
+		return nil
+	}
+	usedPct := float64(total-free) / float64(total) * 100
+	if usedPct > float64(threshold) {
+		return fmt.Errorf("%w: disk %.1f%% used exceeds %d%% threshold", ErrSkippedDiskFull, usedPct, threshold)
+	}
+	recent := mostRecentBackupSize(backupDir)
+	if recent > 0 && free < 2*recent {
+		return fmt.Errorf("%w: free %d bytes < 2x most recent backup (%d bytes)", ErrSkippedDiskFull, free, recent)
+	}
+	return nil
+}
+
+// mostRecentBackupSize returns the byte size of the newest backup archive in
+// backupDir, or 0 when none exist or the directory cannot be read.
+func mostRecentBackupSize(backupDir string) uint64 {
+	entries, err := os.ReadDir(backupDir)
+	if err != nil {
+		return 0
+	}
+	var newest time.Time
+	var size uint64
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		n := e.Name()
+		if !strings.HasSuffix(n, ".tar.gz") && !strings.HasSuffix(n, ".tar.gz.enc") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(newest) {
+			newest = info.ModTime()
+			size = uint64(info.Size())
+		}
+	}
+	return size
+}
+
 // RunBackup packs configDir + dataDir into a dated full backup per AI.md PART 22.
 //
 // When explicitDst is non-empty it is used verbatim (absolute or CWD-relative);
@@ -50,6 +120,13 @@ func (o Options) validate() error {
 // the file is named caslink_backup_YYYY-MM-DD.tar.gz[.enc] under backupDir.
 func RunBackup(configDir, dataDir, backupDir, explicitDst string, opts Options) error {
 	if err := opts.validate(); err != nil {
+		return err
+	}
+	checkDir := backupDir
+	if checkDir == "" && explicitDst != "" {
+		checkDir = filepath.Dir(explicitDst)
+	}
+	if err := precheckDiskSpace(checkDir, opts.diskThreshold()); err != nil {
 		return err
 	}
 	dst, err := createArchive(configDir, dataDir, backupDir, explicitDst, opts)
@@ -75,6 +152,9 @@ func RunDailyBackup(configDir, dataDir, backupDir string, opts Options) error {
 	}
 	if err := os.MkdirAll(backupDir, 0o750); err != nil {
 		return fmt.Errorf("create backup dir: %w", err)
+	}
+	if err := precheckDiskSpace(backupDir, opts.diskThreshold()); err != nil {
+		return err
 	}
 
 	// Create dated full backup.

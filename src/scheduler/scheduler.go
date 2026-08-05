@@ -3,6 +3,7 @@ package scheduler
 import (
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -779,6 +780,13 @@ func (s *Scheduler) runDailyBackup(ctx context.Context) error {
 		CreatedBy:          "scheduler",
 	}
 	if err := backup.RunDailyBackup(s.configDir, s.dataDir, s.backupDir, opts); err != nil {
+		// A disk-full skip is an expected, non-error condition (AI.md PART 22):
+		// log backup.skipped_disk_full and leave existing backups untouched
+		// rather than failing the task.
+		if errors.Is(err, backup.ErrSkippedDiskFull) {
+			log.Printf("[scheduler] backup.skipped_disk_full: %v", err)
+			return nil
+		}
 		return fmt.Errorf("backup_daily: %w", err)
 	}
 	log.Printf("[scheduler] backup: complete (full + daily incremental written and verified)")
