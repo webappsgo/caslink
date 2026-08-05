@@ -89,8 +89,7 @@ func (s *URLService) CreateURL(ctx context.Context, req *model.CreateURLRequest)
 	if req.ExpiresAt != nil {
 		expiresAt = req.ExpiresAt
 	} else if req.ExpireAfter != "" {
-		exp := parseExpiration(req.ExpireAfter)
-		expiresAt = &exp
+		expiresAt = parseExpiration(req.ExpireAfter)
 	}
 
 	opts, err := buildLinkOptions(req)
@@ -463,8 +462,7 @@ func (s *URLService) CreateURLForUser(ctx context.Context, userID int64, req *mo
 	if req.ExpiresAt != nil {
 		expiresAt = req.ExpiresAt
 	} else if req.ExpireAfter != "" {
-		exp := parseExpiration(req.ExpireAfter)
-		expiresAt = &exp
+		expiresAt = parseExpiration(req.ExpireAfter)
 	}
 
 	opts, err := buildLinkOptions(req)
@@ -542,8 +540,7 @@ func (s *URLService) CreateURLForOrg(ctx context.Context, orgID int64, req *mode
 	if req.ExpiresAt != nil {
 		expiresAt = req.ExpiresAt
 	} else if req.ExpireAfter != "" {
-		exp := parseExpiration(req.ExpireAfter)
-		expiresAt = &exp
+		expiresAt = parseExpiration(req.ExpireAfter)
 	}
 
 	opts, err := buildLinkOptions(req)
@@ -1041,24 +1038,29 @@ func hashIP(ip string) string {
 	return fmt.Sprintf("%x", hash)
 }
 
-// parseExpiration parses expiration duration string
-func parseExpiration(duration string) time.Time {
+// parseExpiration converts an "expire after" duration string into an
+// absolute expiry time. It returns nil for "never" and for any
+// unrecognized value (the default is never-expires), so callers persist
+// SQL NULL instead of a year-0001 timestamp that time.Now().After()
+// would read as already expired — which previously killed the link the
+// moment it was created.
+func parseExpiration(duration string) *time.Time {
 	now := time.Now()
 
+	var exp time.Time
 	switch duration {
 	case "1h":
-		return now.Add(1 * time.Hour)
+		exp = now.Add(1 * time.Hour)
 	case "24h":
-		return now.Add(24 * time.Hour)
+		exp = now.Add(24 * time.Hour)
 	case "7d":
-		return now.Add(7 * 24 * time.Hour)
+		exp = now.Add(7 * 24 * time.Hour)
 	case "30d":
-		return now.Add(30 * 24 * time.Hour)
+		exp = now.Add(30 * 24 * time.Hour)
 	case "never":
-		// Return zero time for never expires
-		return time.Time{}
+		return nil
 	default:
-		// Default to never
-		return time.Time{}
+		return nil
 	}
+	return &exp
 }

@@ -208,3 +208,51 @@ func TestDeleteURL(t *testing.T) {
 		t.Errorf("DeleteURL on missing code: got %v, want ErrURLNotFound", err)
 	}
 }
+
+func TestParseExpiration(t *testing.T) {
+	if got := parseExpiration("never"); got != nil {
+		t.Errorf(`parseExpiration("never") = %v, want nil`, got)
+	}
+	if got := parseExpiration(""); got != nil {
+		t.Errorf(`parseExpiration("") = %v, want nil (default never)`, got)
+	}
+	if got := parseExpiration("bogus"); got != nil {
+		t.Errorf(`parseExpiration("bogus") = %v, want nil (default never)`, got)
+	}
+	got := parseExpiration("1h")
+	if got == nil {
+		t.Fatal(`parseExpiration("1h") = nil, want a future time`)
+	}
+	if !got.After(time.Now()) {
+		t.Errorf(`parseExpiration("1h") = %v, want a time in the future`, got)
+	}
+}
+
+// TestCreateURLNeverExpireIsNotInstantlyExpired guards the regression where
+// "never"/default expiry produced a year-0001 timestamp that GetURLByCode
+// read as already expired, killing the link the instant it was created.
+func TestCreateURLNeverExpireIsNotInstantlyExpired(t *testing.T) {
+	st := newTestURLStore(t)
+	svc := NewURLService(st)
+	ctx := context.Background()
+
+	for _, expireAfter := range []string{"never", ""} {
+		created, err := svc.CreateURL(ctx, &model.CreateURLRequest{
+			LongURL:     "https://example.com/keepme",
+			ExpireAfter: expireAfter,
+		})
+		if err != nil {
+			t.Fatalf("CreateURL(ExpireAfter=%q) failed: %v", expireAfter, err)
+		}
+		if created.ExpiresAt != nil {
+			t.Errorf("CreateURL(ExpireAfter=%q): ExpiresAt = %v, want nil", expireAfter, created.ExpiresAt)
+		}
+		got, err := svc.GetURLByCode(ctx, created.ShortCode)
+		if err != nil {
+			t.Fatalf("GetURLByCode(ExpireAfter=%q) failed: %v (link was treated as expired on creation)", expireAfter, err)
+		}
+		if got.LongURL != "https://example.com/keepme" {
+			t.Errorf("GetURLByCode LongURL = %q, want the created URL", got.LongURL)
+		}
+	}
+}
