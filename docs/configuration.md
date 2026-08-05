@@ -54,6 +54,8 @@ Most variables use the `CASLINK_` prefix. The bare name (without prefix) is also
 | `CASLINK_FQDN` | `short.example.com` | Public hostname used in generated links |
 | `CASLINK_APP_NAME` | `Caslink` | Branding title |
 | `CASLINK_APP_DESCRIPTION` | `URL shortener` | Branding description |
+| `APP_URL` | `https://short.example.com` | Explicit base URL for links in outbound email; overrides the derived `{proto}://{fqdn}[:port]`. Bare name only (no `CASLINK_` prefix) |
+| `DEBUG` | `false` | Enable debug endpoints and verbose logging (equivalent to `--debug` / `MODE=development`). Bare name only |
 
 ### Admin
 
@@ -147,6 +149,14 @@ server:
     favicon_url: ""
     default_theme: dark   # dark | light | auto
     primary_color: ""     # CSS hex colour, e.g. "#58a6ff"
+```
+
+### SEO
+
+```yaml
+server:
+  seo:
+    keywords: []         # meta keyword list injected into public page <head>
 ```
 
 ### Admin Panel
@@ -310,6 +320,18 @@ server:
       require_special: false
 ```
 
+### Compliance
+
+```yaml
+server:
+  compliance:
+    enabled: false       # when true, enforces stricter password policy and
+                         # requires a backup encryption password (AI.md PART 22)
+```
+
+All compliance standards are disabled by default; enabling compliance applies
+the strictest-wins baseline described in the security rules.
+
 ### Metrics (Prometheus)
 
 ```yaml
@@ -425,6 +447,33 @@ web:
   ui:
     theme: dark                  # dark | light | auto
   cors: ""                       # comma-separated origins; blank = same-origin only
+```
+
+### Compression
+
+```yaml
+server:
+  compression:
+    enabled: true
+    level: 6             # gzip level 1–9
+    types:               # MIME types eligible for compression
+      - text/html
+      - text/css
+      - text/javascript
+      - application/json
+      - application/javascript
+      - image/svg+xml
+```
+
+### Trusted Proxies
+
+```yaml
+server:
+  trusted_proxies:
+    additional: []       # extra public proxy IPs / CIDRs to trust for
+                         # X-Forwarded-* headers (private + link-local ranges
+                         # are always trusted). IP/CIDR entries only; hostnames
+                         # are not DNS-resolved.
 ```
 
 ## Modes

@@ -15,7 +15,7 @@ file tracks the batch (>5 findings) and is deleted once every item is resolved.
 - [x] service/url.go parseExpiration: returned year-0001 zero time for "never"/default, which GetURLByCode treated as already-expired, killing never-expire links at creation — FIXED, returns *time.Time nil (1db4bc1c2f0d)
 
 ## Pass 4: Documentation
-- [ ] docs/configuration.md: undocumented runtime env vars (DEBUG, APP_URL, APP_ENV/ENV/ENVIRONMENT) and config sections (seo, compliance, trusted_proxies, compression); SMTP_TLS gap
+- [x] docs/configuration.md: undocumented runtime env vars (DEBUG, APP_URL) and config sections (seo, compliance, trusted_proxies, compression) — FIXED, all documented. Note: APP_ENV/ENV/ENVIRONMENT and SMTP_TLS are NOT read by the code (env mode is MODE; SMTP TLS is auto-detected), so nothing to document there
 - [x] service/email.go: hardcoded http://localhost:64521 APP_URL default and localhost fallbacks in generated email links/vars — FIXED, EmailService.baseURL()/fqdn() resolve {proto}://{fqdn}[:port] from config with :80/:443 stripping
 
 ## Pass 6: Code Flow Trace
