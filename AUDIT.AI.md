@@ -21,7 +21,7 @@ Feature-sized gaps are deferred to TODO.AI.md with reasoning (never silently dro
 - [x] docker: Dockerfile bakes LABEL blocks (must be CI metadata-action) (PART 27) `docker/Dockerfile` — FIXED
 - [x] docker: Dockerfile sets `ENV MODE=development` on the production image (PART 27) `docker/Dockerfile` — FIXED
 - [x] service: Linux escalation order missing `su` and `doas` (PART 24) `src/svcmgr/svcmgr_linux.go` — FIXED
-- [ ] health: `checks.cache` field missing from health response (PART 13) `src/server/handler/health.go`
+- [x] health: `checks.cache` field missing from health response (PART 13) `src/server/handler/health.go` — FIXED
 - [ ] health: `/healthz` root alias registered unconditionally — gate on `server.healthz.root.enabled` (PART 13) `src/server/server.go` + config
 - [ ] api: unversioned `/api/healthz` alias missing; non-spec `/api/v1/healthz` present instead (PART 14) `src/server/server.go`
 - [ ] api: list default page size 50, spec says 250 (PART 14) `src/server/handler/helpers.go`

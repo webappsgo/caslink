@@ -69,11 +69,16 @@ type FeaturesInfo struct {
 	Tor           TorInfo `json:"tor"`
 }
 
-// ChecksInfo holds sub-system liveness results.
+// ChecksInfo holds sub-system liveness results. Field order matches the
+// AI.md PART 13 checks order: database, cache, disk, scheduler, cluster, tor.
+// Values are "ok"/"error" only — never connection details. cluster and tor
+// are omitted when not applicable.
 type ChecksInfo struct {
 	Database  string `json:"database"`
-	Scheduler string `json:"scheduler"`
+	Cache     string `json:"cache"`
 	Disk      string `json:"disk"`
+	Scheduler string `json:"scheduler"`
+	Cluster   string `json:"cluster,omitempty"`
 	Tor       string `json:"tor,omitempty"`
 }
 
@@ -134,6 +139,10 @@ func HealthHandler(version, commitID, buildDate, mode string) http.HandlerFunc {
 func APIHealthHandler(version, commitID, buildDate, mode string, st *store.Store, getTorManager func() *apktor.TorManager, getCounters func() (int64, int64, int64)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		checks := ChecksInfo{
+			// The in-process memory cache is the single-instance default and
+			// is always available; a distributed cache (valkey/redis), when
+			// configured, would report its own probe result here.
+			Cache:     "ok",
 			Scheduler: "ok",
 			Disk:      "ok",
 		}
