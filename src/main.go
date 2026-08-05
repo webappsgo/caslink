@@ -307,7 +307,9 @@ func main() {
 	}
 
 	// Check PID file — refuse to start if a previous instance is still alive.
-	if cfg.Server.PIDFile {
+	// Skipped inside containers (PART 8): PIDs are namespace-local, so a file
+	// on a mounted volume would point at the wrong process.
+	if cfg.Server.PIDFile && !mode.IsContainer() {
 		if existingPID, pidErr := paths.CheckPIDFile(pidFile, binaryName); pidErr == paths.ErrAlreadyRunning {
 			fmt.Fprintf(os.Stderr, "%s is already running (PID %d). Use --service stop to stop it first.\n", binaryName, existingPID)
 			os.Exit(1)

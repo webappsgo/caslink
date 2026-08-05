@@ -162,14 +162,3 @@ func isContainerInit() bool {
 
 	return false
 }
-
-// GetModeInfo returns detailed information about the current mode
-func GetModeInfo(m Mode) map[string]interface{} {
-	return map[string]interface{}{
-		"mode":         m.String(),
-		"production":   m.IsProduction(),
-		"development":  m.IsDevelopment(),
-		"in_container": IsContainer(),
-		"debug_mode":   m.IsDevelopment(),
-	}
-}

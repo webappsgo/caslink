@@ -30,6 +30,7 @@ import (
 	"github.com/webappsgo/caslink/src/logger"
 	appmetrics "github.com/webappsgo/caslink/src/metrics"
 	"github.com/webappsgo/caslink/src/mode"
+	"github.com/webappsgo/caslink/src/paths"
 	"github.com/webappsgo/caslink/src/scheduler"
 	"github.com/webappsgo/caslink/src/server/handler"
 	"github.com/webappsgo/caslink/src/server/service"
@@ -983,9 +984,11 @@ func (s *Server) Start(address string, port int) error {
 	}
 
 	// Write PID file after the http.Server struct is set up but before
-	// ListenAndServe so that --status can locate us immediately.
-	if s.pidFile != "" && s.config.Server.PIDFile {
-		if err := writePIDFile(s.pidFile); err != nil {
+	// ListenAndServe so that --status can locate us immediately. Skip inside
+	// containers (PART 8): the runtime supervises the process and a
+	// namespace-local PID is meaningless when read across namespaces.
+	if s.pidFile != "" && s.config.Server.PIDFile && !mode.IsContainer() {
+		if err := paths.WritePIDFile(s.pidFile); err != nil {
 			log.Printf("Warning: could not write PID file %s: %v", s.pidFile, err)
 		}
 	}
@@ -1046,8 +1049,8 @@ func (s *Server) Start(address string, port int) error {
 	log.Println("Shutting down server...")
 
 	// Remove PID file before stopping so monitoring knows we are shutting down.
-	if s.pidFile != "" {
-		_ = os.Remove(s.pidFile)
+	if s.pidFile != "" && !mode.IsContainer() {
+		paths.RemovePIDFile(s.pidFile)
 	}
 
 	// Stop Tor hidden service before scheduler/HTTP so health checks stop first.
@@ -1070,17 +1073,6 @@ func (s *Server) Start(address string, port int) error {
 
 	log.Println("Server stopped")
 	return nil
-}
-
-// writePIDFile writes the current process PID to the given path, creating
-// parent directories as needed.
-func writePIDFile(path string) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
-	}
-	data := []byte(fmt.Sprintf("%d\n", os.Getpid()))
-	return os.WriteFile(path, data, 0644)
 }
 
 // Stop stops the HTTP server gracefully

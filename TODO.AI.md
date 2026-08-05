@@ -18,3 +18,12 @@ findings from that audit were fixed directly and are not listed here.
   injectable "current binary path" (or a seam around `os.Executable`) to
   close this gap safely. Left unfixed — behavior change to production code,
   out of scope for a test-only pass.
+
+- `server.config.trusted_proxies.additional` entries that are hostnames (not
+  IPs/CIDRs) are not DNS-resolved before matching. `isTrustedPeer()` compares
+  the raw TCP peer IP against parsed IP/CIDR entries only, so a hostname entry
+  silently never matches. Resolving hostnames on the request path would put a
+  blocking DNS lookup in front of every request; doing it correctly needs a
+  background resolver with a TTL cache refreshed on the 5-minute proxy-refresh
+  cycle (per config-rules "refreshed every 5 min"). Deferred — needs that
+  resolver design; IP/CIDR entries (the documented common case) work today.

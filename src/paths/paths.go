@@ -229,9 +229,3 @@ func ExpandPath(path string) string {
 	return os.ExpandEnv(path)
 }
 
-// ResolvePath resolves a path, expanding ~ and environment variables
-// and converting to absolute path
-func ResolvePath(path string) (string, error) {
-	expanded := ExpandPath(path)
-	return filepath.Abs(expanded)
-}

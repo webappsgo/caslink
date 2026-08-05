@@ -4,9 +4,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -25,26 +22,6 @@ func newTestServer(t *testing.T, cfg *config.Config) *Server {
 	return &Server{
 		config: cfg,
 		store:  newSchemaTestStore(t),
-	}
-}
-
-// TestWritePIDFile verifies writePIDFile creates missing parent directories
-// and writes the current process PID followed by a newline.
-func TestWritePIDFile(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "nested", "caslink.pid")
-
-	if err := writePIDFile(path); err != nil {
-		t.Fatalf("writePIDFile() error: %v", err)
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("failed to read pid file: %v", err)
-	}
-	want := strconv.Itoa(os.Getpid()) + "\n"
-	if string(data) != want {
-		t.Errorf("pid file content = %q, want %q", string(data), want)
 	}
 }
 

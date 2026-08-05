@@ -237,29 +237,3 @@ func TestIsContainerEnvVarDetection(t *testing.T) {
 		})
 	}
 }
-
-// TestGetModeInfoFields verifies GetModeInfo reports mode-derived fields
-// consistently with the Mode's own predicate methods, for both modes.
-func TestGetModeInfoFields(t *testing.T) {
-	for _, m := range []Mode{Production, Development} {
-		t.Run(m.String(), func(t *testing.T) {
-			info := GetModeInfo(m)
-
-			if got := info["mode"]; got != m.String() {
-				t.Errorf("info[mode] = %v, want %v", got, m.String())
-			}
-			if got := info["production"]; got != m.IsProduction() {
-				t.Errorf("info[production] = %v, want %v", got, m.IsProduction())
-			}
-			if got := info["development"]; got != m.IsDevelopment() {
-				t.Errorf("info[development] = %v, want %v", got, m.IsDevelopment())
-			}
-			if got := info["debug_mode"]; got != m.IsDevelopment() {
-				t.Errorf("info[debug_mode] = %v, want %v", got, m.IsDevelopment())
-			}
-			if _, ok := info["in_container"].(bool); !ok {
-				t.Error("info[in_container] should be a bool")
-			}
-		})
-	}
-}

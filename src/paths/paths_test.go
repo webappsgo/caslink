@@ -234,25 +234,6 @@ func TestExpandPath(t *testing.T) {
 	}
 }
 
-// TestResolvePath verifies relative paths are converted to absolute paths
-// and tilde expansion is applied first.
-func TestResolvePath(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-
-	got, err := ResolvePath("~/sub/dir")
-	if err != nil {
-		t.Fatalf("ResolvePath: %v", err)
-	}
-	want, _ := filepath.Abs(filepath.Join(home, "sub/dir"))
-	if got != want {
-		t.Errorf("ResolvePath(~/sub/dir) = %q, want %q", got, want)
-	}
-	if !filepath.IsAbs(got) {
-		t.Errorf("ResolvePath() result %q is not absolute", got)
-	}
-}
-
 // TestEnsureDirCreatesAndIsIdempotent verifies EnsureDir creates a directory
 // that is writable, and that calling it again on an already-existing
 // directory does not error (called on every startup, per PART 7).
