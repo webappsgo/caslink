@@ -72,7 +72,7 @@ body {
 
 /* ---- Typography ------------------------------------------------------- */
 h1,h2,h3,h4,h5,h6 { line-height: 1.3; margin-bottom: .5rem; }
-h1 { font-size: 1.75rem; }
+h1 { font-size: 1.5rem; }
 h2 { font-size: 1.375rem; }
 h3 { font-size: 1.125rem; }
 
@@ -111,7 +111,7 @@ pre {
 .container-sm { max-width: 480px; }
 .container-md { max-width: 720px; }
 
-main { flex: 1; padding: 2rem 1rem; }
+main { flex: 1; padding: 1rem .75rem; }
 
 /* ---- Navigation ------------------------------------------------------- */
 .nav {
@@ -128,7 +128,7 @@ main { flex: 1; padding: 2rem 1rem; }
   font-size: 1.125rem;
   color: var(--link);
 }
-.nav-links { display: flex; gap: .75rem; align-items: center; flex: 1; }
+.nav-links { display: flex; gap: .5rem; align-items: center; flex: 1; }
 .nav-links a { color: var(--text-muted); font-size: .875rem; }
 .nav-links a:hover, .nav-links a.active { color: var(--text); }
 .nav-actions { display: flex; gap: .5rem; align-items: center; }
@@ -138,7 +138,7 @@ main { flex: 1; padding: 2rem 1rem; }
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 1.5rem;
+  padding: 1rem;
   box-shadow: var(--shadow);
 }
 .card-title { margin-bottom: 1rem; }
@@ -323,10 +323,10 @@ tr:hover td { background: rgba(255,255,255,.02); }
   color: var(--text-muted);
 }
 
-/* ---- Responsive ------------------------------------------------------- */
-@media (max-width: 640px) {
-  h1 { font-size: 1.5rem; }
-  .nav-links { gap: .5rem; }
-  .card { padding: 1rem; }
-  main { padding: 1rem .75rem; }
+/* ---- Responsive (mobile-first: base = mobile, scale up at min-width) --- */
+@media (min-width: 768px) {
+  h1 { font-size: 1.75rem; }
+  .nav-links { gap: .75rem; }
+  .card { padding: 1.5rem; }
+  main { padding: 2rem 1rem; }
 }
