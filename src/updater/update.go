@@ -118,6 +118,12 @@ func DoUpdateFor(ctx context.Context, release *Release, assetName string) error 
 	if downloadURL == "" {
 		return fmt.Errorf("no binary found for %s/%s in release %s", runtime.GOOS, runtime.GOARCH, release.TagName)
 	}
+	// Checksum verification is MANDATORY (PART 23): refuse to replace the running
+	// binary when the release ships no checksum asset — an update we cannot verify
+	// is never installed.
+	if checksumURL == "" {
+		return fmt.Errorf("no checksum asset found for %s - refusing unverified update", assetName)
+	}
 
 	tmpFile, err := os.CreateTemp(os.TempDir(), "caslink-update-*")
 	if err != nil {
@@ -148,11 +154,9 @@ func DoUpdateFor(ctx context.Context, release *Release, assetName string) error 
 	}
 	tmpFile.Close()
 
-	// Verify checksum if available
-	if checksumURL != "" {
-		if err := verifyChecksumFromURL(ctx, client, tmpPath, assetName, checksumURL); err != nil {
-			return fmt.Errorf("checksum verification failed: %w", err)
-		}
+	// Checksum verification is mandatory — checksumURL is guaranteed non-empty above.
+	if err := verifyChecksumFromURL(ctx, client, tmpPath, assetName, checksumURL); err != nil {
+		return fmt.Errorf("checksum verification failed: %w", err)
 	}
 
 	if runtime.GOOS != "windows" {

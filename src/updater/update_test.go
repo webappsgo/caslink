@@ -404,11 +404,32 @@ func TestDoUpdateFor_DownloadNetworkError(t *testing.T) {
 		Assets: []Asset{
 			// Port 0 is never reachable.
 			{Name: "caslink-linux-amd64", BrowserDownloadURL: "http://127.0.0.1:0/binary"},
+			// A checksum asset must be present or DoUpdateFor refuses before
+			// attempting the download; the download error is what we test here.
+			{Name: "checksums.txt", BrowserDownloadURL: "http://127.0.0.1:0/checksums.txt"},
 		},
 	}
 	err := DoUpdateFor(t.Context(), release, "caslink-linux-amd64")
 	if err == nil {
 		t.Fatal("expected network error for unreachable download URL")
+	}
+}
+
+// TestDoUpdateFor_NoChecksumAssetRefuses verifies the mandatory-checksum
+// contract (PART 23): a release that ships a binary but no checksums asset is
+// refused before any download, never installed unverified.
+func TestDoUpdateFor_NoChecksumAssetRefuses(t *testing.T) {
+	release := &Release{
+		Assets: []Asset{
+			{Name: "caslink-linux-amd64", BrowserDownloadURL: "http://127.0.0.1:0/binary"},
+		},
+	}
+	err := DoUpdateFor(t.Context(), release, "caslink-linux-amd64")
+	if err == nil {
+		t.Fatal("expected refusal when no checksum asset is present")
+	}
+	if !strings.Contains(err.Error(), "refusing unverified update") {
+		t.Errorf("unexpected error: %v", err)
 	}
 }
 
@@ -424,6 +445,9 @@ func TestDoUpdateFor_DownloadNon200Status(t *testing.T) {
 	release := &Release{
 		Assets: []Asset{
 			{Name: "caslink-linux-amd64", BrowserDownloadURL: srv.URL},
+			// Present so DoUpdateFor proceeds to the download step; the binary
+			// fetch returns 404 before the checksum is ever fetched.
+			{Name: "checksums.txt", BrowserDownloadURL: srv.URL},
 		},
 	}
 	err := DoUpdateFor(t.Context(), release, "caslink-linux-amd64")
