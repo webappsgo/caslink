@@ -59,6 +59,9 @@ type Server struct {
 	configDir      string             // kept for TorManager (port not known until Start)
 	dataDir        string             // kept for TorManager
 
+	trustedProxies   *config.TrustedProxyResolver // X-Forwarded-* trust gate, hostname-aware
+	stopProxyRefresh context.CancelFunc           // cancels the trusted-proxy refresh loop
+
 	// Request counters for health endpoint (AI.md PART 13 stats fields).
 	// reqTotal is incremented on each request; activeConn is a live gauge.
 	// reqWindow is a 1440-bucket ring (one per minute) for the 24h window.
@@ -199,6 +202,7 @@ func New(cfg *config.Config, appMode mode.Mode, dataDir, logDir, pidFile string,
 		geoip:          geoSvc,
 		configDir:      configDir,
 		dataDir:        dataDir,
+		trustedProxies: config.NewTrustedProxyResolver(cfg.Server.TrustedProxies.Additional),
 		Version:        version,
 		CommitID:       commitID,
 		BuildDate:      buildDate,
@@ -219,7 +223,7 @@ func (s *Server) setupMiddleware() {
 	s.router.Use(middleware.RequestID)
 
 	// Real IP middleware — only trusts X-Forwarded-* from configured proxies
-	s.router.Use(realIPMiddleware(s.config.Server.TrustedProxies.Additional))
+	s.router.Use(realIPMiddleware(s.trustedProxies))
 
 	// Access logging middleware. Spec PART 11 wants structured access
 	// logs in both development and production for the audit trail.
@@ -1139,6 +1143,13 @@ func (s *Server) Start(address string, port int, afterBind func() error) error {
 	// Start scheduler
 	s.scheduler.Start()
 
+	// Resolve any hostname entries in trusted_proxies.additional on a
+	// background cycle (config-rules.md: refreshed every 5 min). Runs an
+	// initial resolution immediately, then re-resolves until shutdown.
+	proxyCtx, cancelProxy := context.WithCancel(context.Background())
+	s.stopProxyRefresh = cancelProxy
+	go s.trustedProxies.Start(proxyCtx, config.TrustedProxyRefreshInterval)
+
 	// Serve on the already-bound listener (bound as root above, served as the
 	// dropped user).
 	go func() {
@@ -1183,6 +1194,11 @@ func (s *Server) Start(address string, port int, afterBind func() error) error {
 		if err := s.torManager.Stop(); err != nil {
 			log.Printf("[tor] stop error: %v", err)
 		}
+	}
+
+	// Stop the trusted-proxy hostname refresh loop.
+	if s.stopProxyRefresh != nil {
+		s.stopProxyRefresh()
 	}
 
 	// Stop scheduler

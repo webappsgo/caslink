@@ -362,12 +362,13 @@ func RateLimitMiddleware(rl *RateLimiter) func(http.Handler) http.Handler {
 // For an untrusted direct peer the forwarded headers are attacker-controlled,
 // so they are stripped here — the single chokepoint — before any downstream
 // consumer (rate limiter, access log, blocklist, GeoIP, account lockout,
-// audit trail) can be spoofed by a forged header. trustedAdditional is the
-// configured server.trusted_proxies.additional list.
-func realIPMiddleware(trustedAdditional []string) func(http.Handler) http.Handler {
+// audit trail) can be spoofed by a forged header. resolver evaluates the gate
+// for the configured server.trusted_proxies.additional list, including any
+// hostname entries it resolves on a background cycle.
+func realIPMiddleware(resolver *config.TrustedProxyResolver) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if config.IsTrustedProxy(config.PeerIP(r.RemoteAddr), trustedAdditional) {
+			if resolver.IsTrusted(config.PeerIP(r.RemoteAddr)) {
 				if ip := realIP(r); ip != "" {
 					r.RemoteAddr = ip
 				}
