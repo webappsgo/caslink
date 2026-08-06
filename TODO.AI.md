@@ -22,9 +22,14 @@ fixed inline and committed separately.
   `script-src` tightened from `'self' 'unsafe-inline'` back to `'self'`;
   `style-src` keeps `'unsafe-inline'` per AI.md line 15621. Recovery keys now
   ship as a non-executable `<script type="application/json">` data island.
-  Remaining sub-item (deferred): replace the native `window.confirm` used by
-  `form[data-confirm]` with a custom `<dialog>` modal per frontend-rules
-  ("NEVER use alert()/confirm()/prompt()"). Needs browser verification.
+  The native `window.confirm` used by `form[data-confirm]` is now replaced by
+  a shared native `<dialog>` confirm modal (app.js `askConfirm` +
+  `.modal-confirm` styles in app.css), matching AI.md's canonical
+  `confirmDelete` pattern (showModal/close/returnValue) with role="dialog",
+  aria-modal, focus-return, Escape/backdrop, one-modal-at-a-time, and a
+  no-<dialog>/no-JS graceful fallthrough (server still authorizes). This
+  removes the last browser-default JS UI call; frontend-rules
+  ("NEVER use alert()/confirm()/prompt()") is now satisfied. DONE.
 
 - PART 36 full custom-domains build: AddDomain now enforces limits, reserved,
   and blocked_patterns; VerifyDomain now performs real TXT ownership-token

@@ -119,13 +119,74 @@
   // ---- Confirm-before-submit forms -----------------------------------
   // Progressive enhancement only: without JS the form just submits
   // directly (server still enforces the action), per AI.md PART 16.
+  // A single shared native <dialog> replaces window.confirm() so we never
+  // use browser-default JS UI (frontend-rules: never alert/confirm/prompt);
+  // <dialog>.showModal() also gives focus trap, Escape, backdrop, and
+  // focus-return for free, and only ever shows one modal at a time.
+
+  var confirmDialog = null;
+
+  function buildConfirmDialog() {
+    var dlg = document.createElement('dialog');
+    dlg.className = 'modal-confirm';
+    dlg.setAttribute('role', 'dialog');
+    dlg.setAttribute('aria-modal', 'true');
+    dlg.setAttribute('aria-labelledby', 'modal-confirm-msg');
+    dlg.innerHTML =
+      '<form method="dialog" class="modal-confirm-body">' +
+      '<p id="modal-confirm-msg" class="modal-confirm-msg"></p>' +
+      '<div class="modal-confirm-actions">' +
+      '<button type="submit" value="cancel" class="btn btn-outline btn-sm">Cancel</button>' +
+      '<button type="submit" value="confirm" class="btn btn-danger btn-sm" data-confirm-ok>Confirm</button>' +
+      '</div></form>';
+    document.body.appendChild(dlg);
+    return dlg;
+  }
+
+  function askConfirm(message, onConfirm) {
+    if (!confirmDialog) {
+      confirmDialog = buildConfirmDialog();
+    }
+    if (typeof confirmDialog.showModal !== 'function') {
+      // Very old engine without <dialog>: submit rather than block the user
+      // (the server still authorizes the action either way).
+      onConfirm();
+      return;
+    }
+    confirmDialog.querySelector('.modal-confirm-msg').textContent =
+      message || 'Are you sure?';
+    var okBtn = confirmDialog.querySelector('[data-confirm-ok]');
+
+    function onClose() {
+      confirmDialog.removeEventListener('close', onClose);
+      if (confirmDialog.returnValue === 'confirm') {
+        onConfirm();
+      }
+    }
+    confirmDialog.addEventListener('close', onClose);
+    confirmDialog.returnValue = 'cancel';
+    confirmDialog.showModal();
+    if (okBtn) {
+      okBtn.focus();
+    }
+  }
 
   document.addEventListener('DOMContentLoaded', function () {
     document.querySelectorAll('form[data-confirm]').forEach(function (form) {
       form.addEventListener('submit', function (e) {
-        if (!window.confirm(form.getAttribute('data-confirm'))) {
-          e.preventDefault();
+        if (form.hasAttribute('data-confirmed')) {
+          form.removeAttribute('data-confirmed');
+          return;
         }
+        e.preventDefault();
+        askConfirm(form.getAttribute('data-confirm'), function () {
+          form.setAttribute('data-confirmed', '');
+          if (typeof form.requestSubmit === 'function') {
+            form.requestSubmit();
+          } else {
+            form.submit();
+          }
+        });
       });
     });
   });

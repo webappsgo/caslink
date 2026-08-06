@@ -323,6 +323,35 @@ tr:hover td { background: rgba(255,255,255,.02); }
   color: var(--text-muted);
 }
 
+/* ---- Confirm modal (native <dialog>) ---------------------------------- */
+.modal-confirm {
+  max-width: 22rem;
+  width: calc(100% - 2rem);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+.modal-confirm::backdrop {
+  background: rgba(0, 0, 0, .5);
+}
+.modal-confirm-body {
+  padding: 1.25rem;
+}
+.modal-confirm-msg {
+  margin: 0 0 1.25rem;
+  font-size: .9375rem;
+  line-height: 1.45;
+  overflow-wrap: break-word;
+}
+.modal-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: .5rem;
+}
+
 /* ---- Responsive (mobile-first: base = mobile, scale up at min-width) --- */
 @media (min-width: 768px) {
   h1 { font-size: 1.75rem; }
