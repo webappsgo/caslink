@@ -369,10 +369,14 @@ func (h *PagesHandler) Consent(w http.ResponseWriter, r *http.Request) {
 // with a single "/") from the "redirect" form field, falling back to "/".
 func safeConsentRedirect(r *http.Request) string {
 	dest := r.FormValue("redirect")
-	if strings.HasPrefix(dest, "/") && !strings.HasPrefix(dest, "//") {
-		return dest
+	if strings.ContainsAny(dest, "\\\r\n") {
+		return "/"
 	}
-	return "/"
+	u, err := url.Parse(dest)
+	if err != nil || u.Scheme != "" || u.Host != "" || !strings.HasPrefix(u.Path, "/") || strings.HasPrefix(u.Path, "//") {
+		return "/"
+	}
+	return u.RequestURI()
 }
 
 // Terms renders the /server/terms page.

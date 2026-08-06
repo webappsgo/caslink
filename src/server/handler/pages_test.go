@@ -346,6 +346,41 @@ func TestConsentRejectsProtocolRelativeRedirect(t *testing.T) {
 	}
 }
 
+func TestConsentRejectsBackslashAndControlCharRedirect(t *testing.T) {
+	h := newPagesTestHandler(t)
+
+	cases := []string{
+		`/\evil.example`,
+		"/ok\r\nSet-Cookie: pwned=1",
+		"/ok\nLocation: https://evil.example",
+	}
+	for _, dest := range cases {
+		form := url.Values{"choice": {"accept"}, "redirect": {dest}}
+		r := httptest.NewRequest(http.MethodPost, "/server/consent", strings.NewReader(form.Encode()))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		w := httptest.NewRecorder()
+		h.Consent(w, r)
+
+		if loc := w.Header().Get("Location"); loc != "/" {
+			t.Errorf("redirect %q: expected rejection in favor of /, got %q", dest, loc)
+		}
+	}
+}
+
+func TestConsentAllowsPlainLocalPathRedirect(t *testing.T) {
+	h := newPagesTestHandler(t)
+
+	form := url.Values{"choice": {"accept"}, "redirect": {"/users/settings?tab=privacy"}}
+	r := httptest.NewRequest(http.MethodPost, "/server/consent", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.Consent(w, r)
+
+	if loc := w.Header().Get("Location"); loc != "/users/settings?tab=privacy" {
+		t.Errorf("expected local path with query preserved, got %q", loc)
+	}
+}
+
 // ---- newPageData consent view ----
 
 func TestNewPageDataRendersBannerWhenNoConsentCookie(t *testing.T) {
