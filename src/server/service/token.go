@@ -191,16 +191,20 @@ func (s *TokenService) ValidateToken(ctx context.Context, plaintext string) (*To
 	return &rec, nil
 }
 
-// ListTokens returns all tokens belonging to a given owner.
-func (s *TokenService) ListTokens(ctx context.Context, ownerID int64) ([]*TokenRecord, error) {
+// ListTokens returns all tokens belonging to a given owner. Scoped by
+// owner_type as well as owner_id: admin, user, and org IDs share one numeric
+// space in the tokens table, so filtering on owner_id alone would leak another
+// owner type's tokens when the IDs happen to collide (AI.md PART 11 keys the
+// table on owner_type+owner_id).
+func (s *TokenService) ListTokens(ctx context.Context, ownerType string, ownerID int64) ([]*TokenRecord, error) {
 	ctx2, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	rows, err := s.store.UsersDB.QueryContext(ctx2,
 		`SELECT id, owner_type, owner_id, name, scope, expires_at, created_at, last_used_at,
 		        COALESCE(token_prefix, '') as token_prefix
-		 FROM tokens WHERE owner_id = ? ORDER BY created_at DESC`,
-		ownerID,
+		 FROM tokens WHERE owner_type = ? AND owner_id = ? ORDER BY created_at DESC`,
+		ownerType, ownerID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list tokens: %w", err)
@@ -241,12 +245,14 @@ func (s *TokenService) ListTokens(ctx context.Context, ownerID int64) ([]*TokenR
 }
 
 // RevokeToken deletes a token, verifying it belongs to the given owner.
-func (s *TokenService) RevokeToken(ctx context.Context, tokenID, ownerID int64) error {
+// Scoped by owner_type as well as owner_id so one owner type can never revoke
+// another's token when their numeric IDs collide (see ListTokens).
+func (s *TokenService) RevokeToken(ctx context.Context, tokenID int64, ownerType string, ownerID int64) error {
 	ctx2, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	res, err := s.store.UsersDB.ExecContext(ctx2,
-		`DELETE FROM tokens WHERE id = ? AND owner_id = ?`, tokenID, ownerID,
+		`DELETE FROM tokens WHERE id = ? AND owner_type = ? AND owner_id = ?`, tokenID, ownerType, ownerID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to revoke token: %w", err)

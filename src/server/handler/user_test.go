@@ -201,7 +201,7 @@ func TestTokensPostCreateSuccess(t *testing.T) {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	tokens, err := tokenService.ListTokens(context.Background(), user.ID)
+	tokens, err := tokenService.ListTokens(context.Background(), "user", user.ID)
 	if err != nil {
 		t.Fatalf("ListTokens failed: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestTokensPostRevokeSuccessRedirects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed CreateToken failed: %v", err)
 	}
-	tokens, _ := tokenService.ListTokens(context.Background(), user.ID)
+	tokens, _ := tokenService.ListTokens(context.Background(), "user", user.ID)
 	if len(tokens) != 1 {
 		t.Fatalf("expected 1 seeded token, got %d", len(tokens))
 	}
@@ -256,7 +256,7 @@ func TestTokensPostRevokeSuccessRedirects(t *testing.T) {
 		t.Errorf("expected redirect to /users/tokens, got %q", loc)
 	}
 
-	remaining, _ := tokenService.ListTokens(context.Background(), user.ID)
+	remaining, _ := tokenService.ListTokens(context.Background(), "user", user.ID)
 	if len(remaining) != 0 {
 		t.Errorf("expected token to be revoked, still have %d", len(remaining))
 	}
@@ -271,7 +271,7 @@ func TestTokensPostRevokeWrongOwnerFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed CreateToken failed: %v", err)
 	}
-	tokens, _ := tokenService.ListTokens(context.Background(), owner.ID)
+	tokens, _ := tokenService.ListTokens(context.Background(), "user", owner.ID)
 
 	form := "action=revoke&token_id=" + itoa64(tokens[0].ID)
 	r := httptest.NewRequest(http.MethodPost, "/users/tokens", strings.NewReader(form))
@@ -286,7 +286,7 @@ func TestTokensPostRevokeWrongOwnerFails(t *testing.T) {
 		t.Fatalf("expected 200 (revoke failed, form re-rendered), got %d", w.Code)
 	}
 
-	remaining, _ := tokenService.ListTokens(context.Background(), owner.ID)
+	remaining, _ := tokenService.ListTokens(context.Background(), "user", owner.ID)
 	if len(remaining) != 1 {
 		t.Errorf("expected owner's token to survive a cross-owner revoke attempt, got %d remaining", len(remaining))
 	}
@@ -515,7 +515,7 @@ func TestAPICreateTokenSuccess(t *testing.T) {
 		t.Error("expected a non-empty plaintext token in the response")
 	}
 
-	tokens, _ := tokenService.ListTokens(context.Background(), user.ID)
+	tokens, _ := tokenService.ListTokens(context.Background(), "user", user.ID)
 	if len(tokens) != 1 {
 		t.Fatalf("expected 1 stored token, got %d", len(tokens))
 	}
@@ -563,7 +563,7 @@ func TestAPIRevokeTokenSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed CreateToken failed: %v", err)
 	}
-	tokens, _ := tokenService.ListTokens(context.Background(), user.ID)
+	tokens, _ := tokenService.ListTokens(context.Background(), "user", user.ID)
 
 	r := withChiURLParam(withUser(httptest.NewRequest(http.MethodDelete, "/api/v1/users/tokens/"+itoa64(tokens[0].ID), nil), user), "id", itoa64(tokens[0].ID))
 	w := httptest.NewRecorder()
@@ -573,7 +573,7 @@ func TestAPIRevokeTokenSuccess(t *testing.T) {
 		t.Fatalf("expected 204, got %d: %s", w.Code, w.Body.String())
 	}
 
-	remaining, _ := tokenService.ListTokens(context.Background(), user.ID)
+	remaining, _ := tokenService.ListTokens(context.Background(), "user", user.ID)
 	if len(remaining) != 0 {
 		t.Errorf("expected token to be revoked, got %d remaining", len(remaining))
 	}

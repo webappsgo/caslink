@@ -275,36 +275,87 @@ func TestConfigBackupActionRedirect(t *testing.T) {
 }
 
 func TestConfigStubActionHandlersRedirectWithoutPersisting(t *testing.T) {
-	// ConfigSecurityTokensAction and ConfigClusterAddAction are documented
-	// stubs: they parse the form and redirect, but do not yet implement real
-	// token/join-token creation. This test locks in the observed
-	// (non-crashing) behavior. (ConfigUsersInvitesAction is now fully
-	// implemented and covered by TestConfigUsersInvitesCreateListRevoke.)
+	// ConfigClusterAddAction is still a documented stub: it parses the form and
+	// redirects without implementing real join-token creation. This test locks
+	// in the observed (non-crashing) behavior. (ConfigSecurityTokensAction is
+	// now fully implemented and covered by TestConfigSecurityTokensLifecycle;
+	// ConfigUsersInvitesAction by TestConfigUsersInvitesCreateListRevoke.)
 	h, authService, _ := newAdminTestHandler(t)
 	cookie := seedAdminSession(t, h, authService)
 
-	cases := []struct {
-		name    string
-		path    string
-		handler http.HandlerFunc
-	}{
-		{"ConfigSecurityTokensAction", "/server/admin/config/security/tokens", nil},
-		{"ConfigClusterAddAction", "/server/admin/config/cluster/add", nil},
+	r := httptest.NewRequest(http.MethodPost, "/server/admin/config/cluster/add", strings.NewReader(""))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.ConfigClusterAddAction(w, r)
+	if w.Code != http.StatusFound {
+		t.Fatalf("ConfigClusterAddAction: expected 302, got %d", w.Code)
 	}
-	cases[0].handler = h.ConfigSecurityTokensAction
-	cases[1].handler = h.ConfigClusterAddAction
+}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			r := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(""))
-			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			r.AddCookie(cookie)
-			w := httptest.NewRecorder()
-			tc.handler(w, r)
-			if w.Code != http.StatusFound {
-				t.Fatalf("%s: expected 302, got %d", tc.name, w.Code)
-			}
-		})
+func TestConfigSecurityTokensLifecycle(t *testing.T) {
+	// Create → the plaintext adm_ token is shown exactly once and the token
+	// appears in the list; Revoke → it is removed. Exercises the real
+	// TokenService wiring behind the admin config pages (PART 11 / PART 17).
+	h, authService, _ := newAdminTestHandler(t)
+	cookie := seedAdminSession(t, h, authService)
+
+	// Create a token.
+	form := url.Values{"action": {"create"}, "token_name": {"ci-cd"}, "scope": {"read-write"}, "expires_in": {"168h"}}
+	r := httptest.NewRequest(http.MethodPost, "/server/admin/config/security/tokens", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.ConfigSecurityTokensAction(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("create: expected 200, got %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "adm_") {
+		t.Fatalf("create: expected plaintext adm_ token in body")
+	}
+	if !strings.Contains(body, "shown only once") {
+		t.Fatalf("create: expected one-time reveal notice in body")
+	}
+	if !strings.Contains(body, "ci-cd") {
+		t.Fatalf("create: expected token name in list")
+	}
+
+	// The listing page should show the token but never the plaintext again.
+	rl := httptest.NewRequest(http.MethodGet, "/server/admin/config/security/tokens", nil)
+	rl.AddCookie(cookie)
+	wl := httptest.NewRecorder()
+	h.ConfigSecurityTokens(wl, rl)
+	if wl.Code != http.StatusOK {
+		t.Fatalf("list: expected 200, got %d", wl.Code)
+	}
+	if strings.Contains(wl.Body.String(), "shown only once") {
+		t.Fatalf("list: plaintext reveal box must not appear on a plain GET")
+	}
+
+	// Look up the created token ID via the service to drive a revoke.
+	admin := h.getAdminFromSession(rl)
+	if admin == nil {
+		t.Fatalf("expected admin from session")
+	}
+	toks, err := h.tokenService.ListTokens(t.Context(), "admin", admin.ID)
+	if err != nil || len(toks) != 1 {
+		t.Fatalf("expected 1 token, got %d (err=%v)", len(toks), err)
+	}
+
+	// Revoke it.
+	revForm := url.Values{"action": {"revoke"}, "token_id": {strconv.FormatInt(toks[0].ID, 10)}}
+	rr := httptest.NewRequest(http.MethodPost, "/server/admin/config/security/tokens", strings.NewReader(revForm.Encode()))
+	rr.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr.AddCookie(cookie)
+	wr := httptest.NewRecorder()
+	h.ConfigSecurityTokensAction(wr, rr)
+	if wr.Code != http.StatusFound {
+		t.Fatalf("revoke: expected 302, got %d", wr.Code)
+	}
+	after, _ := h.tokenService.ListTokens(t.Context(), "admin", admin.ID)
+	if len(after) != 0 {
+		t.Fatalf("revoke: expected 0 tokens, got %d", len(after))
 	}
 }
 

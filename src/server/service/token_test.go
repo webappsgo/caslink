@@ -95,7 +95,7 @@ func TestRevokedTokenInvalid(t *testing.T) {
 	}
 
 	// Revoke
-	if err := svc.RevokeToken(ctx, rec.ID, 2); err != nil {
+	if err := svc.RevokeToken(ctx, rec.ID, "user", 2); err != nil {
 		t.Fatalf("RevokeToken failed: %v", err)
 	}
 

@@ -91,7 +91,7 @@ func (h *UserHandler) Tokens(w http.ResponseWriter, r *http.Request) {
 	}
 
 	renderPage := func(newToken string, flash *tmpl.Flash) {
-		tokens, _ := h.tokenService.ListTokens(ctx, user.ID)
+		tokens, _ := h.tokenService.ListTokens(ctx, "user", user.ID)
 		base := newPageData(h.cfg, r, "API Tokens", user)
 		base.Flash = flash
 		d := pageData{
@@ -137,7 +137,7 @@ func (h *UserHandler) Tokens(w http.ResponseWriter, r *http.Request) {
 				renderPage("", &tmpl.Flash{Type: "danger", Message: "Invalid token ID."})
 				return
 			}
-			if err := h.tokenService.RevokeToken(ctx, tokenID, user.ID); err != nil {
+			if err := h.tokenService.RevokeToken(ctx, tokenID, "user", user.ID); err != nil {
 				renderPage("", &tmpl.Flash{Type: "danger", Message: "Failed to revoke token."})
 				return
 			}
@@ -325,7 +325,7 @@ func (h *UserHandler) APIRevokeToken(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "Invalid token ID")
 		return
 	}
-	if err := h.tokenService.RevokeToken(r.Context(), tokenID, user.ID); err != nil {
+	if err := h.tokenService.RevokeToken(r.Context(), tokenID, "user", user.ID); err != nil {
 		respondError(w, http.StatusNotFound, "Token not found")
 		return
 	}
@@ -339,7 +339,7 @@ func (h *UserHandler) APITokens(w http.ResponseWriter, r *http.Request) {
 		respondError(w, 401, "authentication required")
 		return
 	}
-	tokens, err := h.tokenService.ListTokens(r.Context(), user.ID)
+	tokens, err := h.tokenService.ListTokens(r.Context(), "user", user.ID)
 	if err != nil {
 		respondError(w, 500, "failed to list tokens")
 		return

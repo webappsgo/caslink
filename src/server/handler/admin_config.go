@@ -1169,18 +1169,89 @@ func (h *AdminHandler) ConfigSecurityTokens(w http.ResponseWriter, r *http.Reque
 	if r.URL.Query().Get("revoked") == "1" {
 		flash = "Token revoked."
 	}
+	admin := h.getAdminFromSession(r)
+	if admin == nil {
+		h.adminLayout(w, r, "API Tokens", "/config/security/tokens", "", "", "Session expired.")
+		return
+	}
+	h.renderTokensPage(w, r, admin, "", flash, "")
+}
+
+// tokenExpiryOptions maps the expires_in form value to a duration. An empty or
+// unknown value means "never" (nil expiry).
+var tokenExpiryOptions = map[string]time.Duration{
+	"24h":   24 * time.Hour,
+	"168h":  7 * 24 * time.Hour,
+	"720h":  30 * 24 * time.Hour,
+	"8760h": 365 * 24 * time.Hour,
+}
+
+// renderTokensPage renders the admin API-tokens page. When newToken is
+// non-empty it is displayed once in a reveal box (the plaintext is never
+// persisted and never returned again), so create renders this page directly
+// rather than redirecting — a secret must never travel in a URL or cookie.
+func (h *AdminHandler) renderTokensPage(w http.ResponseWriter, r *http.Request, admin *service.Admin, newToken, flash, errMsg string) {
+	tokens, _ := h.tokenService.ListTokens(r.Context(), "admin", admin.ID)
+
+	reveal := ""
+	if newToken != "" {
+		reveal = fmt.Sprintf(`
+<div class="card" style="border-color:#238636">
+  <h2>New Token Created</h2>
+  <p style="color:#8b949e;font-size:14px;margin-bottom:8px">
+    Copy this token now — it is shown only once and cannot be retrieved later.
+  </p>
+  <pre style="user-select:all;word-break:break-all;background:#161b22;padding:12px;border-radius:6px"><code>%s</code></pre>
+</div>`, template.HTMLEscapeString(newToken))
+	}
+
+	rows := ""
+	for _, t := range tokens {
+		rows += fmt.Sprintf(`
+      <tr>
+        <td>%s <span class="badge badge-blue">%s</span></td>
+        <td>%s</td><td>%s</td><td>%s</td><td>%s</td>
+        <td>
+          <form method="POST" action="%s/config/security/tokens" onsubmit="return confirm('Revoke this token? Any client using it will stop working.')">
+            <input type="hidden" name="action" value="revoke">
+            <input type="hidden" name="token_id" value="%d">
+            <button type="submit" class="btn btn-danger btn-sm">Revoke</button>
+          </form>
+        </td>
+      </tr>`,
+			template.HTMLEscapeString(t.Name),
+			template.HTMLEscapeString(t.Scope),
+			template.HTMLEscapeString(t.TokenPrefix),
+			formatTokenTime(&t.CreatedAt),
+			formatTokenTime(t.ExpiresAt),
+			formatTokenTime(t.LastUsedAt),
+			h.basePath(), t.ID,
+		)
+	}
+	if rows == "" {
+		rows = `<tr><td colspan="6" style="color:#8b949e;text-align:center;padding:20px">No admin API tokens yet. Generate one above.</td></tr>`
+	}
+
 	content := fmt.Sprintf(`
-<h1>API Tokens</h1>
+<h1>API Tokens</h1>%s
 <div class="card">
   <h2>Admin API Tokens</h2>
   <p style="color:#8b949e;font-size:14px;margin-bottom:16px">
-    Bearer tokens for API access. Tokens are stored as SHA-256 hashes; raw tokens are shown once on creation.
+    Bearer tokens (adm_) for API access. Tokens are stored as SHA-256 hashes; the raw token is shown once on creation.
   </p>
   <form method="POST" action="%s/config/security/tokens">
-    <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:16px">
-      <div class="form-group" style="flex:1;margin-bottom:0">
+    <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:16px;flex-wrap:wrap">
+      <div class="form-group" style="flex:1;min-width:180px;margin-bottom:0">
         <label>Token Name / Description</label>
         <input type="text" name="token_name" placeholder="e.g. CI/CD Pipeline" required>
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label>Scope</label>
+        <select name="scope">
+          <option value="global">Global</option>
+          <option value="read-write">Read/Write</option>
+          <option value="read">Read-only</option>
+        </select>
       </div>
       <div class="form-group" style="margin-bottom:0">
         <label>Expires In</label>
@@ -1197,25 +1268,73 @@ func (h *AdminHandler) ConfigSecurityTokens(w http.ResponseWriter, r *http.Reque
     </div>
   </form>
   <table>
-    <thead><tr><th>Name</th><th>Created</th><th>Expires</th><th>Last Used</th><th>Actions</th></tr></thead>
-    <tbody>
-      <tr><td colspan="5" style="color:#8b949e;text-align:center;padding:20px">
-        No admin API tokens yet. Generate one above.
-      </td></tr>
-    </tbody>
+    <thead><tr><th>Name</th><th>Prefix</th><th>Created</th><th>Expires</th><th>Last Used</th><th>Actions</th></tr></thead>
+    <tbody>%s</tbody>
   </table>
-</div>`, h.basePath())
-	h.adminLayout(w, r, "API Tokens", "/config/security/tokens", template.HTML(content), flash, "")
+</div>`, reveal, h.basePath(), rows)
+	h.adminLayout(w, r, "API Tokens", "/config/security/tokens", template.HTML(content), flash, errMsg)
+}
+
+// formatTokenTime renders a token timestamp for display, or "Never" for nil.
+func formatTokenTime(t *time.Time) string {
+	if t == nil || t.IsZero() {
+		return "Never"
+	}
+	return t.UTC().Format("2006-01-02 15:04 UTC")
 }
 
 // ConfigSecurityTokensAction handles POST /server/{adminPath}/config/security/tokens
 func (h *AdminHandler) ConfigSecurityTokensAction(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		h.adminLayout(w, r, "API Tokens", "/config/security/tokens", "", "", "Invalid request.")
+	admin := h.getAdminFromSession(r)
+	if admin == nil {
+		h.adminLayout(w, r, "API Tokens", "/config/security/tokens", "", "", "Session expired.")
 		return
 	}
-	// Token generation handled by the auth service; redirect back with notice.
-	http.Redirect(w, r, h.basePath()+"/config/security/tokens", http.StatusFound)
+	if err := r.ParseForm(); err != nil {
+		h.renderTokensPage(w, r, admin, "", "", "Invalid request.")
+		return
+	}
+
+	if r.FormValue("action") == "revoke" {
+		tokenID, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("token_id")), 10, 64)
+		if err != nil {
+			h.renderTokensPage(w, r, admin, "", "", "Invalid token ID.")
+			return
+		}
+		if err := h.tokenService.RevokeToken(r.Context(), tokenID, "admin", admin.ID); err != nil {
+			h.renderTokensPage(w, r, admin, "", "", "Token not found.")
+			return
+		}
+		id := admin.ID
+		h.recordAudit(r, &id, "token.revoke", fmt.Sprintf("token #%d", tokenID), "admin API token revoked")
+		http.Redirect(w, r, h.basePath()+"/config/security/tokens?revoked=1", http.StatusFound)
+		return
+	}
+
+	name := strings.TrimSpace(r.FormValue("token_name"))
+	if name == "" {
+		h.renderTokensPage(w, r, admin, "", "", "Token name is required.")
+		return
+	}
+	scope := strings.TrimSpace(r.FormValue("scope"))
+	var scopes []string
+	if scope != "" {
+		scopes = []string{scope}
+	}
+	var expiresAt *time.Time
+	if d, ok := tokenExpiryOptions[r.FormValue("expires_in")]; ok {
+		t := time.Now().Add(d)
+		expiresAt = &t
+	}
+
+	plaintext, err := h.tokenService.CreateToken(r.Context(), admin.ID, "admin", name, scopes, expiresAt)
+	if err != nil {
+		h.renderTokensPage(w, r, admin, "", "", "Failed to create token: a token with that name may already exist.")
+		return
+	}
+	id := admin.ID
+	h.recordAudit(r, &id, "token.create", "admin API token", "admin API token created: "+name)
+	h.renderTokensPage(w, r, admin, plaintext, "Token created.", "")
 }
 
 // --------------------------------------------------------------------------
