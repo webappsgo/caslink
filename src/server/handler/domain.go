@@ -3,8 +3,10 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -18,14 +20,16 @@ type DomainHandler struct {
 	domainService *service.DomainService
 	authService   *service.AuthService
 	orgService    *service.OrgService
+	auditService  *service.AuditService
 }
 
 // NewDomainHandler creates a new domain handler
-func NewDomainHandler(domainService *service.DomainService, authService *service.AuthService, orgService *service.OrgService) *DomainHandler {
+func NewDomainHandler(domainService *service.DomainService, authService *service.AuthService, orgService *service.OrgService, auditService *service.AuditService) *DomainHandler {
 	return &DomainHandler{
 		domainService: domainService,
 		authService:   authService,
 		orgService:    orgService,
+		auditService:  auditService,
 	}
 }
 
@@ -451,5 +455,130 @@ func (h *DomainHandler) APIVerifyOrgDomain(w http.ResponseWriter, r *http.Reques
 	}
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"message": fmt.Sprintf("verification triggered for %s", domainName),
+	})
+}
+
+// adminActorID returns a pointer to the acting admin's numeric ID, resolved
+// from the admin-scoped (adm_) bearer token the RequireBearerAdmin gate has
+// already validated. Nil when no bearer record is present (defensive only).
+func adminActorID(r *http.Request) *int64 {
+	rec, ok := getBearerFromRequest(r)
+	if !ok {
+		return nil
+	}
+	id := rec.OwnerID
+	return &id
+}
+
+// recordAdminAudit writes a best-effort admin audit-log entry for a domain
+// action. The domain custom_domain_audit trail is written by the service
+// layer; this adds the server-wide admin audit record (append-only audit.log).
+func (h *DomainHandler) recordAdminAudit(r *http.Request, action, resource, details string) {
+	if h.auditService == nil {
+		return
+	}
+	_ = h.auditService.RecordEvent(r.Context(), adminActorID(r), "admin", action, resource, details, realClientIP(r), r.UserAgent())
+}
+
+// domainStatusFromError maps a domain-service error to the correct HTTP status.
+func domainStatusFromError(err error) int {
+	if errors.Is(err, model.ErrDomainNotFound) {
+		return http.StatusNotFound
+	}
+	return http.StatusBadRequest
+}
+
+// APIAdminListDomains — GET /api/v1/server/{admin_path}/config/domains
+// Lists every custom domain across all owners, paginated (default 250).
+func (h *DomainHandler) APIAdminListDomains(w http.ResponseWriter, r *http.Request) {
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	if page < 1 {
+		page = 1
+	}
+	limit := 250
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	domains, total, err := h.domainService.ListAllDomains(r.Context(), page, limit)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load domains")
+		return
+	}
+	if domains == nil {
+		domains = []*service.CustomDomain{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(APIResponse{
+		OK:         true,
+		Data:       domains,
+		Pagination: NewPagination(page, limit, total),
+	})
+}
+
+// APIAdminGetDomain — GET .../config/domains/{domain}
+func (h *DomainHandler) APIAdminGetDomain(w http.ResponseWriter, r *http.Request) {
+	domainName := chi.URLParam(r, "domain")
+	domain, err := h.domainService.GetDomainByName(r.Context(), domainName)
+	if err != nil {
+		respondError(w, domainStatusFromError(err), err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{"domain": domain})
+}
+
+// APIAdminDeleteDomain — DELETE .../config/domains/{domain}
+// Force-deletes any domain regardless of owner (cascades its audit rows).
+func (h *DomainHandler) APIAdminDeleteDomain(w http.ResponseWriter, r *http.Request) {
+	domainName := chi.URLParam(r, "domain")
+	domain, err := h.domainService.GetDomainByName(r.Context(), domainName)
+	if err != nil {
+		respondError(w, domainStatusFromError(err), err.Error())
+		return
+	}
+	if err := h.domainService.AdminDeleteDomain(r.Context(), domain.ID, adminActorID(r)); err != nil {
+		respondError(w, domainStatusFromError(err), err.Error())
+		return
+	}
+	h.recordAdminAudit(r, "domain.force_delete", "domain:"+domain.Domain, fmt.Sprintf("force-deleted %s (owner %s:%d)", domain.Domain, domain.OwnerType, domain.OwnerID))
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"message": fmt.Sprintf("domain %s deleted", domain.Domain),
+	})
+}
+
+// APIAdminSuspendDomain — POST .../config/domains/{domain}/suspend
+func (h *DomainHandler) APIAdminSuspendDomain(w http.ResponseWriter, r *http.Request) {
+	domainName := chi.URLParam(r, "domain")
+	domain, err := h.domainService.GetDomainByName(r.Context(), domainName)
+	if err != nil {
+		respondError(w, domainStatusFromError(err), err.Error())
+		return
+	}
+	if err := h.domainService.SuspendDomain(r.Context(), domain.ID, adminActorID(r)); err != nil {
+		respondError(w, domainStatusFromError(err), err.Error())
+		return
+	}
+	h.recordAdminAudit(r, "domain.suspend", "domain:"+domain.Domain, fmt.Sprintf("suspended %s", domain.Domain))
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"message": fmt.Sprintf("domain %s suspended", domain.Domain),
+	})
+}
+
+// APIAdminUnsuspendDomain — POST .../config/domains/{domain}/unsuspend
+func (h *DomainHandler) APIAdminUnsuspendDomain(w http.ResponseWriter, r *http.Request) {
+	domainName := chi.URLParam(r, "domain")
+	domain, err := h.domainService.GetDomainByName(r.Context(), domainName)
+	if err != nil {
+		respondError(w, domainStatusFromError(err), err.Error())
+		return
+	}
+	if err := h.domainService.UnsuspendDomain(r.Context(), domain.ID, adminActorID(r)); err != nil {
+		respondError(w, domainStatusFromError(err), err.Error())
+		return
+	}
+	h.recordAdminAudit(r, "domain.unsuspend", "domain:"+domain.Domain, fmt.Sprintf("unsuspended %s", domain.Domain))
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"message": fmt.Sprintf("domain %s unsuspended", domain.Domain),
 	})
 }

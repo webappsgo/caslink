@@ -368,7 +368,7 @@ func (s *Server) setupRoutes() {
 	passwordHandler := handler.NewPasswordHandler(authService, emailService, s.renderer, s.config)
 	userHandler := handler.NewUserHandler(authService, tokenService, urlService, s.renderer, s.config)
 	orgHandler := handler.NewOrgHandler(orgService, authService, inviteService, s.renderer, s.config)
-	domainHandler := handler.NewDomainHandler(domainService, authService, orgService)
+	domainHandler := handler.NewDomainHandler(domainService, authService, orgService, auditService)
 	pagesHandler := handler.NewPagesHandler(s.config, s.renderer, s.Version, s.BuildDate, func() *apktor.TorManager { return s.torManager })
 
 	// Custom domain resolver (PART 36). Registered before any route is mounted
@@ -789,6 +789,14 @@ func (s *Server) setupRoutes() {
 			ar.Patch("/config/maintenance", adminHandler.APIConfigMaintenanceSave)
 			// Network/Tor API
 			ar.Get("/config/network/tor", adminHandler.APIConfigNetworkTor)
+			// Custom-domain administration API (PART 36). Force-delete,
+			// suspend, and unsuspend act on any owner's domain; ssl/renew is
+			// deferred to the ACME issuance unit.
+			ar.Get("/config/domains", domainHandler.APIAdminListDomains)
+			ar.Get("/config/domains/{domain}", domainHandler.APIAdminGetDomain)
+			ar.Delete("/config/domains/{domain}", domainHandler.APIAdminDeleteDomain)
+			ar.Post("/config/domains/{domain}/suspend", domainHandler.APIAdminSuspendDomain)
+			ar.Post("/config/domains/{domain}/unsuspend", domainHandler.APIAdminUnsuspendDomain)
 		})
 
 		// URL management endpoints (require Bearer auth per spec)

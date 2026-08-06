@@ -24,7 +24,8 @@ func newDomainTestHandler(t *testing.T) (*DomainHandler, *service.OrgService, *s
 	if err != nil {
 		t.Fatalf("RegisterUser failed: %v", err)
 	}
-	return NewDomainHandler(domainService, authService, orgService), orgService, authService, user
+	auditService := service.NewAuditService(st)
+	return NewDomainHandler(domainService, authService, orgService, auditService), orgService, authService, user
 }
 
 // TestListUserDomainsUnauthenticated verifies 401 when no user is attached.
@@ -665,4 +666,135 @@ func TestAPIAddOrgDomainBearerOwnerSuccess(t *testing.T) {
 	if w.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
 	}
+}
+
+// seedUserDomain adds a domain for the given user directly through the service
+// and returns its stored name (normalized). Used by the admin-handler tests.
+func seedUserDomain(t *testing.T, h *DomainHandler, userID int64, name string) string {
+	t.Helper()
+	d, err := h.domainService.AddDomain(context.Background(), "user", userID, name)
+	if err != nil {
+		t.Fatalf("seed AddDomain(%q) failed: %v", name, err)
+	}
+	return d.Domain
+}
+
+// adminBearerReq builds a request carrying an admin-scoped bearer record and a
+// chi {domain} URL param, mirroring what RequireBearerAdmin admits at runtime.
+func adminBearerReq(method, target, domain string) *http.Request {
+	rec := &service.TokenRecord{OwnerType: "admin", OwnerID: 1}
+	r := withBearer(httptest.NewRequest(method, target, nil), rec)
+	if domain != "" {
+		r = withChiURLParam(r, "domain", domain)
+	}
+	return r
+}
+
+// TestAPIAdminListDomains verifies the admin list returns every owner's domain
+// with the canonical paginated envelope.
+func TestAPIAdminListDomains(t *testing.T) {
+	h, _, _, user := newDomainTestHandler(t)
+	seedUserDomain(t, h, user.ID, "one.example.com")
+	seedUserDomain(t, h, user.ID, "two.example.com")
+
+	r := adminBearerReq(http.MethodGet, "/api/v1/server/admin/config/domains", "")
+	w := httptest.NewRecorder()
+	h.APIAdminListDomains(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var body APIResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if !body.OK {
+		t.Errorf("expected ok:true")
+	}
+	if body.Pagination == nil || body.Pagination.Total != 2 {
+		t.Errorf("expected pagination total 2, got %+v", body.Pagination)
+	}
+}
+
+// TestAPIAdminGetDomain verifies detail lookup by name, and 404 for unknown.
+func TestAPIAdminGetDomain(t *testing.T) {
+	h, _, _, user := newDomainTestHandler(t)
+	name := seedUserDomain(t, h, user.ID, "get.example.com")
+
+	r := adminBearerReq(http.MethodGet, "/api/v1/server/admin/config/domains/"+name, name)
+	w := httptest.NewRecorder()
+	h.APIAdminGetDomain(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	r2 := adminBearerReq(http.MethodGet, "/api/v1/server/admin/config/domains/nope.example.com", "nope.example.com")
+	w2 := httptest.NewRecorder()
+	h.APIAdminGetDomain(w2, r2)
+	if w2.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for unknown domain, got %d", w2.Code)
+	}
+}
+
+// TestAPIAdminSuspendUnsuspendDomain verifies suspend then unsuspend flips the
+// stored status, and that both succeed for an admin.
+func TestAPIAdminSuspendUnsuspendDomain(t *testing.T) {
+	h, _, _, user := newDomainTestHandler(t)
+	name := seedUserDomain(t, h, user.ID, "susp.example.com")
+
+	rs := adminBearerReq(http.MethodPost, "/api/v1/server/admin/config/domains/"+name+"/suspend", name)
+	ws := httptest.NewRecorder()
+	h.APIAdminSuspendDomain(ws, rs)
+	if ws.Code != http.StatusOK {
+		t.Fatalf("suspend: expected 200, got %d: %s", ws.Code, ws.Body.String())
+	}
+	if d, err := h.domainService.GetDomainByName(context.Background(), name); err != nil || d.Status != "suspended" {
+		t.Fatalf("expected status suspended, got %v (err %v)", statusOf(d), err)
+	}
+
+	ru := adminBearerReq(http.MethodPost, "/api/v1/server/admin/config/domains/"+name+"/unsuspend", name)
+	wu := httptest.NewRecorder()
+	h.APIAdminUnsuspendDomain(wu, ru)
+	if wu.Code != http.StatusOK {
+		t.Fatalf("unsuspend: expected 200, got %d: %s", wu.Code, wu.Body.String())
+	}
+	if d, err := h.domainService.GetDomainByName(context.Background(), name); err != nil || d.Status == "suspended" {
+		t.Fatalf("expected non-suspended status after unsuspend, got %v (err %v)", statusOf(d), err)
+	}
+}
+
+// TestAPIAdminDeleteDomain verifies force-delete removes the domain (404 after).
+func TestAPIAdminDeleteDomain(t *testing.T) {
+	h, _, _, user := newDomainTestHandler(t)
+	name := seedUserDomain(t, h, user.ID, "del.example.com")
+
+	r := adminBearerReq(http.MethodDelete, "/api/v1/server/admin/config/domains/"+name, name)
+	w := httptest.NewRecorder()
+	h.APIAdminDeleteDomain(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("delete: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if _, err := h.domainService.GetDomainByName(context.Background(), name); err == nil {
+		t.Fatalf("expected domain gone after delete")
+	}
+}
+
+// TestAPIAdminSuspendDomainNotFound verifies 404 when suspending an unknown
+// domain rather than a 400 or a panic.
+func TestAPIAdminSuspendDomainNotFound(t *testing.T) {
+	h, _, _, _ := newDomainTestHandler(t)
+	r := adminBearerReq(http.MethodPost, "/api/v1/server/admin/config/domains/ghost.example.com/suspend", "ghost.example.com")
+	w := httptest.NewRecorder()
+	h.APIAdminSuspendDomain(w, r)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// statusOf is a nil-safe accessor for a domain's status in test failure text.
+func statusOf(d *service.CustomDomain) string {
+	if d == nil {
+		return "<nil>"
+	}
+	return d.Status
 }

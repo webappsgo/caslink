@@ -361,6 +361,159 @@ func (s *DomainService) getDomainByID(ctx context.Context, domainID int64) (*Cus
 	return &d, nil
 }
 
+// standardDomainColumns is the fixed SELECT column list scanned into a
+// CustomDomain, matching the scan order in scanCustomDomain and the existing
+// GetUserDomains/getDomainByID queries.
+const standardDomainColumns = `id, owner_type, owner_id, domain, is_apex, is_wildcard,
+	verification_status, verified_at, ssl_enabled, ssl_status, ssl_expires_at,
+	status, created_at, updated_at`
+
+// scanCustomDomain scans one row (from *sql.Row or *sql.Rows) into d using the
+// standardDomainColumns ordering.
+func scanCustomDomain(sc interface{ Scan(...any) error }, d *CustomDomain) error {
+	return sc.Scan(
+		&d.ID, &d.OwnerType, &d.OwnerID, &d.Domain, &d.IsApex, &d.IsWildcard,
+		&d.VerificationStatus, &d.VerifiedAt, &d.SSLEnabled, &d.SSLStatus, &d.SSLExpiresAt,
+		&d.Status, &d.CreatedAt, &d.UpdatedAt,
+	)
+}
+
+// GetDomainByName looks up any custom domain by its exact (normalized) name
+// across all owners — used by admin management. Returns model.ErrDomainNotFound
+// when no such domain exists.
+func (s *DomainService) GetDomainByName(ctx context.Context, domain string) (*CustomDomain, error) {
+	name := normalizeResolveHost(domain)
+	if name == "" {
+		return nil, model.ErrDomainNotFound
+	}
+	var d CustomDomain
+	err := scanCustomDomain(
+		s.store.UsersDB.QueryRowContext(ctx,
+			`SELECT `+standardDomainColumns+` FROM custom_domains WHERE domain = ?`, name),
+		&d,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, model.ErrDomainNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get domain: %w", err)
+	}
+	return &d, nil
+}
+
+// ListAllDomains returns one page of custom domains across every owner, newest
+// first, plus the total row count for pagination (PART 36 admin domain list).
+// page is 1-based; limit is clamped to [1,250] (PART 14 default 250).
+func (s *DomainService) ListAllDomains(ctx context.Context, page, limit int) ([]*CustomDomain, int, error) {
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 250 {
+		limit = 250
+	}
+
+	var total int
+	if err := s.store.UsersDB.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM custom_domains`).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to count domains: %w", err)
+	}
+
+	offset := (page - 1) * limit
+	rows, err := s.store.UsersDB.QueryContext(ctx,
+		`SELECT `+standardDomainColumns+` FROM custom_domains ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+		limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to list domains: %w", err)
+	}
+	defer rows.Close()
+
+	var domains []*CustomDomain
+	for rows.Next() {
+		var d CustomDomain
+		if err := scanCustomDomain(rows, &d); err != nil {
+			return nil, 0, fmt.Errorf("failed to scan domain: %w", err)
+		}
+		domains = append(domains, &d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("failed to iterate domains: %w", err)
+	}
+	return domains, total, nil
+}
+
+// logDomainAudit best-effort records a domain lifecycle event to
+// custom_domain_audit (PART 36). A write failure is swallowed so it never
+// blocks the management action itself.
+func (s *DomainService) logDomainAudit(ctx context.Context, domainID int64, action, actorType string, actorID *int64, details string) {
+	_, _ = s.store.UsersDB.ExecContext(ctx,
+		`INSERT INTO custom_domain_audit (domain_id, action, actor_type, actor_id, details, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		domainID, action, actorType, actorID, details, time.Now(),
+	)
+}
+
+// SuspendDomain marks a domain suspended (admin action). A suspended domain no
+// longer resolves (Resolve requires status='active'), and the resolve cache is
+// invalidated so the change takes effect immediately. Returns
+// model.ErrDomainNotFound when the domain does not exist.
+func (s *DomainService) SuspendDomain(ctx context.Context, domainID int64, actorID *int64) error {
+	res, err := s.store.UsersDB.ExecContext(ctx,
+		`UPDATE custom_domains SET status = 'suspended', updated_at = ? WHERE id = ?`,
+		time.Now(), domainID)
+	if err != nil {
+		return fmt.Errorf("failed to suspend domain: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return model.ErrDomainNotFound
+	}
+	s.invalidateResolveCache()
+	s.logDomainAudit(ctx, domainID, "suspend", "admin", actorID, "")
+	return nil
+}
+
+// UnsuspendDomain lifts a suspension. The domain returns to 'active' when its
+// ownership is still verified, otherwise to 'pending' (it must re-verify before
+// it can resolve again). The resolve cache is invalidated. Returns
+// model.ErrDomainNotFound when the domain does not exist.
+func (s *DomainService) UnsuspendDomain(ctx context.Context, domainID int64, actorID *int64) error {
+	d, err := s.getDomainByID(ctx, domainID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.ErrDomainNotFound
+		}
+		return err
+	}
+	newStatus := "pending"
+	if d.VerificationStatus == "verified" {
+		newStatus = "active"
+	}
+	if _, err := s.store.UsersDB.ExecContext(ctx,
+		`UPDATE custom_domains SET status = ?, updated_at = ? WHERE id = ?`,
+		newStatus, time.Now(), domainID); err != nil {
+		return fmt.Errorf("failed to unsuspend domain: %w", err)
+	}
+	s.invalidateResolveCache()
+	s.logDomainAudit(ctx, domainID, "unsuspend", "admin", actorID, "status="+newStatus)
+	return nil
+}
+
+// AdminDeleteDomain force-deletes any custom domain (admin action). The delete
+// cascades to custom_domain_audit rows (schema ON DELETE CASCADE), and the
+// resolve cache is invalidated. Returns model.ErrDomainNotFound when the domain
+// does not exist.
+func (s *DomainService) AdminDeleteDomain(ctx context.Context, domainID int64, actorID *int64) error {
+	res, err := s.store.UsersDB.ExecContext(ctx,
+		`DELETE FROM custom_domains WHERE id = ?`, domainID)
+	if err != nil {
+		return fmt.Errorf("failed to delete domain: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return model.ErrDomainNotFound
+	}
+	s.invalidateResolveCache()
+	return nil
+}
+
 // discoverPublicIPv4 fetches the server's outbound IPv4 address from an
 // external service. It tries multiple providers in order and returns the
 // first usable address. Returns nil when all attempts fail.
