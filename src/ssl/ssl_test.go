@@ -15,12 +15,13 @@ import (
 	"time"
 )
 
-// writeSelfSignedCert generates a throwaway ECDSA self-signed certificate
-// and writes the PEM-encoded cert/key pair to certPath/keyPath, creating
+// writeSelfSignedCert generates a throwaway ECDSA self-signed certificate for
+// host and writes the PEM-encoded cert/key pair to certPath/keyPath, creating
 // any missing parent directories. notBefore/notAfter control the
 // certificate's validity window so tests can exercise expiry logic without
-// real ACME/network calls.
-func writeSelfSignedCert(t *testing.T, certPath, keyPath string, notBefore, notAfter time.Time) {
+// real ACME/network calls. host is set as both the CN and a DNS SAN so
+// DiscoverCertificate's VerifyHostname check matches.
+func writeSelfSignedCert(t *testing.T, certPath, keyPath, host string, notBefore, notAfter time.Time) {
 	t.Helper()
 
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -30,7 +31,8 @@ func writeSelfSignedCert(t *testing.T, certPath, keyPath string, notBefore, notA
 
 	tmpl := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: "test.example.invalid"},
+		Subject:      pkix.Name{CommonName: host},
+		DNSNames:     []string{host},
 		NotBefore:    notBefore,
 		NotAfter:     notAfter,
 		KeyUsage:     x509.KeyUsageDigitalSignature,
@@ -78,7 +80,7 @@ func TestLoadCertificateSuccess(t *testing.T) {
 	dir := t.TempDir()
 	certPath := filepath.Join(dir, "cert.pem")
 	keyPath := filepath.Join(dir, "key.pem")
-	writeSelfSignedCert(t, certPath, keyPath, time.Now(), time.Now().Add(90*24*time.Hour))
+	writeSelfSignedCert(t, certPath, keyPath, "test.example.invalid", time.Now(), time.Now().Add(90*24*time.Hour))
 
 	cert, err := LoadCertificate(certPath, keyPath)
 	if err != nil {
@@ -94,7 +96,7 @@ func TestLoadCertificateSuccess(t *testing.T) {
 func TestLoadCertificateMissingCert(t *testing.T) {
 	dir := t.TempDir()
 	keyPath := filepath.Join(dir, "key.pem")
-	writeSelfSignedCert(t, filepath.Join(dir, "throwaway.pem"), keyPath, time.Now(), time.Now().Add(time.Hour))
+	writeSelfSignedCert(t, filepath.Join(dir, "throwaway.pem"), keyPath, "test.example.invalid", time.Now(), time.Now().Add(time.Hour))
 
 	_, err := LoadCertificate(filepath.Join(dir, "does-not-exist.pem"), keyPath)
 	if err == nil {
@@ -107,7 +109,7 @@ func TestLoadCertificateMissingCert(t *testing.T) {
 func TestLoadCertificateMissingKey(t *testing.T) {
 	dir := t.TempDir()
 	certPath := filepath.Join(dir, "cert.pem")
-	writeSelfSignedCert(t, certPath, filepath.Join(dir, "throwaway-key.pem"), time.Now(), time.Now().Add(time.Hour))
+	writeSelfSignedCert(t, certPath, filepath.Join(dir, "throwaway-key.pem"), "test.example.invalid", time.Now(), time.Now().Add(time.Hour))
 
 	_, err := LoadCertificate(certPath, filepath.Join(dir, "does-not-exist-key.pem"))
 	if err == nil {
@@ -122,11 +124,11 @@ func TestLoadCertificateMismatchedKeyPair(t *testing.T) {
 	dir := t.TempDir()
 	certA := filepath.Join(dir, "a-cert.pem")
 	keyA := filepath.Join(dir, "a-key.pem")
-	writeSelfSignedCert(t, certA, keyA, time.Now(), time.Now().Add(time.Hour))
+	writeSelfSignedCert(t, certA, keyA, "test.example.invalid", time.Now(), time.Now().Add(time.Hour))
 
 	certB := filepath.Join(dir, "b-cert.pem")
 	keyB := filepath.Join(dir, "b-key.pem")
-	writeSelfSignedCert(t, certB, keyB, time.Now(), time.Now().Add(time.Hour))
+	writeSelfSignedCert(t, certB, keyB, "test.example.invalid", time.Now(), time.Now().Add(time.Hour))
 
 	// Pair cert A with key B — mismatched.
 	_, err := LoadCertificate(certA, keyB)
@@ -162,11 +164,11 @@ func TestAutoDetectCertificatePrefersLetsEncryptOverLocal(t *testing.T) {
 
 	leCert := filepath.Join(configDir, "ssl", "letsencrypt", fqdn, "fullchain.pem")
 	leKey := filepath.Join(configDir, "ssl", "letsencrypt", fqdn, "privkey.pem")
-	writeSelfSignedCert(t, leCert, leKey, time.Now(), time.Now().Add(time.Hour))
+	writeSelfSignedCert(t, leCert, leKey, fqdn, time.Now(), time.Now().Add(time.Hour))
 
 	localCert := filepath.Join(configDir, "ssl", "local", fqdn, "cert.pem")
 	localKey := filepath.Join(configDir, "ssl", "local", fqdn, "key.pem")
-	writeSelfSignedCert(t, localCert, localKey, time.Now(), time.Now().Add(time.Hour))
+	writeSelfSignedCert(t, localCert, localKey, fqdn, time.Now(), time.Now().Add(time.Hour))
 
 	certPath, keyPath, found := AutoDetectCertificate(fqdn, configDir)
 	if !found {
@@ -185,7 +187,7 @@ func TestAutoDetectCertificateFallsBackToLocal(t *testing.T) {
 
 	localCert := filepath.Join(configDir, "ssl", "local", fqdn, "cert.pem")
 	localKey := filepath.Join(configDir, "ssl", "local", fqdn, "key.pem")
-	writeSelfSignedCert(t, localCert, localKey, time.Now(), time.Now().Add(time.Hour))
+	writeSelfSignedCert(t, localCert, localKey, fqdn, time.Now(), time.Now().Add(time.Hour))
 
 	certPath, keyPath, found := AutoDetectCertificate(fqdn, configDir)
 	if !found {
@@ -225,7 +227,7 @@ func TestAutoDetectCertificateIsFQDNScoped(t *testing.T) {
 
 	otherCert := filepath.Join(configDir, "ssl", "letsencrypt", "other.test", "fullchain.pem")
 	otherKey := filepath.Join(configDir, "ssl", "letsencrypt", "other.test", "privkey.pem")
-	writeSelfSignedCert(t, otherCert, otherKey, time.Now(), time.Now().Add(time.Hour))
+	writeSelfSignedCert(t, otherCert, otherKey, "other.test", time.Now(), time.Now().Add(time.Hour))
 
 	_, _, found := AutoDetectCertificate("mine.test", configDir)
 	if found {
@@ -262,7 +264,7 @@ func TestCreateTLSConfigCarriesCertificateAndCipherSuites(t *testing.T) {
 	dir := t.TempDir()
 	certPath := filepath.Join(dir, "cert.pem")
 	keyPath := filepath.Join(dir, "key.pem")
-	writeSelfSignedCert(t, certPath, keyPath, time.Now(), time.Now().Add(time.Hour))
+	writeSelfSignedCert(t, certPath, keyPath, "test.example.invalid", time.Now(), time.Now().Add(time.Hour))
 
 	cert, err := LoadCertificate(certPath, keyPath)
 	if err != nil {
@@ -279,5 +281,131 @@ func TestCreateTLSConfigCarriesCertificateAndCipherSuites(t *testing.T) {
 	}
 	if len(cfg.CipherSuites) == 0 {
 		t.Error("expected a non-empty cipher suite allowlist")
+	}
+}
+
+// TestDiscoverCertificateAppSource verifies a cert under
+// {config_dir}/ssl/letsencrypt/{fqdn}/ is classified SourceApp (PART 15
+// ownership: app-managed, auto-renew).
+func TestDiscoverCertificateAppSource(t *testing.T) {
+	configDir := t.TempDir()
+	fqdn := "app.example.test"
+	cp := filepath.Join(configDir, "ssl", "letsencrypt", fqdn, "fullchain.pem")
+	kp := filepath.Join(configDir, "ssl", "letsencrypt", fqdn, "privkey.pem")
+	writeSelfSignedCert(t, cp, kp, fqdn, time.Now().Add(-time.Hour), time.Now().Add(90*24*time.Hour))
+
+	dc, ok := DiscoverCertificate(fqdn, configDir)
+	if !ok {
+		t.Fatal("DiscoverCertificate() ok = false, want true")
+	}
+	if dc.Source != SourceApp {
+		t.Errorf("Source = %v, want SourceApp", dc.Source)
+	}
+	if !dc.Source.CanAutoRenew() {
+		t.Error("app-managed certificate must be auto-renewable")
+	}
+	if dc.CertPath != cp || dc.KeyPath != kp {
+		t.Errorf("paths = (%q, %q), want (%q, %q)", dc.CertPath, dc.KeyPath, cp, kp)
+	}
+	if dc.Certificate == nil || dc.Certificate.Leaf == nil {
+		t.Error("expected a parsed certificate with a populated leaf")
+	}
+}
+
+// TestDiscoverCertificateLocalSource verifies a cert under
+// {config_dir}/ssl/local/{fqdn}/ is classified SourceLocal and is NOT
+// auto-renewable (PART 15 ownership: user-managed, manual only).
+func TestDiscoverCertificateLocalSource(t *testing.T) {
+	configDir := t.TempDir()
+	fqdn := "local.example.test"
+	cp := filepath.Join(configDir, "ssl", "local", fqdn, "cert.pem")
+	kp := filepath.Join(configDir, "ssl", "local", fqdn, "key.pem")
+	writeSelfSignedCert(t, cp, kp, fqdn, time.Now().Add(-time.Hour), time.Now().Add(90*24*time.Hour))
+
+	dc, ok := DiscoverCertificate(fqdn, configDir)
+	if !ok {
+		t.Fatal("DiscoverCertificate() ok = false, want true")
+	}
+	if dc.Source != SourceLocal {
+		t.Errorf("Source = %v, want SourceLocal", dc.Source)
+	}
+	if dc.Source.CanAutoRenew() {
+		t.Error("local certificate must NOT be auto-renewable")
+	}
+}
+
+// TestDiscoverCertificateSkipsExpired verifies an expired higher-priority cert
+// is skipped in favour of a valid lower-priority one, rather than returned.
+func TestDiscoverCertificateSkipsExpired(t *testing.T) {
+	configDir := t.TempDir()
+	fqdn := "expired.example.test"
+
+	appCert := filepath.Join(configDir, "ssl", "letsencrypt", fqdn, "fullchain.pem")
+	appKey := filepath.Join(configDir, "ssl", "letsencrypt", fqdn, "privkey.pem")
+	writeSelfSignedCert(t, appCert, appKey, fqdn, time.Now().Add(-90*24*time.Hour), time.Now().Add(-time.Hour))
+
+	localCert := filepath.Join(configDir, "ssl", "local", fqdn, "cert.pem")
+	localKey := filepath.Join(configDir, "ssl", "local", fqdn, "key.pem")
+	writeSelfSignedCert(t, localCert, localKey, fqdn, time.Now().Add(-time.Hour), time.Now().Add(90*24*time.Hour))
+
+	dc, ok := DiscoverCertificate(fqdn, configDir)
+	if !ok {
+		t.Fatal("DiscoverCertificate() ok = false, want true (should fall through to valid local cert)")
+	}
+	if dc.Source != SourceLocal {
+		t.Errorf("Source = %v, want SourceLocal (expired app cert must be skipped)", dc.Source)
+	}
+}
+
+// TestDiscoverCertificateSkipsHostnameMismatch verifies a cert whose CN/SAN
+// does not match the requested FQDN is rejected (PART 15 validation).
+func TestDiscoverCertificateSkipsHostnameMismatch(t *testing.T) {
+	configDir := t.TempDir()
+	fqdn := "wanted.example.test"
+	cp := filepath.Join(configDir, "ssl", "letsencrypt", fqdn, "fullchain.pem")
+	kp := filepath.Join(configDir, "ssl", "letsencrypt", fqdn, "privkey.pem")
+	// Certificate issued for a different host than the discovery target.
+	writeSelfSignedCert(t, cp, kp, "other.example.test", time.Now().Add(-time.Hour), time.Now().Add(90*24*time.Hour))
+
+	if _, ok := DiscoverCertificate(fqdn, configDir); ok {
+		t.Error("DiscoverCertificate() ok = true, want false on hostname mismatch")
+	}
+}
+
+// TestDiscoverCertificateNormalizesHost verifies a host carrying a port,
+// mixed case, and trailing dot still matches a cert issued for the bare
+// lowercase hostname.
+func TestDiscoverCertificateNormalizesHost(t *testing.T) {
+	configDir := t.TempDir()
+	fqdn := "norm.example.test"
+	cp := filepath.Join(configDir, "ssl", "letsencrypt", fqdn, "fullchain.pem")
+	kp := filepath.Join(configDir, "ssl", "letsencrypt", fqdn, "privkey.pem")
+	writeSelfSignedCert(t, cp, kp, fqdn, time.Now().Add(-time.Hour), time.Now().Add(90*24*time.Hour))
+
+	if _, ok := DiscoverCertificate("Norm.Example.Test.:8443", configDir); !ok {
+		t.Error("DiscoverCertificate() ok = false, want true after host normalization (case/port/trailing dot)")
+	}
+}
+
+// TestSourceRenewalOwnership pins the PART 15 ownership rules: only
+// app-managed certs auto-renew; system (certbot) and user-local never do.
+func TestSourceRenewalOwnership(t *testing.T) {
+	cases := []struct {
+		src  Source
+		auto bool
+		name string
+	}{
+		{SourceSystem, false, "system"},
+		{SourceApp, true, "app"},
+		{SourceLocal, false, "local"},
+		{SourceNone, false, "none"},
+	}
+	for _, c := range cases {
+		if got := c.src.CanAutoRenew(); got != c.auto {
+			t.Errorf("%s.CanAutoRenew() = %v, want %v", c.name, got, c.auto)
+		}
+		if got := c.src.String(); got != c.name {
+			t.Errorf("Source.String() = %q, want %q", got, c.name)
+		}
 	}
 }

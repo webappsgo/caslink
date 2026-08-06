@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -38,6 +39,7 @@ import (
 	"github.com/webappsgo/caslink/src/server/service/acmedns"
 	"github.com/webappsgo/caslink/src/server/store"
 	"github.com/webappsgo/caslink/src/server/tmpl"
+	appssl "github.com/webappsgo/caslink/src/ssl"
 	"github.com/webappsgo/caslink/src/swagger"
 	apktor "github.com/webappsgo/caslink/src/tor"
 )
@@ -61,6 +63,7 @@ type Server struct {
 	torManager     *apktor.TorManager     // non-nil when Tor binary was found at startup
 	configDir      string                 // kept for TorManager (port not known until Start)
 	dataDir        string                 // kept for TorManager
+	diskCerts      sync.Map               // host -> diskCertEntry: PART 15 disk-discovered cert memo
 
 	trustedProxies   *config.TrustedProxyResolver // X-Forwarded-* trust gate, hostname-aware
 	stopProxyRefresh context.CancelFunc           // cancels the trusted-proxy refresh loop
@@ -77,6 +80,47 @@ type Server struct {
 	Version   string
 	CommitID  string
 	BuildDate string
+}
+
+// diskCertCacheTTL bounds how long a disk-discovered certificate (or a
+// negative "none found" result) is memoised before the PART 15 lookup order is
+// re-probed. Short enough that a freshly certbot-renewed or admin-installed
+// cert is picked up promptly, long enough to avoid a stat storm per handshake.
+const diskCertCacheTTL = 5 * time.Minute
+
+// diskCertEntry memoises the result of a PART 15 disk certificate lookup for a
+// host. A nil cert means "no valid cert on disk" (negative cache).
+type diskCertEntry struct {
+	cert     *tls.Certificate
+	loadedAt time.Time
+}
+
+// diskCertFor returns a certificate discovered on disk for host using the
+// AI.md PART 15 lookup order (certbot live dirs → app-managed → user local),
+// or nil when none is found (so the caller falls through to autocert to request
+// a new one). Results are memoised for diskCertCacheTTL. A cached certificate
+// nearing expiry is re-discovered so a renewed file on disk is honoured.
+func (s *Server) diskCertFor(host string) *tls.Certificate {
+	if host == "" {
+		return nil
+	}
+	now := time.Now()
+	if v, ok := s.diskCerts.Load(host); ok {
+		if e, ok := v.(diskCertEntry); ok && now.Sub(e.loadedAt) < diskCertCacheTTL {
+			// Drop a cached cert once it is within the 7-day renewal window so
+			// a renewed on-disk file is re-read before the cache TTL lapses.
+			if e.cert == nil || e.cert.Leaf == nil || e.cert.Leaf.NotAfter.After(now.Add(7*24*time.Hour)) {
+				return e.cert
+			}
+		}
+	}
+	var cert *tls.Certificate
+	if dc, ok := appssl.DiscoverCertificate(host, s.configDir); ok {
+		cert = dc.Certificate
+		log.Printf("tls: using %s certificate for %q from %s", dc.Source, host, dc.CertPath)
+	}
+	s.diskCerts.Store(host, diskCertEntry{cert: cert, loadedAt: now})
+	return cert
 }
 
 // New creates a new server instance
@@ -128,8 +172,9 @@ func New(cfg *config.Config, appMode mode.Mode, dataDir, logDir, pidFile string,
 	)
 
 	// Initialise Let's Encrypt autocert.Manager.
-	// HTTP-01 (default) and TLS-ALPN-01 are both handled by autocert;
-	// DNS-01 is optional per AI.md PART 15 and is not implemented.
+	// HTTP-01 (default) and TLS-ALPN-01 are both handled by autocert; DNS-01
+	// (PART 36 custom domains) is handled separately by the DomainService and
+	// served at handshake time ahead of autocert.
 	// autocert.Manager.TLSConfig() includes the "acme-tls/1" ALPN protocol
 	// required for TLS-ALPN-01 challenges per RFC 8737.
 	var acmeMgr *autocert.Manager
@@ -1133,6 +1178,21 @@ func (s *Server) Start(address string, port int, afterBind func() error) error {
 	if s.acmeManager != nil &&
 		(s.config.Server.SSL.LetsEncrypt.Challenge == "tls-alpn-01" ||
 			s.config.Server.SSL.LetsEncrypt.Challenge == "") {
+		// PART 15 startup certificate discovery: log which source (if any) will
+		// serve the configured FQDN so operators can see a pre-existing certbot
+		// or user-installed cert is being honoured rather than a new LE request.
+		if s.config.Server.FQDN != "" {
+			if dc, ok := appssl.DiscoverCertificate(s.config.Server.FQDN, s.configDir); ok {
+				renew := "auto-renew"
+				if !dc.Source.CanAutoRenew() {
+					renew = "no auto-renew (managed externally)"
+				}
+				log.Printf("tls: startup found %s certificate for %q at %s — %s",
+					dc.Source, s.config.Server.FQDN, dc.CertPath, renew)
+			} else {
+				log.Printf("tls: no existing certificate for %q on disk — Let's Encrypt will be requested on first handshake", s.config.Server.FQDN)
+			}
+		}
 		// Serve app-managed DNS-01 certificates (PART 36) ahead of autocert:
 		// custom domains that configured a DNS provider have their cert stored
 		// (encrypted) in the DB, and CertificateFor returns it at handshake time.
@@ -1146,6 +1206,13 @@ func (s *Server) Start(address string, port int, afterBind func() error) error {
 				} else if cert != nil {
 					return cert, nil
 				}
+			}
+			// PART 15 certificate lookup order: serve an existing certbot /
+			// app-managed / user-local cert from disk ahead of requesting a new
+			// one via autocert. A nil result means none was found on disk, so we
+			// fall through to autocert (HTTP-01 / TLS-ALPN-01 issuance).
+			if cert := s.diskCertFor(hello.ServerName); cert != nil {
+				return cert, nil
 			}
 			if autocertGetCert != nil {
 				return autocertGetCert(hello)
