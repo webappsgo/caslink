@@ -329,6 +329,7 @@ func (s *Server) setupRoutes() {
 	auditService := service.NewAuditService(s.store)
 	s.scheduler.SetAuditService(auditService)
 	s.scheduler.SetMetrics(s.metrics)
+	s.scheduler.SetDomainService(domainService)
 
 	// Token service (needed by user handler and bearer middleware)
 	tokenService := service.NewTokenService(s.store)

@@ -198,3 +198,110 @@ func TestIsDomainVerifiedActive(t *testing.T) {
 		t.Fatal("expected unregistered domain to be ineligible")
 	}
 }
+
+// insertDomainRow inserts a custom_domains row directly (bypassing AddDomain's
+// validation) so a test can control created_at, status, and verification_status
+// precisely.
+func insertDomainRow(t *testing.T, st *store.Store, domain, verStatus, status string, createdAt time.Time) int64 {
+	t.Helper()
+	res, err := st.UsersDB.ExecContext(context.Background(),
+		`INSERT INTO custom_domains (owner_type, owner_id, domain, verification_status, verification_token, status, created_at, updated_at)
+		 VALUES ('user', 1, ?, ?, 'tok-'||?, ?, ?, ?)`,
+		domain, verStatus, domain, status, createdAt, createdAt,
+	)
+	if err != nil {
+		t.Fatalf("insert domain %q: %v", domain, err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		t.Fatalf("LastInsertId: %v", err)
+	}
+	return id
+}
+
+func countDomains(t *testing.T, st *store.Store) int {
+	t.Helper()
+	var n int
+	if err := st.UsersDB.QueryRow("SELECT COUNT(*) FROM custom_domains").Scan(&n); err != nil {
+		t.Fatalf("count domains: %v", err)
+	}
+	return n
+}
+
+func TestCleanupExpiredPendingVerifications(t *testing.T) {
+	st := newTestDomainStore(t)
+	// 1h verification window.
+	s := NewDomainService(st, config.CustomDomainsConfig{VerificationTTL: 3600})
+	ctx := context.Background()
+
+	now := time.Now()
+	old := now.Add(-2 * time.Hour) // outside the 1h window
+	fresh := now.Add(-10 * time.Minute)
+
+	expiredPending := insertDomainRow(t, st, "expired-pending.example", "pending", "pending", old)
+	insertDomainRow(t, st, "expired-failed.example", "failed", "pending", old)
+	freshPending := insertDomainRow(t, st, "fresh-pending.example", "pending", "pending", fresh)
+	activeOld := insertDomainRow(t, st, "active-old.example", "verified", "active", old)
+
+	removed, err := s.CleanupExpiredPendingVerifications(ctx)
+	if err != nil {
+		t.Fatalf("CleanupExpiredPendingVerifications: %v", err)
+	}
+	if removed != 2 {
+		t.Fatalf("removed = %d, want 2 (the two expired non-active domains)", removed)
+	}
+	if countDomains(t, st) != 2 {
+		t.Fatalf("remaining domains = %d, want 2", countDomains(t, st))
+	}
+
+	// The fresh pending and the old-but-active domains must survive.
+	for _, id := range []int64{freshPending, activeOld} {
+		var one int
+		if err := st.UsersDB.QueryRow("SELECT COUNT(*) FROM custom_domains WHERE id = ?", id).Scan(&one); err != nil {
+			t.Fatalf("survivor lookup: %v", err)
+		}
+		if one != 1 {
+			t.Errorf("domain id %d should have survived cleanup", id)
+		}
+	}
+	_ = expiredPending
+}
+
+func TestRetryPendingVerifications(t *testing.T) {
+	st := newTestDomainStore(t)
+	s := NewDomainService(st, config.CustomDomainsConfig{VerificationTTL: 3600})
+	ctx := context.Background()
+
+	now := time.Now()
+	old := now.Add(-2 * time.Hour)
+	fresh := now.Add(-10 * time.Minute)
+
+	// Only the fresh, not-yet-active domain is in the retry window.
+	freshPending := insertDomainRow(t, st, "retry-fresh.example.test", "pending", "pending", fresh)
+	insertDomainRow(t, st, "retry-expired.example.test", "pending", "pending", old)
+	insertDomainRow(t, st, "retry-active.example.test", "verified", "active", fresh)
+
+	retried, err := s.RetryPendingVerifications(ctx)
+	if err != nil {
+		t.Fatalf("RetryPendingVerifications: %v", err)
+	}
+	if retried != 1 {
+		t.Fatalf("retried = %d, want 1 (only the fresh pending domain)", retried)
+	}
+
+	// VerifyDomain ran against a domain with no real TXT record, so it must
+	// have recorded a failed check on the fresh pending row.
+	var verStatus string
+	var checkCount int
+	if err := st.UsersDB.QueryRow(
+		"SELECT verification_status, check_count FROM custom_domains WHERE id = ?", freshPending,
+	).Scan(&verStatus, &checkCount); err != nil {
+		t.Fatalf("post-retry lookup: %v", err)
+	}
+	if verStatus != "failed" {
+		t.Errorf("fresh pending verification_status = %q, want failed after unresolvable retry", verStatus)
+	}
+	if checkCount != 1 {
+		t.Errorf("fresh pending check_count = %d, want 1 after one retry", checkCount)
+	}
+}

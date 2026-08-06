@@ -74,8 +74,9 @@ type Scheduler struct {
 	retention          config.BackupRetentionConfig // applied to backupDir after a successful backup_daily run
 	version            string                       // running binary version, for update_check
 
-	auditSvc *service.AuditService // optional; nil → task runs are not audit-logged
-	metrics  *appmetrics.Metrics   // optional; nil → task runs are not recorded to Prometheus
+	auditSvc  *service.AuditService  // optional; nil → task runs are not audit-logged
+	metrics   *appmetrics.Metrics    // optional; nil → task runs are not recorded to Prometheus
+	domainSvc *service.DomainService // optional; nil → domain_verification is a no-op
 
 	updateSeenMu sync.Mutex
 	updateSeen   map[string]time.Time // release tag -> first-observed time, for update.defer_days (in-memory; resets on restart)
@@ -156,6 +157,14 @@ func (s *Scheduler) SetMetrics(m *appmetrics.Metrics) {
 	s.metrics = m
 }
 
+// SetDomainService wires the custom-domain service after construction (mirrors
+// SetAuditService/SetMetrics — server.go builds DomainService alongside the
+// other services). When nil (the default), the domain_verification task logs
+// and skips, so the scheduler stays usable in builds without custom domains.
+func (s *Scheduler) SetDomainService(d *service.DomainService) {
+	s.domainSvc = d
+}
+
 // retryPolicy returns the default (max_retries, retry_delay) from config,
 // falling back to the AI.md PART 19 "Retry Policy" defaults.
 func (s *Scheduler) retryPolicy() (int, time.Duration) {
@@ -208,6 +217,8 @@ func (s *Scheduler) addTasks() {
 			schedule: s.cfg.TorHealthCron, enabled: s.cfg.TorHealthEnabled, fn: s.checkTorHealth}),
 		noRetry(&task{id: "cluster_heartbeat", name: "Cluster Heartbeat", taskType: "local",
 			schedule: s.cfg.ClusterHeartbeatCron, enabled: s.cfg.ClusterHeartbeatEnabled, fn: s.clusterHeartbeat}),
+		withRetry(&task{id: "domain_verification", name: "Domain Verification", taskType: "global",
+			schedule: s.cfg.DomainVerificationCron, enabled: s.cfg.DomainVerificationEnabled, fn: s.verifyDomains}),
 	}
 
 	// Critical tasks are non-skippable (AI.md PART 19): they must never be
@@ -752,6 +763,35 @@ func (s *Scheduler) renewSSL(ctx context.Context) error {
 	// The ssl package tracks certs in the database and handles ACME challenges
 	// directly via the server's /.well-known/acme-challenge/ handler.
 	// When no certs are registered, this is a no-op.
+	return nil
+}
+
+// verifyDomains runs the custom-domain maintenance sweep (AI.md PART 36): it
+// re-checks pending/failed DNS-TXT ownership verifications that are still
+// inside the verification_ttl window, then deletes any that remained
+// unverified past that window. It is a no-op when the custom-domain service is
+// not wired (custom_domains disabled). Runs as a global task so only one
+// cluster node mutates the shared domain table per tick.
+func (s *Scheduler) verifyDomains(ctx context.Context) error {
+	if s.domainSvc == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
+	retried, err := s.domainSvc.RetryPendingVerifications(ctx)
+	if err != nil {
+		return fmt.Errorf("domain_verification: retry sweep: %w", err)
+	}
+
+	removed, err := s.domainSvc.CleanupExpiredPendingVerifications(ctx)
+	if err != nil {
+		return fmt.Errorf("domain_verification: cleanup sweep: %w", err)
+	}
+
+	if retried > 0 || removed > 0 {
+		log.Printf("[scheduler] domain_verification: re-checked %d pending domain(s), removed %d expired", retried, removed)
+	}
 	return nil
 }
 

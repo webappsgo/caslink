@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/webappsgo/caslink/src/config"
+	"github.com/webappsgo/caslink/src/server/service"
 	"github.com/webappsgo/caslink/src/server/store"
 	_ "modernc.org/sqlite"
 )
@@ -22,39 +23,41 @@ import (
 // addTasks() registers the full built-in task set from AI.md PART 19.
 func testConfig() config.SchedulerConfig {
 	return config.SchedulerConfig{
-		Timezone:                "UTC",
-		CatchUpWindow:           "1h",
-		MaxRetries:              3,
-		RetryDelay:              "5m",
-		SessionCleanupCron:      "@every 15m",
-		SessionCleanupEnabled:   true,
-		TokenCleanupCron:        "@every 15m",
-		TokenCleanupEnabled:     true,
-		ExpireURLsCron:          "30 2 * * *",
-		ExpireURLsEnabled:       true,
-		LogRotationCron:         "0 0 * * *",
-		LogRotationEnabled:      true,
-		BackupCron:              "0 2 * * *",
-		BackupEnabled:           true,
-		BackupHourlyCron:        "@hourly",
-		BackupHourlyEnabled:     false,
-		SSLRenewalCron:          "0 3 * * *",
-		SSLRenewalEnabled:       true,
-		GeoIPUpdateCron:         "0 3 * * 0",
-		GeoIPUpdateEnabled:      true,
-		BlocklistUpdateCron:     "0 4 * * *",
-		BlocklistUpdateEnabled:  true,
-		CVEUpdateCron:           "0 5 * * *",
-		CVEUpdateEnabled:        true,
-		UpdateCheckCron:         "0 6 * * *",
-		UpdateCheckEnabled:      true,
-		UpdateBranch:            "stable",
-		HealthcheckCron:         "@every 5m",
-		HealthcheckEnabled:      true,
-		TorHealthCron:           "@every 10m",
-		TorHealthEnabled:        true,
-		ClusterHeartbeatCron:    "@every 30s",
-		ClusterHeartbeatEnabled: true,
+		Timezone:                  "UTC",
+		CatchUpWindow:             "1h",
+		MaxRetries:                3,
+		RetryDelay:                "5m",
+		SessionCleanupCron:        "@every 15m",
+		SessionCleanupEnabled:     true,
+		TokenCleanupCron:          "@every 15m",
+		TokenCleanupEnabled:       true,
+		ExpireURLsCron:            "30 2 * * *",
+		ExpireURLsEnabled:         true,
+		LogRotationCron:           "0 0 * * *",
+		LogRotationEnabled:        true,
+		BackupCron:                "0 2 * * *",
+		BackupEnabled:             true,
+		BackupHourlyCron:          "@hourly",
+		BackupHourlyEnabled:       false,
+		SSLRenewalCron:            "0 3 * * *",
+		SSLRenewalEnabled:         true,
+		GeoIPUpdateCron:           "0 3 * * 0",
+		GeoIPUpdateEnabled:        true,
+		BlocklistUpdateCron:       "0 4 * * *",
+		BlocklistUpdateEnabled:    true,
+		CVEUpdateCron:             "0 5 * * *",
+		CVEUpdateEnabled:          true,
+		UpdateCheckCron:           "0 6 * * *",
+		UpdateCheckEnabled:        true,
+		UpdateBranch:              "stable",
+		HealthcheckCron:           "@every 5m",
+		HealthcheckEnabled:        true,
+		TorHealthCron:             "@every 10m",
+		TorHealthEnabled:          true,
+		ClusterHeartbeatCron:      "@every 30s",
+		ClusterHeartbeatEnabled:   true,
+		DomainVerificationCron:    "@every 30m",
+		DomainVerificationEnabled: true,
 	}
 }
 
@@ -102,19 +105,20 @@ func TestAddTasksRegistersAllBuiltinTasks(t *testing.T) {
 	s := newTestScheduler(t)
 	s.addTasks()
 
-	// AI.md PART 19 "Built-in Tasks (Required)" — 14 tasks total.
-	if len(s.tasks) != 14 {
-		t.Fatalf("len(tasks) = %d, want 14", len(s.tasks))
+	// AI.md PART 19 "Built-in Tasks (Required)" plus the PART 36 custom-domain
+	// verification maintenance task — 15 tasks total.
+	if len(s.tasks) != 15 {
+		t.Fatalf("len(tasks) = %d, want 15", len(s.tasks))
 	}
 
 	critical := map[string]bool{
-		"session_cleanup":    true,
-		"token_cleanup":      true,
-		"log_rotation":       true,
-		"healthcheck_self":   true,
-		"tor_health":         true,
-		"cluster_heartbeat":  true,
-		"ssl_renewal":        true,
+		"session_cleanup":   true,
+		"token_cleanup":     true,
+		"log_rotation":      true,
+		"healthcheck_self":  true,
+		"tor_health":        true,
+		"cluster_heartbeat": true,
+		"ssl_renewal":       true,
 	}
 	byID := map[string]*task{}
 	for _, tk := range s.tasks {
@@ -130,7 +134,7 @@ func TestAddTasksRegistersAllBuiltinTasks(t *testing.T) {
 	wantGlobal := map[string]bool{
 		"backup_daily": true, "backup_hourly": true, "ssl_renewal": true,
 		"geoip_update": true, "blocklist_update": true, "cve_update": true,
-		"update_check": true,
+		"update_check": true, "domain_verification": true,
 	}
 	for id, tk := range byID {
 		if wantGlobal[id] && tk.taskType != "global" {
@@ -139,6 +143,44 @@ func TestAddTasksRegistersAllBuiltinTasks(t *testing.T) {
 		if !wantGlobal[id] && tk.taskType != "local" {
 			t.Errorf("task %q taskType = %q, want local", id, tk.taskType)
 		}
+	}
+}
+
+func TestVerifyDomainsNoopWhenServiceUnset(t *testing.T) {
+	s := newTestScheduler(t)
+	// No SetDomainService call — the task must be a safe no-op.
+	if err := s.verifyDomains(context.Background()); err != nil {
+		t.Fatalf("verifyDomains with nil service: %v", err)
+	}
+}
+
+func TestVerifyDomainsCleansExpiredPending(t *testing.T) {
+	st := newTestStore(t)
+	s := New(st, "", "", "", "", "1.0.0", nil, config.SecurityConfig{}, false, config.BackupRetentionConfig{}, testConfig())
+
+	ds := service.NewDomainService(st, config.CustomDomainsConfig{VerificationTTL: 3600})
+	s.SetDomainService(ds)
+
+	ctx := context.Background()
+	old := time.Now().Add(-2 * time.Hour)
+	if _, err := st.UsersDB.ExecContext(ctx,
+		`INSERT INTO custom_domains (owner_type, owner_id, domain, verification_status, verification_token, status, created_at, updated_at)
+		 VALUES ('user', 1, 'stale.example', 'pending', 'tok', 'pending', ?, ?)`,
+		old, old,
+	); err != nil {
+		t.Fatalf("insert stale domain: %v", err)
+	}
+
+	if err := s.verifyDomains(ctx); err != nil {
+		t.Fatalf("verifyDomains: %v", err)
+	}
+
+	var n int
+	if err := st.UsersDB.QueryRow("SELECT COUNT(*) FROM custom_domains WHERE domain = 'stale.example'").Scan(&n); err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("expected stale unverified domain to be cleaned up, still present (%d)", n)
 	}
 }
 
@@ -161,6 +203,7 @@ func TestAddTasksSkipsInvalidScheduleZeroTasksRegistered(t *testing.T) {
 	cfg.HealthcheckCron = "garbage"
 	cfg.TorHealthCron = "garbage"
 	cfg.ClusterHeartbeatCron = "garbage"
+	cfg.DomainVerificationCron = "garbage"
 	s.cfg = cfg
 
 	s.addTasks()
@@ -933,8 +976,8 @@ func TestStartStopLifecycle(t *testing.T) {
 	if err := s.store.ServerDB.QueryRow(`SELECT COUNT(*) FROM scheduler_tasks`).Scan(&count); err != nil {
 		t.Fatalf("query: %v", err)
 	}
-	if count != 14 {
-		t.Errorf("scheduler_tasks rows after Start = %d, want 14", count)
+	if count != 15 {
+		t.Errorf("scheduler_tasks rows after Start = %d, want 15", count)
 	}
 	var locked int
 	if err := s.store.ServerDB.QueryRow(`SELECT COUNT(*) FROM scheduler_tasks WHERE locked_by IS NOT NULL`).Scan(&locked); err != nil {

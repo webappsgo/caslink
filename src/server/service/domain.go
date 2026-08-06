@@ -515,3 +515,81 @@ func (s *DomainService) IsDomainVerifiedActive(ctx context.Context, host string)
 	}
 	return count > 0, nil
 }
+
+// verificationTTL returns the configured verification window as a duration,
+// falling back to 24h when unset or invalid (PART 36 verification_ttl: 24h).
+func (s *DomainService) verificationTTL() time.Duration {
+	if s.cfg.VerificationTTL > 0 {
+		return time.Duration(s.cfg.VerificationTTL) * time.Second
+	}
+	return 24 * time.Hour
+}
+
+// RetryPendingVerifications re-runs DNS-TXT ownership verification for every
+// custom domain that is not yet active and whose creation is still inside the
+// verification_ttl window (PART 36 scheduled verify-retry task). Domains past
+// the window are left for CleanupExpiredPendingVerifications. It returns the
+// number of domains re-checked. Per-domain verification errors are expected
+// (DNS not yet propagated) and do not abort the sweep.
+func (s *DomainService) RetryPendingVerifications(ctx context.Context) (int, error) {
+	cutoff := time.Now().Add(-s.verificationTTL())
+
+	rows, err := s.store.UsersDB.QueryContext(ctx,
+		`SELECT id FROM custom_domains
+		 WHERE status != 'active'
+		   AND verification_status != 'verified'
+		   AND created_at >= ?
+		 ORDER BY id ASC`,
+		cutoff,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to query pending domains: %w", err)
+	}
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if scanErr := rows.Scan(&id); scanErr != nil {
+			rows.Close()
+			return 0, fmt.Errorf("failed to scan pending domain id: %w", scanErr)
+		}
+		ids = append(ids, id)
+	}
+	if closeErr := rows.Close(); closeErr != nil {
+		return 0, closeErr
+	}
+
+	for _, id := range ids {
+		// A verification failure here is normal (DNS still propagating);
+		// VerifyDomain records the failure on the row, so we swallow it and
+		// continue re-checking the rest of the batch.
+		_ = s.VerifyDomain(ctx, id)
+	}
+
+	return len(ids), nil
+}
+
+// CleanupExpiredPendingVerifications removes custom domains that never became
+// active and whose creation is older than the verification_ttl window (PART 36
+// scheduled cleanup task). Verified/active domains are never touched. It
+// returns the number of rows deleted.
+func (s *DomainService) CleanupExpiredPendingVerifications(ctx context.Context) (int, error) {
+	cutoff := time.Now().Add(-s.verificationTTL())
+
+	res, err := s.store.UsersDB.ExecContext(ctx,
+		`DELETE FROM custom_domains
+		 WHERE status != 'active'
+		   AND verification_status != 'verified'
+		   AND created_at < ?`,
+		cutoff,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to delete expired domains: %w", err)
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	return int(n), nil
+}
