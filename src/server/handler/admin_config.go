@@ -144,6 +144,7 @@ func (h *AdminHandler) adminNav(activePath string) []adminNavItem {
 		{Label: "Domains", URL: base + "/config/domains", Icon: "🌍"},
 		{Label: "Users", URL: base + "/config/users", Icon: "👥"},
 		{Label: "Invites", URL: base + "/config/users/invites", Icon: "✉️"},
+		{Label: "Org Invites", URL: base + "/config/orgs/invites", Icon: "🏢"},
 		{Label: "Moderation", URL: base + "/config/moderation/users", Icon: "🛂"},
 		{Label: "Cluster Nodes", URL: base + "/config/cluster/nodes", Icon: "🔗"},
 		{Label: "Add Node", URL: base + "/config/cluster/add", Icon: "➕"},
@@ -1841,6 +1842,163 @@ func (h *AdminHandler) ConfigUsersInvitesRevoke(w http.ResponseWriter, r *http.R
 	}
 	h.recordAudit(r, &actorID, "user_invite_revoke", fmt.Sprintf("invite:%d", id), "")
 	http.Redirect(w, r, h.basePath()+"/config/users/invites", http.StatusFound)
+}
+
+// --------------------------------------------------------------------------
+// Org Creation Invites
+// --------------------------------------------------------------------------
+
+// ConfigOrgsInvites handles GET /server/{adminPath}/config/orgs/invites
+func (h *AdminHandler) ConfigOrgsInvites(w http.ResponseWriter, r *http.Request) {
+	h.renderOrgsInvites(w, r, "", "")
+}
+
+// renderOrgsInvites renders the org-creation invite management page: a create
+// form, an optional one-time acceptance link for a just-created invite, and the
+// list of currently-active invites (PART 35 invite mode). acceptURL is the
+// single-use link shown exactly once immediately after creation.
+func (h *AdminHandler) renderOrgsInvites(w http.ResponseWriter, r *http.Request, flash, acceptURL string) {
+	invites, err := h.inviteService.ListInvitesByKind(r.Context(), service.InviteKindOrgCreation, 0)
+	if err != nil {
+		h.adminLayout(w, r, "Org Invites", "/config/orgs/invites", "", "", "Failed to load invites: "+err.Error())
+		return
+	}
+
+	created := ""
+	if acceptURL != "" {
+		esc := template.HTMLEscapeString(acceptURL)
+		created = fmt.Sprintf(`
+<div class="card" style="border-color:#238636">
+  <h2>Invite Created</h2>
+  <p style="color:#8b949e;font-size:14px;margin-bottom:12px">
+    Share this single-use link with the user who may create an organization. It is shown only once.
+  </p>
+  <input type="text" readonly value="%s" onclick="this.select()"
+         style="width:100%%;padding:10px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;font-family:monospace;word-break:break-all">
+</div>`, esc)
+	}
+
+	var rows strings.Builder
+	if len(invites) == 0 {
+		rows.WriteString(`<tr><td colspan="4" style="color:#8b949e;text-align:center;padding:20px">No active invites.</td></tr>`)
+	} else {
+		for _, inv := range invites {
+			email := inv.Email
+			if email == "" {
+				email = "(any)"
+			}
+			uses := fmt.Sprintf("%d / %d", inv.UseCount, inv.MaxUses)
+			if inv.MaxUses == 0 {
+				uses = fmt.Sprintf("%d / ∞", inv.UseCount)
+			}
+			rows.WriteString(fmt.Sprintf(`<tr>
+      <td>%s</td>
+      <td>%s</td>
+      <td>%s</td>
+      <td><form method="POST" action="%s/config/orgs/invites/%d/revoke" style="display:inline">
+        <button type="submit" class="btn btn-danger">Revoke</button></form></td>
+    </tr>`,
+				template.HTMLEscapeString(email),
+				template.HTMLEscapeString(inv.ExpiresAt.Format("2006-01-02 15:04")),
+				template.HTMLEscapeString(uses),
+				h.basePath(), inv.ID))
+		}
+	}
+
+	content := fmt.Sprintf(`
+<h1>Org Creation Invites</h1>%s
+<div class="card">
+  <h2>Create Invite</h2>
+  <form method="POST" action="%s/config/orgs/invites">
+    <div class="form-group">
+      <label>Email (optional — binds the invite to this address)</label>
+      <input type="email" name="email" placeholder="e.g. jane@example.com">
+    </div>
+    <div class="form-group">
+      <label>Expires In</label>
+      <select name="expires_in">
+        <option value="1h">1 hour</option>
+        <option value="6h">6 hours</option>
+        <option value="24h">24 hours</option>
+        <option value="48h">48 hours</option>
+        <option value="168h" selected>7 days</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Max Uses (0 = unlimited)</label>
+      <input type="number" name="max_uses" value="1" min="0">
+    </div>
+    <button type="submit" class="btn btn-primary">Generate Invite</button>
+  </form>
+</div>
+<div class="card">
+  <h2>Active Invites</h2>
+  <table>
+    <thead><tr><th>Email</th><th>Expires</th><th>Uses</th><th>Actions</th></tr></thead>
+    <tbody>
+      %s
+    </tbody>
+  </table>
+</div>`, created, h.basePath(), rows.String())
+	h.adminLayout(w, r, "Org Invites", "/config/orgs/invites", template.HTML(content), flash, "")
+}
+
+// ConfigOrgsInvitesAction handles POST /server/{adminPath}/config/orgs/invites
+func (h *AdminHandler) ConfigOrgsInvitesAction(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		h.adminLayout(w, r, "Org Invites", "/config/orgs/invites", "", "", "Invalid form data.")
+		return
+	}
+
+	email := strings.TrimSpace(r.PostFormValue("email"))
+	ttl := time.Duration(0)
+	if d, perr := time.ParseDuration(strings.TrimSpace(r.PostFormValue("expires_in"))); perr == nil {
+		ttl = d
+	}
+	maxUses := 1
+	if v, perr := strconv.Atoi(strings.TrimSpace(r.PostFormValue("max_uses"))); perr == nil {
+		maxUses = v
+	}
+
+	var createdBy int64
+	if admin := h.getAdminFromSession(r); admin != nil {
+		createdBy = admin.ID
+	}
+
+	plaintext, inv, err := h.inviteService.CreateInvite(r.Context(), service.CreateInviteParams{
+		Kind:      service.InviteKindOrgCreation,
+		Email:     email,
+		CreatedBy: createdBy,
+		TTL:       ttl,
+		MaxUses:   maxUses,
+	})
+	if err != nil {
+		h.renderOrgsInvites(w, r, "", "")
+		return
+	}
+
+	h.recordAudit(r, &createdBy, "org_invite_create", fmt.Sprintf("invite:%d", inv.ID), "kind=org_creation")
+	acceptURL := requestBaseURL(r) + "/orgs/new?invite=" + url.QueryEscape(plaintext)
+	h.renderOrgsInvites(w, r, "Invite created.", acceptURL)
+}
+
+// ConfigOrgsInvitesRevoke handles POST /server/{adminPath}/config/orgs/invites/{id}/revoke
+func (h *AdminHandler) ConfigOrgsInvitesRevoke(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		h.adminLayout(w, r, "Org Invites", "/config/orgs/invites", "", "", "Invalid invite id.")
+		return
+	}
+	if err := h.inviteService.RevokeInvite(r.Context(), id); err != nil {
+		h.adminLayout(w, r, "Org Invites", "/config/orgs/invites", "", "", "Failed to revoke invite: "+err.Error())
+		return
+	}
+	var actorID int64
+	if admin := h.getAdminFromSession(r); admin != nil {
+		actorID = admin.ID
+	}
+	h.recordAudit(r, &actorID, "org_invite_revoke", fmt.Sprintf("invite:%d", id), "")
+	http.Redirect(w, r, h.basePath()+"/config/orgs/invites", http.StatusFound)
 }
 
 // --------------------------------------------------------------------------

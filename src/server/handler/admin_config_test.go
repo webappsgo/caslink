@@ -42,6 +42,7 @@ func adminConfigGETCases() []configGETCase {
 		{"ConfigNetworkGeoIP", "/server/admin/config/network/geoip", func(h *AdminHandler) http.HandlerFunc { return h.ConfigNetworkGeoIP }},
 		{"ConfigNetworkBlocklists", "/server/admin/config/network/blocklists", func(h *AdminHandler) http.HandlerFunc { return h.ConfigNetworkBlocklists }},
 		{"ConfigUsersInvites", "/server/admin/config/users/invites", func(h *AdminHandler) http.HandlerFunc { return h.ConfigUsersInvites }},
+		{"ConfigOrgsInvites", "/server/admin/config/orgs/invites", func(h *AdminHandler) http.HandlerFunc { return h.ConfigOrgsInvites }},
 		{"ConfigModerationUsers", "/server/admin/config/moderation/users", func(h *AdminHandler) http.HandlerFunc { return h.ConfigModerationUsers }},
 		{"ConfigClusterNodes", "/server/admin/config/cluster/nodes", func(h *AdminHandler) http.HandlerFunc { return h.ConfigClusterNodes }},
 		{"ConfigClusterAdd", "/server/admin/config/cluster/add", func(h *AdminHandler) http.HandlerFunc { return h.ConfigClusterAdd }},
@@ -527,6 +528,59 @@ func TestConfigUsersInvitesCreateListRevoke(t *testing.T) {
 
 	// After revocation the active list is empty.
 	invites, err = inviteSvc.ListInvitesByKind(context.Background(), service.InviteKindUserRegistration, 0)
+	if err != nil {
+		t.Fatalf("ListInvitesByKind (post-revoke) failed: %v", err)
+	}
+	if len(invites) != 0 {
+		t.Fatalf("expected 0 active invites after revoke, got %d", len(invites))
+	}
+}
+
+// TestConfigOrgsInvitesCreateListRevoke exercises the full org-creation invite
+// management flow (PART 35 invite mode): create an invite (one-time link shown
+// once, pointing at the org-creation page), list it, then revoke it and confirm
+// it is gone.
+func TestConfigOrgsInvitesCreateListRevoke(t *testing.T) {
+	h, authService, st := newAdminTestHandler(t)
+	cookie := seedAdminSession(t, h, authService)
+	inviteSvc := service.NewInviteService(st)
+
+	// Create.
+	form := url.Values{"email": {"founder@example.com"}, "expires_in": {"24h"}, "max_uses": {"1"}}
+	r := httptest.NewRequest(http.MethodPost, "/server/admin/config/orgs/invites", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.ConfigOrgsInvitesAction(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("create invite: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "/orgs/new?invite=") {
+		t.Fatal("create invite: expected the one-time org-creation acceptance link in the response")
+	}
+
+	// It should now appear in the active list.
+	invites, err := inviteSvc.ListInvitesByKind(context.Background(), service.InviteKindOrgCreation, 0)
+	if err != nil {
+		t.Fatalf("ListInvitesByKind failed: %v", err)
+	}
+	if len(invites) != 1 {
+		t.Fatalf("expected exactly 1 active invite, got %d", len(invites))
+	}
+	inviteID := invites[0].ID
+
+	// Revoke.
+	rr := httptest.NewRequest(http.MethodPost, "/server/admin/config/orgs/invites/"+strconv.FormatInt(inviteID, 10)+"/revoke", nil)
+	rr = withChiParam(rr, "id", strconv.FormatInt(inviteID, 10))
+	rr.AddCookie(cookie)
+	wr := httptest.NewRecorder()
+	h.ConfigOrgsInvitesRevoke(wr, rr)
+	if wr.Code != http.StatusFound {
+		t.Fatalf("revoke invite: expected 302, got %d: %s", wr.Code, wr.Body.String())
+	}
+
+	// After revocation the active list is empty.
+	invites, err = inviteSvc.ListInvitesByKind(context.Background(), service.InviteKindOrgCreation, 0)
 	if err != nil {
 		t.Fatalf("ListInvitesByKind (post-revoke) failed: %v", err)
 	}
