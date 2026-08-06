@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -55,14 +56,13 @@ func (s *OrgService) CreateOrganization(ctx context.Context, userID int64, name,
 		return nil, fmt.Errorf("invalid organization slug")
 	}
 
-	// Check if slug already exists
-	var count int
-	err := s.store.UsersDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM organizations WHERE slug = ?", slug).Scan(&count)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check slug: %w", err)
-	}
-	if count > 0 {
-		return nil, fmt.Errorf("organization slug already exists")
+	// Enforce the shared username/org-slug namespace: the slug must not already
+	// exist as a username OR an org slug (AI.md "Global uniqueness").
+	if err := CheckNameAvailable(ctx, s.store, slug); err != nil {
+		if errors.Is(err, ErrNameTaken) || errors.Is(err, ErrNameReserved) {
+			return nil, fmt.Errorf("organization slug already exists")
+		}
+		return nil, err
 	}
 
 	// Insert the organization and its owner membership in a single

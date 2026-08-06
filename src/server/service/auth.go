@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -211,18 +212,19 @@ func (s *AuthService) RegisterUser(ctx context.Context, username, email, passwor
 	username = strings.ToLower(strings.TrimSpace(username))
 	email = strings.ToLower(strings.TrimSpace(email))
 
-	// Check if username already exists
-	var count int
-	err := s.store.UsersDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE username = ?", username).Scan(&count)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check username: %w", err)
-	}
-	if count > 0 {
-		return nil, fmt.Errorf("unable to complete registration")
+	// Enforce the shared username/org-slug namespace (AI.md "Global
+	// uniqueness"): the username must not already exist as a username OR an org
+	// slug. A generic error is returned to avoid account enumeration.
+	if err := CheckNameAvailable(ctx, s.store, username); err != nil {
+		if errors.Is(err, ErrNameTaken) || errors.Is(err, ErrNameReserved) {
+			return nil, fmt.Errorf("unable to complete registration")
+		}
+		return nil, err
 	}
 
 	// Check if email already exists
-	err = s.store.UsersDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE email = ?", email).Scan(&count)
+	var count int
+	err := s.store.UsersDB.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE email = ?", email).Scan(&count)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check email: %w", err)
 	}

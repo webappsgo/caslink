@@ -310,7 +310,7 @@ func TestAddOrgDomainOrgNotFound(t *testing.T) {
 func TestAddOrgDomainForbiddenForMemberRole(t *testing.T) {
 	h, orgService, authService, user := newDomainTestHandler(t)
 
-	owner, err := authService.RegisterUser(context.Background(), "owner", "owner@example.com", "correct-horse-battery-staple")
+	owner, err := authService.RegisterUser(context.Background(), "orgowner", "owner@example.com", "correct-horse-battery-staple")
 	if err != nil {
 		t.Fatalf("RegisterUser failed: %v", err)
 	}
