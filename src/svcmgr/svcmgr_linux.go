@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
+	"strconv"
 	"strings"
 )
 
@@ -78,20 +80,109 @@ ReadWritePaths=/var/log/webappsgo/caslink
 WantedBy=multi-user.target
 `
 
+// Safe ID range for the caslink system user/group on Linux/BSD (AI.md PART 24
+// "System User Requirements"). IDs are allocated top-down from safeIDTop to
+// safeIDBottom so they sit above ordinary human accounts but below the very top
+// reserved band.
+const (
+	safeIDTop    = 899
+	safeIDBottom = 200
+)
+
+// reservedIDs are UID/GID values that must never be handed to the caslink
+// system user even when they appear unused on the current host (AI.md PART 24).
+// They collide with well-known distro service accounts and the nobody id.
+var reservedIDs = map[int]bool{
+	65534: true, // nobody
+	999:   true, 998: true, 997: true, 996: true, 995: true,
+	994: true, 993: true, 992: true, 991: true, 990: true,
+	989: true, 988: true, 987: true, 986: true, 985: true,
+	984: true, 983: true, 982: true, 981: true, 980: true,
+	101: true, 102: true, 103: true, 104: true, 105: true,
+	106: true, 107: true, 108: true, 109: true, 110: true,
+	170: true, 171: true, 172: true, 173: true, 174: true,
+	175: true, 176: true, 177: true, 178: true, 179: true,
+}
+
+// idAvailability reports whether the given numeric id is already claimed as a
+// UID and/or as a GID on this system. It is a function value so tests can
+// substitute a fake in place of the real /etc/passwd and /etc/group lookups.
+type idAvailability func(id int) (uidTaken, gidTaken bool)
+
+// systemIDAvailability is the production idAvailability: it consults the OS
+// user and group databases via os/user (which reads /etc/passwd and
+// /etc/group, plus NSS). A successful lookup means the id is in use.
+func systemIDAvailability(id int) (bool, bool) {
+	s := strconv.Itoa(id)
+	uidTaken := false
+	if _, err := user.LookupId(s); err == nil {
+		uidTaken = true
+	}
+	gidTaken := false
+	if _, err := user.LookupGroupId(s); err == nil {
+		gidTaken = true
+	}
+	return uidTaken, gidTaken
+}
+
+// findAvailableSystemID scans the safe range top-down and returns the first id
+// that is (a) not reserved and (b) unused as both a UID and a GID, so the
+// caslink user and group can share the same numeric id (AI.md PART 24 requires
+// UID == GID). It returns an error when the whole range is exhausted.
+func findAvailableSystemID(avail idAvailability) (int, error) {
+	for id := safeIDTop; id >= safeIDBottom; id-- {
+		if reservedIDs[id] {
+			continue
+		}
+		uidTaken, gidTaken := avail(id)
+		if uidTaken || gidTaken {
+			continue
+		}
+		return id, nil
+	}
+	return 0, fmt.Errorf("no available UID/GID in safe range %d-%d", safeIDBottom, safeIDTop)
+}
+
 // ensureServiceUser creates the caslink system user and group if they do not
-// exist. Requires root. Called by install() before writing the unit file.
+// exist, per AI.md PART 24: a matching UID == GID allocated from the safe range
+// (skipping reserved and in-use ids), nologin shell, and the config dir as
+// home. Requires root. Called by install() before writing the unit file.
 func ensureServiceUser() error {
 	if err := exec.Command("id", "caslink").Run(); err == nil {
 		return nil // user already exists
 	}
-	if err := exec.Command("useradd",
+
+	id, err := findAvailableSystemID(systemIDAvailability)
+	if err != nil {
+		return fmt.Errorf("allocate caslink uid/gid: %w", err)
+	}
+	ids := strconv.Itoa(id)
+
+	// Create the group first so the matching GID exists before useradd binds
+	// the user to it. If the group name already exists (with any GID), bind the
+	// user to it by name rather than failing.
+	gidArg := ids
+	if _, gerr := user.LookupGroup("caslink"); gerr == nil {
+		gidArg = "caslink"
+	} else if err := exec.Command("groupadd",
 		"--system",
-		"--no-create-home",
-		"--shell", "/usr/sbin/nologin",
-		"--comment", "Caslink service account",
+		"--gid", ids,
 		"caslink",
 	).Run(); err != nil {
-		return fmt.Errorf("useradd caslink: %w", err)
+		return fmt.Errorf("groupadd caslink (gid %s): %w", ids, err)
+	}
+
+	if err := exec.Command("useradd",
+		"--system",
+		"--uid", ids,
+		"--gid", gidArg,
+		"--home-dir", "/etc/webappsgo/caslink",
+		"--no-create-home",
+		"--shell", "/usr/sbin/nologin",
+		"--comment", "caslink service account",
+		"caslink",
+	).Run(); err != nil {
+		return fmt.Errorf("useradd caslink (uid %s): %w", ids, err)
 	}
 	return nil
 }
