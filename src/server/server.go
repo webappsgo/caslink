@@ -565,6 +565,7 @@ func (s *Server) setupRoutes() {
 			// Custom domain management per PART 35
 			sr.Get("/domains", domainHandler.ListOrgDomains)
 			sr.Post("/domains", domainHandler.AddOrgDomain)
+			sr.Post("/domains/{domain}/verify", domainHandler.VerifyOrgDomain)
 		})
 	})
 

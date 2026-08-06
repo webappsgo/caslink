@@ -373,6 +373,105 @@ func TestAddOrgDomainSuccessForOwner(t *testing.T) {
 	}
 }
 
+// TestVerifyOrgDomainUnauthenticated verifies 401 when no user is attached.
+func TestVerifyOrgDomainUnauthenticated(t *testing.T) {
+	h, _, _, _ := newDomainTestHandler(t)
+
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/orgs/acme/domains/acme.example.com/verify", nil)
+	r = withChiURLParam(r, "slug", "acme")
+	r = withChiURLParam(r, "domain", "acme.example.com")
+	w := httptest.NewRecorder()
+	h.VerifyOrgDomain(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", w.Code)
+	}
+}
+
+// TestVerifyOrgDomainForbiddenForMemberRole verifies a plain "member" cannot
+// trigger verification.
+func TestVerifyOrgDomainForbiddenForMemberRole(t *testing.T) {
+	h, orgService, authService, user := newDomainTestHandler(t)
+
+	owner, err := authService.RegisterUser(context.Background(), "orgowner", "owner@example.com", "correct-horse-battery-staple")
+	if err != nil {
+		t.Fatalf("RegisterUser failed: %v", err)
+	}
+	org, err := orgService.CreateOrganization(context.Background(), owner.ID, "Acme Corp", "acme")
+	if err != nil {
+		t.Fatalf("CreateOrganization failed: %v", err)
+	}
+	if err := orgService.AddMemberByEmail(context.Background(), org.ID, "alice@example.com", "member"); err != nil {
+		t.Fatalf("AddMemberByEmail failed: %v", err)
+	}
+
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/orgs/"+org.Slug+"/domains/acme.example.com/verify", nil)
+	r = withChiURLParam(r, "slug", org.Slug)
+	r = withChiURLParam(r, "domain", "acme.example.com")
+	r = withUser(r, user)
+	w := httptest.NewRecorder()
+	h.VerifyOrgDomain(w, r)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestVerifyOrgDomainNotFound verifies 404 when the named domain is not one of
+// the organization's domains, even for an authorized owner.
+func TestVerifyOrgDomainNotFound(t *testing.T) {
+	h, orgService, _, user := newDomainTestHandler(t)
+
+	org, err := orgService.CreateOrganization(context.Background(), user.ID, "Acme Corp", "acme")
+	if err != nil {
+		t.Fatalf("CreateOrganization failed: %v", err)
+	}
+
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/orgs/"+org.Slug+"/domains/nope.example.com/verify", nil)
+	r = withChiURLParam(r, "slug", org.Slug)
+	r = withChiURLParam(r, "domain", "nope.example.com")
+	r = withUser(r, user)
+	w := httptest.NewRecorder()
+	h.VerifyOrgDomain(w, r)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestVerifyOrgDomainOwnedButUnverifiable verifies that a domain the org does
+// own reaches the real DNS-TXT verification step (VerifyDomain) rather than
+// being rejected earlier as not-found; with no such DNS record present it
+// fails with 400 — never silently bypassed.
+func TestVerifyOrgDomainOwnedButUnverifiable(t *testing.T) {
+	h, orgService, _, user := newDomainTestHandler(t)
+
+	org, err := orgService.CreateOrganization(context.Background(), user.ID, "Acme Corp", "acme")
+	if err != nil {
+		t.Fatalf("CreateOrganization failed: %v", err)
+	}
+
+	addReq := httptest.NewRequest(http.MethodPost, "/api/v1/orgs/"+org.Slug+"/domains", strings.NewReader(`{"domain":"unverified.example.invalid"}`))
+	addReq = withChiURLParam(addReq, "slug", org.Slug)
+	addReq = withUser(addReq, user)
+	addW := httptest.NewRecorder()
+	h.AddOrgDomain(addW, addReq)
+	if addW.Code != http.StatusCreated {
+		t.Fatalf("expected add to succeed with 201, got %d: %s", addW.Code, addW.Body.String())
+	}
+
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/orgs/"+org.Slug+"/domains/unverified.example.invalid/verify", nil)
+	r = withChiURLParam(r, "slug", org.Slug)
+	r = withChiURLParam(r, "domain", "unverified.example.invalid")
+	r = withUser(r, user)
+	w := httptest.NewRecorder()
+	h.VerifyOrgDomain(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 (no DNS TXT record present), got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 // TestAddOrgDomainInvalidBody verifies 400 on malformed JSON for an
 // authorized (owner) caller.
 func TestAddOrgDomainInvalidBody(t *testing.T) {

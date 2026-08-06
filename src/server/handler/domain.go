@@ -193,3 +193,56 @@ func (h *DomainHandler) AddOrgDomain(w http.ResponseWriter, r *http.Request) {
 		"dns_instructions": h.domainService.BuildDNSInstructions(ctx, domain),
 	})
 }
+
+// VerifyOrgDomain triggers DNS-TXT ownership verification for an
+// organization-owned custom domain. Requires owner or admin role.
+func (h *DomainHandler) VerifyOrgDomain(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	slug := chi.URLParam(r, "slug")
+	domainName := chi.URLParam(r, "domain")
+
+	user, ok := getUserFromRequest(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+
+	org, err := h.orgService.GetOrganizationBySlug(ctx, slug)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Organization not found")
+		return
+	}
+
+	_, role, err := h.orgService.IsMember(ctx, org.ID, user.ID)
+	if err != nil || (role != "owner" && role != "admin") {
+		respondError(w, http.StatusForbidden, "Owner or admin role required")
+		return
+	}
+
+	// Resolve domain ID and confirm it belongs to this organization.
+	domains, err := h.domainService.GetOrgDomains(ctx, org.ID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to load domains")
+		return
+	}
+	var domainID int64
+	for _, d := range domains {
+		if d.Domain == domainName {
+			domainID = d.ID
+			break
+		}
+	}
+	if domainID == 0 {
+		respondError(w, http.StatusNotFound, "domain not found for this organization")
+		return
+	}
+
+	if err := h.domainService.VerifyDomain(ctx, domainID); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"message": fmt.Sprintf("verification triggered for %s", domainName),
+	})
+}
