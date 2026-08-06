@@ -159,13 +159,27 @@ func DoUpdateFor(ctx context.Context, release *Release, assetName string) error 
 		return fmt.Errorf("checksum verification failed: %w", err)
 	}
 
+	return installUpdatedBinary(tmpPath)
+}
+
+// currentExecutable resolves the path of the running binary. It is a
+// package-level seam so tests can point installUpdatedBinary at a synthetic
+// file instead of the real test binary, exercising the full install path
+// without a network round trip.
+var currentExecutable = os.Executable
+
+// installUpdatedBinary makes the freshly downloaded binary at tmpPath
+// executable, resolves the running binary's real (symlink-free) path, and
+// atomically replaces it. Split out of DoUpdateFor so the post-download
+// install path is unit-testable without downloading anything.
+func installUpdatedBinary(tmpPath string) error {
 	if runtime.GOOS != "windows" {
 		if err := os.Chmod(tmpPath, 0755); err != nil {
 			return fmt.Errorf("failed to set permissions: %w", err)
 		}
 	}
 
-	currentPath, err := os.Executable()
+	currentPath, err := currentExecutable()
 	if err != nil {
 		return fmt.Errorf("failed to get executable path: %w", err)
 	}
