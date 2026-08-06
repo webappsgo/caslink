@@ -89,7 +89,15 @@ fixed inline and committed separately.
   route mount; and RedirectURL now routes short-code lookups through the new
   owner-scoped URLService.GetURLByCodeForOwner when a request arrives on a
   custom domain, so a custom domain serves only its owner's links.
-  Still remaining: admin web/API routes, DNS-01 ACME issuance and cert
+  The admin domain API is now implemented: the RequireBearerAdmin-gated
+  /api/v1/server/{admin_path}/config/domains subtree (GET list paginated,
+  GET/{domain}, DELETE/{domain} force-delete, POST/{domain}/suspend,
+  POST/{domain}/unsuspend) backed by DomainService
+  GetDomainByName/ListAllDomains/SuspendDomain/UnsuspendDomain/
+  AdminDeleteDomain, each writing a custom_domain_audit row plus a
+  server-wide admin audit.log entry and invalidating the resolve cache.
+  Still remaining: admin WEB pages for the same actions,
+  /{domain}/ssl/renew (deferred to ACME), DNS-01 ACME issuance and cert
   persistence, scheduled SSL-renewal task, and rate limiting. Deferred.
 
 - PART 34 registration modes: the open/invite/admin_only/disabled gate is
