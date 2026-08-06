@@ -626,6 +626,59 @@ func (h *DomainHandler) APIDeleteOrgDomain(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+// APIUserDomainSSL — GET /api/v1/users/domains/{domain}/ssl
+// Reports the SSL state for a user-owned domain. Read-only; issuance and
+// renewal are automatic for non-wildcard domains via the server's autocert
+// manager, so this endpoint exposes status only, never triggers issuance.
+func (h *DomainHandler) APIUserDomainSSL(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.currentAPIUser(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+	domains, err := h.domainService.GetUserDomains(r.Context(), user.ID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to load domains")
+		return
+	}
+	cd := domainByName(domains, chi.URLParam(r, "domain"))
+	if cd == nil {
+		respondError(w, http.StatusNotFound, "domain not found for this user")
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"ssl": h.domainService.SSLStatusFor(r.Context(), cd),
+	})
+}
+
+// APIOrgDomainSSL — GET /api/v1/orgs/{slug}/domains/{domain}/ssl
+// Reports the SSL state for an org-owned domain. Membership (any role) is
+// sufficient to read status.
+func (h *DomainHandler) APIOrgDomainSSL(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.currentAPIUser(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+	org, ok := h.apiOrgForMember(w, r.Context(), user, chi.URLParam(r, "slug"), false)
+	if !ok {
+		return
+	}
+	domains, err := h.domainService.GetOrgDomains(r.Context(), org.ID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to load domains")
+		return
+	}
+	cd := domainByName(domains, chi.URLParam(r, "domain"))
+	if cd == nil {
+		respondError(w, http.StatusNotFound, "domain not found for this organization")
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"ssl": h.domainService.SSLStatusFor(r.Context(), cd),
+	})
+}
+
 // adminActorID returns a pointer to the acting admin's numeric ID, resolved
 // from the admin-scoped (adm_) bearer token the RequireBearerAdmin gate has
 // already validated. Nil when no bearer record is present (defensive only).

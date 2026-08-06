@@ -1012,3 +1012,108 @@ func TestAPIDeleteOrgDomainForbiddenForMember(t *testing.T) {
 		t.Fatalf("forbidden delete must not remove the row: %v", err)
 	}
 }
+
+// ---- user/org domain SSL status (read-only) ----------------------------
+
+// TestAPIUserDomainSSLSuccess verifies the owner can read the SSL status and
+// gets the ssl object back.
+func TestAPIUserDomainSSLSuccess(t *testing.T) {
+	h, _, _, user := newDomainTestHandler(t)
+	name := seedUserDomain(t, h, user.ID, "ssl.example.com")
+
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: user.ID}
+	r := withBearer(httptest.NewRequest(http.MethodGet, "/api/v1/users/domains/"+name+"/ssl", nil), rec)
+	r = withChiURLParam(r, "domain", name)
+	w := httptest.NewRecorder()
+	h.APIUserDomainSSL(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var env struct {
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	ssl, ok := env.Data["ssl"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected ssl object, got %v", env.Data)
+	}
+	if ssl["challenge_type"] != "http-01" {
+		t.Errorf("expected http-01 challenge for non-wildcard domain, got %v", ssl["challenge_type"])
+	}
+	if auto, _ := ssl["auto_managed"].(bool); !auto {
+		t.Errorf("expected auto_managed true for non-wildcard domain, got %v", ssl["auto_managed"])
+	}
+}
+
+// TestAPIUserDomainSSLNotFoundForOtherUser verifies one user cannot read
+// another user's SSL status — it 404s rather than leaking the record.
+func TestAPIUserDomainSSLNotFoundForOtherUser(t *testing.T) {
+	h, _, authService, owner := newDomainTestHandler(t)
+	name := seedUserDomain(t, h, owner.ID, "sslprivate.example.com")
+
+	other, err := authService.RegisterUser(context.Background(), "carol", "carol@example.com", "correct-horse-battery-staple")
+	if err != nil {
+		t.Fatalf("RegisterUser failed: %v", err)
+	}
+
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: other.ID}
+	r := withBearer(httptest.NewRequest(http.MethodGet, "/api/v1/users/domains/"+name+"/ssl", nil), rec)
+	r = withChiURLParam(r, "domain", name)
+	w := httptest.NewRecorder()
+	h.APIUserDomainSSL(w, r)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for cross-user ssl read, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestAPIOrgDomainSSLSuccessForMember verifies a member can read an org
+// domain's SSL status.
+func TestAPIOrgDomainSSLSuccessForMember(t *testing.T) {
+	h, orgService, _, user := newDomainTestHandler(t)
+	org, err := orgService.CreateOrganization(context.Background(), user.ID, "Acme Corp", "acme")
+	if err != nil {
+		t.Fatalf("CreateOrganization failed: %v", err)
+	}
+	name := seedOrgDomain(t, h, org.ID, "orgssl.example.com")
+
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: user.ID}
+	r := withBearer(httptest.NewRequest(http.MethodGet, "/api/v1/orgs/"+org.Slug+"/domains/"+name+"/ssl", nil), rec)
+	r = withChiURLParam(r, "slug", org.Slug)
+	r = withChiURLParam(r, "domain", name)
+	w := httptest.NewRecorder()
+	h.APIOrgDomainSSL(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestAPIOrgDomainSSLForbiddenForNonMember verifies a non-member cannot read
+// an org domain's SSL status.
+func TestAPIOrgDomainSSLForbiddenForNonMember(t *testing.T) {
+	h, orgService, authService, user := newDomainTestHandler(t)
+	owner, err := authService.RegisterUser(context.Background(), "sslowner", "sslowner@example.com", "correct-horse-battery-staple")
+	if err != nil {
+		t.Fatalf("RegisterUser failed: %v", err)
+	}
+	org, err := orgService.CreateOrganization(context.Background(), owner.ID, "Acme Corp", "acme")
+	if err != nil {
+		t.Fatalf("CreateOrganization failed: %v", err)
+	}
+	name := seedOrgDomain(t, h, org.ID, "orgsslkeep.example.com")
+
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: user.ID}
+	r := withBearer(httptest.NewRequest(http.MethodGet, "/api/v1/orgs/"+org.Slug+"/domains/"+name+"/ssl", nil), rec)
+	r = withChiURLParam(r, "slug", org.Slug)
+	r = withChiURLParam(r, "domain", name)
+	w := httptest.NewRecorder()
+	h.APIOrgDomainSSL(w, r)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for non-member ssl read, got %d: %s", w.Code, w.Body.String())
+	}
+}

@@ -191,6 +191,45 @@ func (s *DomainService) BuildDNSInstructions(ctx context.Context, cd *CustomDoma
 	}
 }
 
+// SSLStatusInfo is the SSL state reported for a single custom domain by the
+// GET /{domain}/ssl endpoints (PART 36 User/Org/Admin Domain API). It exposes
+// the stored SSL fields plus whether the domain is currently eligible for the
+// server's automatic Let's Encrypt issuance (verified + active + non-wildcard).
+type SSLStatusInfo struct {
+	Enabled       bool       `json:"enabled"`
+	Status        string     `json:"status"`
+	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
+	ChallengeType string     `json:"challenge_type"`
+	AutoManaged   bool       `json:"auto_managed"`
+	Eligible      bool       `json:"eligible"`
+}
+
+// SSLStatusFor builds the SSL status report for a domain. Non-wildcard domains
+// are auto-managed by the server's autocert.Manager via HTTP-01/TLS-ALPN-01
+// (issuance and renewal are automatic); wildcard domains would require DNS-01,
+// which is not implemented, so they report challenge_type "dns-01" and are
+// never eligible. Eligibility mirrors autocert's HostPolicy exactly.
+func (s *DomainService) SSLStatusFor(ctx context.Context, cd *CustomDomain) SSLStatusInfo {
+	challenge := "http-01"
+	if cd.IsWildcard {
+		challenge = "dns-01"
+	}
+	eligible := false
+	if !cd.IsWildcard {
+		if ok, err := s.IsDomainVerifiedActive(ctx, cd.Domain); err == nil {
+			eligible = ok
+		}
+	}
+	return SSLStatusInfo{
+		Enabled:       cd.SSLEnabled,
+		Status:        cd.SSLStatus,
+		ExpiresAt:     cd.SSLExpiresAt,
+		ChallengeType: challenge,
+		AutoManaged:   !cd.IsWildcard,
+		Eligible:      eligible,
+	}
+}
+
 // AddDomain adds a new custom domain for a user or organization
 func (s *DomainService) AddDomain(ctx context.Context, ownerType string, ownerID int64, domain string) (*CustomDomain, error) {
 	// Reject reserved domains and blocked TLD patterns before any DB work

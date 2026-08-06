@@ -84,6 +84,17 @@ fixed inline and committed separately.
   DeleteOwnedDomain enforces owner_type+owner_id in the DELETE so cross-owner
   deletes 404 and never remove another owner's row (tested); reads of another
   owner's domain 404 rather than leak the record.
+  The read-only SSL-status endpoint is now implemented too:
+  GET /api/v1/users/domains/{domain}/ssl and the org equivalent
+  GET /api/v1/orgs/{slug}/domains/{domain}/ssl (plus the web-mux
+  variants) report DomainService.SSLStatusFor — {enabled, status,
+  expires_at, challenge_type (http-01 non-wildcard / dns-01 wildcard),
+  auto_managed (!wildcard), eligible (IsDomainVerifiedActive)} — with the
+  same owner/membership scoping as the detail routes (owner reads 200,
+  cross-user 404, org member 200, non-member 403; tested). It is
+  deliberately read-only: non-wildcard issuance and renewal are already
+  automatic via the server's autocert.Manager dynamic HostPolicy, so the
+  endpoint never triggers issuance.
   The custom-domain resolver middleware and domain caching are now
   implemented: DomainService.Resolve(host) resolves a verified+active,
   non-wildcard domain (host normalized for port/case/trailing-dot) via a 60s
@@ -106,8 +117,12 @@ fixed inline and committed separately.
   (spec canonical vocabulary created/verified/ssl_issued/suspended/deleted),
   with TestDomainAuditTrail asserting the created/suspended/unsuspended
   sequence. Still remaining: admin WEB pages for the same actions,
-  /{domain}/ssl/renew (deferred to ACME), DNS-01 ACME issuance and cert
-  persistence, scheduled SSL-renewal task, and rate limiting. Deferred.
+  POST /{domain}/ssl (DNS-01 provider config + AES-256-GCM credentials),
+  POST /{domain}/ssl/renew force-renew (needs autocert-cache purge
+  design), DNS-01 ACME issuance and cert persistence, and rate limiting.
+  Deferred. (Scheduled SSL renewal and HTTP-01/TLS-ALPN-01 issuance are
+  already handled automatically by autocert.Manager — the ssl_renewal
+  scheduler task is an intentional no-op.)
 
 - PART 34 registration modes: the open/invite/admin_only/disabled gate is
   implemented — `RegistrationConfig.Mode` (default open),
