@@ -747,6 +747,9 @@ func (s *Server) setupRoutes() {
 			// Server info
 			ar.Get("/config/info", adminHandler.ConfigInfo)
 
+			// Metrics (read-only status)
+			ar.Get("/config/metrics", adminHandler.ConfigMetrics)
+
 			// Security — auth
 			ar.Get("/config/security/auth", adminHandler.ConfigSecurityAuth)
 			ar.Post("/config/security/auth", adminHandler.ConfigSecurityAuthSave)

@@ -33,6 +33,7 @@ func adminConfigGETCases() []configGETCase {
 		{"ConfigMaintenance", "/server/admin/config/maintenance", func(h *AdminHandler) http.HandlerFunc { return h.ConfigMaintenance }},
 		{"ConfigUpdates", "/server/admin/config/updates", func(h *AdminHandler) http.HandlerFunc { return h.ConfigUpdates }},
 		{"ConfigInfo", "/server/admin/config/info", func(h *AdminHandler) http.HandlerFunc { return h.ConfigInfo }},
+		{"ConfigMetrics", "/server/admin/config/metrics", func(h *AdminHandler) http.HandlerFunc { return h.ConfigMetrics }},
 		{"ConfigSecurityAuth", "/server/admin/config/security/auth", func(h *AdminHandler) http.HandlerFunc { return h.ConfigSecurityAuth }},
 		{"ConfigSecurityTokens", "/server/admin/config/security/tokens", func(h *AdminHandler) http.HandlerFunc { return h.ConfigSecurityTokens }},
 		{"ConfigSecurityRateLimit", "/server/admin/config/security/rate-limit", func(h *AdminHandler) http.HandlerFunc { return h.ConfigSecurityRateLimit }},

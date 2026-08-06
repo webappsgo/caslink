@@ -134,6 +134,7 @@ func (h *AdminHandler) adminNav(activePath string) []adminNavItem {
 		{Label: "Maintenance", URL: base + "/config/maintenance", Icon: "🔧"},
 		{Label: "Updates", URL: base + "/config/updates", Icon: "🔄"},
 		{Label: "Server Info", URL: base + "/config/info", Icon: "ℹ️"},
+		{Label: "Metrics", URL: base + "/config/metrics", Icon: "📈"},
 		{Label: "Auth", URL: base + "/config/security/auth", Icon: "🔑"},
 		{Label: "API Tokens", URL: base + "/config/security/tokens", Icon: "🪙"},
 		{Label: "Rate Limiting", URL: base + "/config/security/ratelimit", Icon: "⏱️"},
@@ -1048,6 +1049,55 @@ func (h *AdminHandler) ConfigInfo(w http.ResponseWriter, r *http.Request) {
 		template.HTMLEscapeString(h.cfg.Server.Database.Driver),
 	)
 	h.adminLayout(w, r, "Server Info", "/config/info", template.HTML(content), "", "")
+}
+
+// ConfigMetrics handles GET /server/{adminPath}/config/metrics — a read-only
+// status page for the Prometheus metrics endpoint (AI.md PART 17 config
+// subroute, PART 21 metrics). The bearer token value is never rendered; only
+// whether authentication is required is disclosed.
+func (h *AdminHandler) ConfigMetrics(w http.ResponseWriter, r *http.Request) {
+	m := h.cfg.Server.Metrics
+	endpoint := m.Endpoint
+	if endpoint == "" {
+		endpoint = "/metrics"
+	}
+	auth := "None (network-restricted)"
+	if m.Token != "" {
+		auth = "Bearer token required"
+	}
+	content := fmt.Sprintf(`
+<h1>Metrics</h1>
+<div class="card">
+  <h2>Prometheus Endpoint</h2>
+  <p style="color:#8b949e;font-size:14px;margin-bottom:16px">
+    Prometheus-format metrics for scraping. This endpoint is internal only — restrict it with a
+    firewall, NetworkPolicy, or reverse-proxy allowlist. Metric names use the <code>caslink_</code> prefix.
+  </p>
+  <div class="info-row"><span class="info-label">Status</span><span class="info-value">%s</span></div>
+  <div class="info-row"><span class="info-label">Endpoint</span><span class="info-value"><code>%s</code></span></div>
+  <div class="info-row"><span class="info-label">Authentication</span><span class="info-value">%s</span></div>
+</div>
+<div class="card">
+  <h2>Included Metric Groups</h2>
+  <div class="info-row"><span class="info-label">System metrics</span><span class="info-value">%s</span></div>
+  <div class="info-row"><span class="info-label">Go runtime metrics</span><span class="info-value">%s</span></div>
+  <div class="info-row"><span class="info-label">HTTP, Database, Auth</span><span class="info-value">Always included</span></div>
+</div>`,
+		metricsBadge(m.Enabled),
+		template.HTMLEscapeString(endpoint),
+		auth,
+		metricsBadge(m.IncludeSystem),
+		metricsBadge(m.IncludeRuntime),
+	)
+	h.adminLayout(w, r, "Metrics", "/config/metrics", template.HTML(content), "", "")
+}
+
+// metricsBadge renders an enabled/disabled status badge.
+func metricsBadge(on bool) string {
+	if on {
+		return `<span class="badge badge-green">Enabled</span>`
+	}
+	return `<span class="badge badge-gray">Disabled</span>`
 }
 
 // --------------------------------------------------------------------------
