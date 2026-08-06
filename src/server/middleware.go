@@ -586,6 +586,23 @@ func BearerAuthMiddleware(tokenService *service.TokenService) func(http.Handler)
 	}
 }
 
+// RequireBearerAdmin rejects any request whose Bearer token is not admin-scoped
+// (OwnerType "admin", i.e. an adm_ token). It MUST run AFTER BearerAuthMiddleware,
+// which attaches the *service.TokenRecord to the context. This enforces the
+// PART 24 rule that admin API endpoints accept ONLY admin tokens and never a
+// usr_/org_ token — without it, any valid token could reach admin operations
+// (list/suspend users, change server config), a privilege-escalation hole.
+func RequireBearerAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec, ok := r.Context().Value(bearerContextKey).(*service.TokenRecord)
+		if !ok || rec == nil || !strings.EqualFold(rec.OwnerType, "admin") {
+			writeJSONError(w, http.StatusForbidden, "Admin token required")
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(r.Context()))
+	})
+}
+
 // ---- Context helpers ---------------------------------------------------
 
 // GetUserFromContext retrieves user from request context

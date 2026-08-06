@@ -765,6 +765,9 @@ func (s *Server) setupRoutes() {
 		// Admin API — /api/v1/server/{adminPath}/*
 		r.Route("/server/"+adminPath, func(ar chi.Router) {
 			ar.Use(bearerMiddleware)
+			// Admin API endpoints accept ONLY admin-scoped (adm_) tokens; a
+			// usr_/org_ token must never reach server management (PART 24).
+			ar.Use(RequireBearerAdmin)
 			ar.Get("/config/users", adminHandler.APIUserList)
 			ar.Get("/config/users/{id}", adminHandler.APIUserDetail)
 			ar.Post("/config/users/{id}/suspend", adminHandler.APISuspendUser)
