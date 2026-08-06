@@ -479,10 +479,30 @@ type UsersConfig struct {
 
 // RegistrationConfig holds registration settings
 type RegistrationConfig struct {
-	Enabled                  bool `yaml:"enabled"`
-	RequireEmailVerification bool `yaml:"require_email_verification"`
-	RequireApproval          bool `yaml:"require_approval"`
-	AllowDisposableEmails    bool `yaml:"allow_disposable_emails"`
+	Enabled                  bool   `yaml:"enabled"`
+	Mode                     string `yaml:"mode"`
+	RequireEmailVerification bool   `yaml:"require_email_verification"`
+	RequireApproval          bool   `yaml:"require_approval"`
+	AllowDisposableEmails    bool   `yaml:"allow_disposable_emails"`
+}
+
+// NormalizedMode returns the registration mode lowercased and trimmed,
+// substituting the "open" default for an empty or unrecognized value (PART 34).
+func (r RegistrationConfig) NormalizedMode() string {
+	switch m := strings.ToLower(strings.TrimSpace(r.Mode)); m {
+	case "open", "invite", "admin_only", "disabled":
+		return m
+	default:
+		return "open"
+	}
+}
+
+// PublicSelfRegistrationAllowed reports whether an unauthenticated visitor may
+// create their own account. Only the "open" mode permits public self-service
+// registration (PART 34); invite, admin_only, and disabled all forbid it, as
+// does disabling registration entirely.
+func (r RegistrationConfig) PublicSelfRegistrationAllowed() bool {
+	return r.Enabled && r.NormalizedMode() == "open"
 }
 
 // ProfileConfig holds user profile settings
@@ -1031,6 +1051,7 @@ func DefaultConfig() *Config {
 					Enabled: true,
 					Registration: RegistrationConfig{
 						Enabled:                  true,
+						Mode:                     "open",
 						RequireEmailVerification: false,
 						RequireApproval:          false,
 						AllowDisposableEmails:    false,

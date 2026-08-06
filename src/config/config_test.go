@@ -749,3 +749,33 @@ func TestLoadRejectsConfigDirThatIsAFile(t *testing.T) {
 		t.Fatal("expected an error when configDir is a regular file, got nil")
 	}
 }
+
+func TestRegistrationModeGating(t *testing.T) {
+	cases := []struct {
+		name        string
+		enabled     bool
+		mode        string
+		wantNorm    string
+		wantAllowed bool
+	}{
+		{"open default", true, "open", "open", true},
+		{"empty defaults to open", true, "", "open", true},
+		{"unknown defaults to open", true, "bogus", "open", true},
+		{"mixed case open", true, "OpEn", "open", true},
+		{"invite blocks public", true, "invite", "invite", false},
+		{"admin_only blocks public", true, "admin_only", "admin_only", false},
+		{"disabled blocks public", true, "disabled", "disabled", false},
+		{"registration disabled blocks even open", false, "open", "open", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := RegistrationConfig{Enabled: tc.enabled, Mode: tc.mode}
+			if got := r.NormalizedMode(); got != tc.wantNorm {
+				t.Errorf("NormalizedMode() = %q, want %q", got, tc.wantNorm)
+			}
+			if got := r.PublicSelfRegistrationAllowed(); got != tc.wantAllowed {
+				t.Errorf("PublicSelfRegistrationAllowed() = %v, want %v", got, tc.wantAllowed)
+			}
+		})
+	}
+}

@@ -28,8 +28,36 @@ func NewAuthUserHandler(authService *service.AuthService, renderer *tmpl.Rendere
 	}
 }
 
+// registrationClosedMessage explains why public self-registration is
+// unavailable under the current registration mode (PART 34).
+func (h *AuthUserHandler) registrationClosedMessage() string {
+	switch h.cfg.Server.Features.Users.Registration.NormalizedMode() {
+	case "invite":
+		return "Registration is invite-only. Please use the invite link sent to you by an administrator."
+	case "admin_only":
+		return "Accounts are created by an administrator. Contact your administrator to request access."
+	default:
+		return "Registration is currently closed."
+	}
+}
+
 // RegisterPage renders the registration page
 func (h *AuthUserHandler) RegisterPage(w http.ResponseWriter, r *http.Request) {
+	if !h.cfg.Server.Features.Users.Registration.PublicSelfRegistrationAllowed() {
+		data := struct {
+			tmpl.Data
+			Error    string
+			Username string
+			Email    string
+		}{
+			Data:  newPageData(h.cfg, r, "Create Account", nil),
+			Error: h.registrationClosedMessage(),
+		}
+		w.WriteHeader(http.StatusForbidden)
+		h.renderer.Render(w, "template/page/auth/register.html", data)
+		return
+	}
+
 	data := struct {
 		tmpl.Data
 		Error    string
@@ -45,6 +73,27 @@ func (h *AuthUserHandler) RegisterPage(w http.ResponseWriter, r *http.Request) {
 func (h *AuthUserHandler) Register(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	isForm := strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded")
+
+	// Public self-registration is only permitted in "open" mode (PART 34).
+	// invite / admin_only / disabled reject the public endpoint outright.
+	if !h.cfg.Server.Features.Users.Registration.PublicSelfRegistrationAllowed() {
+		if isForm {
+			data := struct {
+				tmpl.Data
+				Error    string
+				Username string
+				Email    string
+			}{
+				Data:  newPageData(h.cfg, r, "Create Account", nil),
+				Error: h.registrationClosedMessage(),
+			}
+			w.WriteHeader(http.StatusForbidden)
+			h.renderer.Render(w, "template/page/auth/register.html", data)
+			return
+		}
+		respondError(w, http.StatusForbidden, h.registrationClosedMessage())
+		return
+	}
 
 	var username, email, password string
 

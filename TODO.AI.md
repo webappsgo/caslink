@@ -73,10 +73,13 @@ fixed inline and committed separately.
   issuance and cert persistence, scheduled verify-retry/SSL-renewal/cleanup
   tasks, domain caching, and rate limiting. Deferred.
 
-- PART 34 registration modes: implement open/invite/admin_only/disabled
-  gating and the Server-Admin invite/activation-link flow (single-use, 7-day
-  expiry), including explicit rejection of unused links when mode flips to
-  disabled. Feature build. Deferred.
+- PART 34 registration modes: the open/invite/admin_only/disabled gate is
+  implemented — `RegistrationConfig.Mode` (default open),
+  `NormalizedMode()`/`PublicSelfRegistrationAllowed()`, and the public
+  `/register` GET+POST reject with 403 under any non-open mode. Still
+  remaining: the Server-Admin invite/activation-link flow (single-use, 7-day
+  expiry) and explicit rejection of unused links when mode flips to disabled.
+  Feature build. Deferred.
 
 - PART 35 organization creation policy: implement `server.orgs.creation.mode`
   (open/invite/admin_only/disabled) distinct from per-org `visibility`
