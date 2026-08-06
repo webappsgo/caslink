@@ -8,6 +8,7 @@
   <meta name="description" content="{{.AppDesc}}">
   <link rel="manifest" href="/static/manifest.json">
   <link rel="icon" href="/static/favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="/static/css/app.css">
   <style>{{template "inline-css" .}}</style>
 </head>
 <body>
@@ -25,7 +26,7 @@
       {{.AppName}} {{.Version}} &mdash; <a href="/server/healthz">Status</a>
     </div>
   </footer>
-  <script>{{template "inline-js" .}}</script>
+  <script src="/static/js/app.js"></script>
 </body>
 </html>{{end}}
 
@@ -43,7 +44,7 @@
     {{if .AvailableLanguages}}
     <form method="GET" action="" class="lang-form" style="display:inline;margin-right:8px">
       <label class="sr-only" for="lang-select">Language</label>
-      <select id="lang-select" name="lang" class="lang-select" onchange="this.form.submit()" aria-label="Select language" style="background:transparent;border:1px solid #555;color:inherit;border-radius:4px;padding:2px 4px;font-size:0.85em;cursor:pointer">
+      <select id="lang-select" name="lang" class="lang-select" data-autosubmit aria-label="Select language" style="background:transparent;border:1px solid #555;color:inherit;border-radius:4px;padding:2px 4px;font-size:0.85em;cursor:pointer">
         {{range .AvailableLanguages}}<option value="{{.Code}}"{{if .Active}} selected{{end}}>{{.NativeName}}</option>{{end}}
       </select>
     </form>
@@ -62,4 +63,3 @@
 {{end}}
 
 {{define "inline-css"}}{{end}}
-{{define "inline-js"}}{{end}}

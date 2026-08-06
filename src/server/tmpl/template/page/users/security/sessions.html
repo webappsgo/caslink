@@ -36,11 +36,10 @@
             <td class="text-muted text-sm">{{.LastActive}}</td>
             <td>
               {{if not .IsCurrent}}
-              <form method="POST" action="/users/security/sessions" style="display:inline">
+              <form method="POST" action="/users/security/sessions" style="display:inline" data-confirm="Revoke this session?">
                 <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
                 <input type="hidden" name="session_id" value="{{.ID}}">
-                <button type="submit" class="btn btn-danger btn-sm"
-                        onclick="return confirm('Revoke this session?')">Revoke</button>
+                <button type="submit" class="btn btn-danger btn-sm">Revoke</button>
               </form>
               {{end}}
             </td>
@@ -56,10 +55,9 @@
   <div class="card card-danger">
     <h2 class="card-title">Revoke All Other Sessions</h2>
     <p class="text-muted text-sm">Sign out of all devices except this one.</p>
-    <form method="POST" action="/users/security/sessions/revoke-all">
+    <form method="POST" action="/users/security/sessions/revoke-all" data-confirm="Revoke all other sessions? You will stay logged in on this device.">
       <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
-      <button type="submit" class="btn btn-danger btn-sm"
-              onclick="return confirm('Revoke all other sessions? You will stay logged in on this device.')">
+      <button type="submit" class="btn btn-danger btn-sm">
         Revoke All Other Sessions
       </button>
     </form>

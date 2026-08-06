@@ -12,10 +12,29 @@ deleted). Each is feature-sized or needs verification unavailable in this
 environment; all bounded security/logic/config findings from that pass were
 fixed inline and committed separately.
 
-- Frontend CSP externalization (PART 16): move any remaining inline handlers
-  into external app.js, replace native confirm/alert/prompt with `<dialog>`
-  components, and tighten CSP back to `script-src 'self'`. Large UI change that
-  needs browser verification of every interactive page. Deferred.
+- Frontend CSP externalization (PART 16): DONE. Every inline `on*` handler and
+  every inline `<script>` block was moved into the embedded external
+  `src/server/tmpl/static/js/app.js` (folded page modules: theme-set buttons,
+  autosubmit, org slug autofill, dashboard create-link fetch, recovery-keys
+  download/copy/confirm, passkey WebAuthn register). `base.html` now links
+  `/static/css/app.css` and `/static/js/app.js` (previously linked neither — a
+  pre-existing bug that left every page unstyled/non-interactive). CSP
+  `script-src` tightened from `'self' 'unsafe-inline'` back to `'self'`;
+  `style-src` keeps `'unsafe-inline'` per AI.md line 15621. Recovery keys now
+  ship as a non-executable `<script type="application/json">` data island.
+  Remaining sub-item (deferred): replace the native `window.confirm` used by
+  `form[data-confirm]` with a custom `<dialog>` modal per frontend-rules
+  ("NEVER use alert()/confirm()/prompt()"). Needs browser verification.
+
+- Orphaned dead code: `src/server/static/js/app.js` is a stale, non-embedded
+  duplicate of the live `src/server/tmpl/static/js/app.js` (only the tmpl copy
+  is served via `//go:embed static`). Remove the orphan or confirm it is
+  unused, then delete. Logged during the CSP externalization work.
+
+- Pre-existing gofmt drift: `src/backup/crypto_test.go`, `src/paths/paths.go`,
+  and `src/updater/update_test.go` are flagged by `gofmt -l` but were not
+  touched by recent feature work. Reformat in an isolated commit (formatting
+  only, no logic change). Logged during the CSP externalization Docker verify.
 
 - PART 36 full custom-domains build: AddDomain now enforces limits, reserved,
   and blocked_patterns; VerifyDomain now performs real TXT ownership-token

@@ -162,4 +162,211 @@
     }
   });
 
+  // ---- Theme selection buttons (users/settings) ----------------------
+  // Replaces the former inline onclick handlers; applies the theme live
+  // with no page reload (seamless switching per AI.md PART 16).
+
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('[data-theme-set]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        applyTheme(btn.getAttribute('data-theme-set'));
+      });
+    });
+  });
+
+  // ---- Language selector auto-submit ---------------------------------
+  // Replaces the former inline onchange="this.form.submit()".
+
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('[data-autosubmit]').forEach(function (el) {
+      el.addEventListener('change', function () {
+        if (el.form) el.form.submit();
+      });
+    });
+  });
+
+  // ---- Org slug auto-generation (orgs/new) ---------------------------
+  // Replaces the former inline autoSlug() script block.
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var source = document.querySelector('[data-slug-source]');
+    var slug = document.getElementById('slug');
+    if (!source || !slug) return;
+    source.addEventListener('input', function () {
+      if (!slug.dataset.edited) {
+        slug.value = source.value.toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+      }
+    });
+    slug.addEventListener('input', function () { slug.dataset.edited = 'true'; });
+  });
+
+  // ---- Short-link create form (dashboard) ----------------------------
+  // Replaces the former dashboard inline-js block. CSRF is injected by the
+  // window.fetch patch above, so no explicit header is needed here.
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var form = document.getElementById('create-form');
+    if (!form) return;
+    var result = document.getElementById('create-result');
+    var shortLink = document.getElementById('short-link');
+    var copyBtn = document.getElementById('copy-btn');
+
+    function showToast(msg, type) {
+      var t = document.createElement('div');
+      t.className = 'alert alert-' + (type || 'info');
+      t.style.cssText = 'position:fixed;top:16px;right:16px;z-index:9999;max-width:400px';
+      t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(function () { t.remove(); }, 5000);
+    }
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var data = { long_url: form.long_url.value };
+      if (form.custom_code.value) data.custom_code = form.custom_code.value;
+      fetch('/api/v1/urls', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(data)
+      }).then(function (r) { return r.json(); }).then(function (j) {
+        if (j.ok && j.data && j.data.short_url) {
+          shortLink.href = j.data.short_url;
+          shortLink.textContent = j.data.short_url;
+          copyBtn.setAttribute('data-copy-text', j.data.short_url);
+          result.classList.remove('hidden');
+          form.reset();
+        } else {
+          showToast(j.message || j.error || 'Failed to create link', 'danger');
+        }
+      }).catch(function () { showToast('Network error — check your connection', 'danger'); });
+    });
+  });
+
+  // ---- Recovery keys (users/security/recovery-keys) ------------------
+  // Keys are passed as a non-executable JSON island; replaces the former
+  // inline <script> that embedded {{.KeysJSON}} directly.
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var dataEl = document.getElementById('recovery-keys-data');
+    var downloadBtn = document.getElementById('download-keys-btn');
+    if (!dataEl || !downloadBtn) return;
+    var keys;
+    try { keys = JSON.parse(dataEl.textContent); } catch (e) { return; }
+    var keysText = keys.map(function (k, i) { return (i + 1) + '. ' + k; }).join('\n');
+
+    downloadBtn.addEventListener('click', function () {
+      var blob = new Blob([keysText], { type: 'text/plain' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'caslink-recovery-keys.txt';
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    var copyBtn = document.getElementById('copy-keys-btn');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', function () {
+        navigator.clipboard.writeText(keysText).then(function () {
+          copyBtn.textContent = 'Copied!';
+          setTimeout(function () { copyBtn.textContent = 'Copy All Keys'; }, 2000);
+        });
+      });
+    }
+
+    var confirmed = document.getElementById('confirmed');
+    var continueBtn = document.getElementById('continue-btn');
+    if (confirmed && continueBtn) {
+      confirmed.addEventListener('change', function () {
+        continueBtn.disabled = !confirmed.checked;
+      });
+    }
+  });
+
+  // ---- Passkey registration (users/security/passkeys) ----------------
+  // Replaces the former inline WebAuthn <script>. Uses fixed endpoints and
+  // no template data, so it lives entirely in this external file.
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var registerBtn = document.getElementById('register-btn');
+    if (!registerBtn) return;
+
+    function showStatus(type, msg) {
+      var el = document.getElementById('register-status');
+      el.className = 'mt-3 alert alert-' + (type === 'error' ? 'danger' : 'success');
+      el.textContent = msg;
+      el.classList.remove('hidden');
+    }
+
+    if (!window.PublicKeyCredential) {
+      registerBtn.disabled = true;
+      showStatus('error', 'Your browser does not support passkeys. Try Chrome, Safari 16+, Firefox 119+, or Edge.');
+      return;
+    }
+
+    function bufferDecode(value) {
+      return Uint8Array.from(atob(value.replace(/-/g, '+').replace(/_/g, '/')), function (c) { return c.charCodeAt(0); });
+    }
+
+    function bufferEncode(value) {
+      return btoa(String.fromCharCode.apply(null, new Uint8Array(value)))
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+    }
+
+    registerBtn.addEventListener('click', function () {
+      var name = document.getElementById('passkey-name').value.trim() || 'Passkey';
+      var btn = this;
+      btn.disabled = true;
+      btn.textContent = 'Waiting for authenticator…';
+
+      fetch('/users/passkeys/begin-register', {
+        method: 'POST',
+        credentials: 'same-origin'
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (body) {
+        if (!body.ok) throw new Error(body.message || body.error);
+        var opts = body.data;
+        opts.publicKey.challenge = bufferDecode(opts.publicKey.challenge);
+        opts.publicKey.user.id = bufferDecode(opts.publicKey.user.id);
+        if (opts.publicKey.excludeCredentials) {
+          opts.publicKey.excludeCredentials = opts.publicKey.excludeCredentials.map(function (c) {
+            return { id: bufferDecode(c.id), type: c.type, transports: c.transports };
+          });
+        }
+        return navigator.credentials.create(opts);
+      })
+      .then(function (cred) {
+        var body = {
+          id: cred.id,
+          rawId: bufferEncode(cred.rawId),
+          type: cred.type,
+          response: {
+            attestationObject: bufferEncode(cred.response.attestationObject),
+            clientDataJSON: bufferEncode(cred.response.clientDataJSON)
+          }
+        };
+        return fetch('/users/passkeys/finish-register?name=' + encodeURIComponent(name), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify(body)
+        });
+      })
+      .then(function (r) { return r.json(); })
+      .then(function (body) {
+        if (!body.ok) throw new Error(body.message || body.error);
+        showStatus('success', 'Passkey registered successfully. Refreshing…');
+        setTimeout(function () { window.location.reload(); }, 1200);
+      })
+      .catch(function (err) {
+        showStatus('error', err.message || 'Registration failed. Please try again.');
+        btn.disabled = false;
+        btn.textContent = 'Register Passkey';
+      });
+    });
+  });
+
 })();

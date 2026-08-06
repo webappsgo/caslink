@@ -25,9 +25,9 @@
     <h2 class="card-title">Theme</h2>
     <p class="text-muted text-sm mb-3">Choose your preferred color scheme. Toggle via the navigation button.</p>
     <div class="flex gap-2">
-      <button class="btn btn-outline btn-sm" onclick="localStorage.setItem('cl_theme','dark');location.reload()">Dark</button>
-      <button class="btn btn-outline btn-sm" onclick="localStorage.setItem('cl_theme','light');location.reload()">Light</button>
-      <button class="btn btn-outline btn-sm" onclick="localStorage.setItem('cl_theme','auto');location.reload()">Auto (System)</button>
+      <button type="button" class="btn btn-outline btn-sm" data-theme-set="dark">Dark</button>
+      <button type="button" class="btn btn-outline btn-sm" data-theme-set="light">Light</button>
+      <button type="button" class="btn btn-outline btn-sm" data-theme-set="auto">Auto (System)</button>
     </div>
   </div>
 </div>

@@ -50,32 +50,5 @@
   </div>
 </div>
 
-<script>
-(function () {
-  var keys = {{.KeysJSON}};
-  var keysText = keys.map(function(k, i) { return (i + 1) + ". " + k; }).join("\n");
-
-  document.getElementById("download-keys-btn").addEventListener("click", function () {
-    var blob = new Blob([keysText], { type: "text/plain" });
-    var url = URL.createObjectURL(blob);
-    var a = document.createElement("a");
-    a.href = url;
-    a.download = "caslink-recovery-keys.txt";
-    a.click();
-    URL.revokeObjectURL(url);
-  });
-
-  document.getElementById("copy-keys-btn").addEventListener("click", function () {
-    navigator.clipboard.writeText(keysText).then(function () {
-      var btn = document.getElementById("copy-keys-btn");
-      btn.textContent = "Copied!";
-      setTimeout(function () { btn.textContent = "Copy All Keys"; }, 2000);
-    });
-  });
-
-  document.getElementById("confirmed").addEventListener("change", function () {
-    document.getElementById("continue-btn").disabled = !this.checked;
-  });
-}());
-</script>
+<script type="application/json" id="recovery-keys-data">{{.KeysJSON}}</script>
 {{end}}

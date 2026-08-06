@@ -106,12 +106,15 @@ func jsonEscape(s string) string {
 
 // ---- Security headers middleware ----------------------------------------
 
-// defaultCSP is the spec-canonical Content-Security-Policy (AI.md PART 11).
-// 'unsafe-inline' is the pragmatic default for Go template projects; tighten
-// with nonces when the project generates them. frame-ancestors / base-uri /
-// form-action are defence-in-depth directives that don't vary per request.
+// defaultCSP is the spec-canonical Content-Security-Policy (AI.md PART 11/16).
+// script-src is 'self' with no 'unsafe-inline': all JavaScript lives in
+// static/js/app.js — no inline scripts, no inline event handlers — so every
+// injected <script> (inline or cross-origin) is blocked. style-src keeps
+// 'unsafe-inline' because inline style="" attributes remain in templates.
+// frame-ancestors / base-uri / form-action are defence-in-depth directives
+// that don't vary per request.
 const defaultCSP = "default-src 'self'; " +
-	"script-src 'self' 'unsafe-inline'; " +
+	"script-src 'self'; " +
 	"style-src 'self' 'unsafe-inline'; " +
 	"img-src 'self' data: blob: https:; " +
 	"font-src 'self' https:; " +

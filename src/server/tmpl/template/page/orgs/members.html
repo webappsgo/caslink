@@ -39,12 +39,11 @@
             {{if $.IsAdminOrOwner}}
             <td>
               {{if ne .Role "owner"}}
-              <form method="POST" action="/orgs/{{$.Org.Slug}}/members" style="display:inline">
+              <form method="POST" action="/orgs/{{$.Org.Slug}}/members" style="display:inline" data-confirm="Remove this member?">
                 <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
                 <input type="hidden" name="action" value="remove">
                 <input type="hidden" name="user_id" value="{{.UserID}}">
-                <button type="submit" class="btn btn-danger btn-sm"
-                        onclick="return confirm('Remove this member?')">Remove</button>
+                <button type="submit" class="btn btn-danger btn-sm">Remove</button>
               </form>
               <form method="POST" action="/orgs/{{$.Org.Slug}}/members" style="display:inline">
                 <input type="hidden" name="_csrf" value="{{$.CSRFToken}}">
