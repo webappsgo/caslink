@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -204,10 +205,79 @@ func (s *DomainService) IssueDNS01Cert(ctx context.Context, ownerType string, ow
 	cd.SSLLastError = ""
 
 	s.invalidateResolveCache()
+	s.purgeCachedCert(cd.Domain)
 	if s.onCertChange != nil {
 		s.onCertChange(cd.Domain)
 	}
 	return cd, nil
+}
+
+// CertificateFor returns the DNS-01–issued TLS certificate for host from the
+// database, decrypting and memoising it on first use. It is intended for a
+// tls.Config.GetCertificate hook: a nil certificate with a nil error means "no
+// app-managed cert for this host", so the caller falls through to the autocert
+// manager. Only active, SSL-enabled domains resolve; expired/errored ones do
+// not. host is the SNI server name (no port).
+func (s *DomainService) CertificateFor(ctx context.Context, host string) (*tls.Certificate, error) {
+	name := normalizeResolveHost(host)
+	if name == "" {
+		return nil, nil
+	}
+
+	s.certCacheMu.RLock()
+	cached, ok := s.certCache[name]
+	s.certCacheMu.RUnlock()
+	if ok {
+		return cached, nil
+	}
+	if !s.sslConfigured() {
+		return nil, nil
+	}
+
+	var certPEM, keyPEM sql.NullString
+	err := s.store.UsersDB.QueryRowContext(ctx,
+		`SELECT ssl_cert_pem, ssl_key_pem FROM custom_domains
+		 WHERE domain = ? AND ssl_enabled = 1 AND ssl_status = 'active'`,
+		name).Scan(&certPEM, &keyPEM)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load certificate for %s: %w", name, err)
+	}
+	if certPEM.String == "" || keyPEM.String == "" {
+		return nil, nil
+	}
+
+	certBytes, err := appcrypto.DecryptGCM(s.encryptionKey, certPEM.String)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt certificate for %s: %w", name, err)
+	}
+	keyBytes, err := appcrypto.DecryptGCM(s.encryptionKey, keyPEM.String)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt certificate key for %s: %w", name, err)
+	}
+	pair, err := tls.X509KeyPair(certBytes, keyBytes)
+	if err != nil {
+		return nil, fmt.Errorf("parse certificate for %s: %w", name, err)
+	}
+
+	s.certCacheMu.Lock()
+	s.certCache[name] = &pair
+	s.certCacheMu.Unlock()
+	return &pair, nil
+}
+
+// purgeCachedCert drops any memoised certificate for host so the next
+// handshake re-reads the freshly issued cert from the database.
+func (s *DomainService) purgeCachedCert(host string) {
+	name := normalizeResolveHost(host)
+	if name == "" {
+		return
+	}
+	s.certCacheMu.Lock()
+	delete(s.certCache, name)
+	s.certCacheMu.Unlock()
 }
 
 // sslDomainNames returns the certificate SAN list for a domain: the domain

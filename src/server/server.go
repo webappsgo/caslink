@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/subtle"
+	"crypto/tls"
 	"fmt"
 	"log"
 	"net"
@@ -55,6 +56,7 @@ type Server struct {
 	log            *logger.Logger
 	pidFile        string             // path to PID file; empty = no PID file
 	acmeManager    *autocert.Manager  // non-nil when LE HTTP-01 is active
+	domainService  *service.DomainService // custom-domain resolver; serves DNS-01 certs at handshake
 	geoip          *geoip.Service     // non-nil when GeoIP is enabled
 	torManager     *apktor.TorManager // non-nil when Tor binary was found at startup
 	configDir      string             // kept for TorManager (port not known until Start)
@@ -340,6 +342,7 @@ func (s *Server) setupRoutes() {
 		}
 	}
 	domainService := service.NewDomainService(s.store, s.config.Server.Features.CustomDomains)
+	s.domainService = domainService
 	// Enable DNS-01 certificate issuance for custom domains (PART 36). Requires
 	// a valid 32-byte encryption key to store DNS provider credentials and the
 	// issued private key at rest; without it, DNS-01 stays disabled and the
@@ -582,6 +585,8 @@ func (s *Server) setupRoutes() {
 		r.Get("/domains/{domain}", domainHandler.APIGetUserDomain)
 		r.Get("/domains/{domain}/dns", domainHandler.APIUserDomainDNS)
 		r.Get("/domains/{domain}/ssl", domainHandler.APIUserDomainSSL)
+		r.With(RateLimitMiddleware(rateLimiter)).Post("/domains/{domain}/ssl", domainHandler.APIUserDomainSSLConfigure)
+		r.With(RateLimitMiddleware(rateLimiter)).Post("/domains/{domain}/ssl/renew", domainHandler.APIUserDomainSSLRenew)
 		r.With(RateLimitMiddleware(rateLimiter)).Post("/domains/{domain}/verify", domainHandler.VerifyUserDomain)
 		r.Delete("/domains/{domain}", domainHandler.APIDeleteUserDomain)
 	})
@@ -617,6 +622,8 @@ func (s *Server) setupRoutes() {
 			sr.Get("/domains/{domain}", domainHandler.APIGetOrgDomain)
 			sr.Get("/domains/{domain}/dns", domainHandler.APIOrgDomainDNS)
 			sr.Get("/domains/{domain}/ssl", domainHandler.APIOrgDomainSSL)
+			sr.With(RateLimitMiddleware(rateLimiter)).Post("/domains/{domain}/ssl", domainHandler.APIOrgDomainSSLConfigure)
+			sr.With(RateLimitMiddleware(rateLimiter)).Post("/domains/{domain}/ssl/renew", domainHandler.APIOrgDomainSSLRenew)
 			sr.With(RateLimitMiddleware(rateLimiter)).Post("/domains/{domain}/verify", domainHandler.VerifyOrgDomain)
 			sr.Delete("/domains/{domain}", domainHandler.APIDeleteOrgDomain)
 		})
@@ -895,6 +902,8 @@ func (s *Server) setupRoutes() {
 			ar.Get("/domains/{domain}", domainHandler.APIGetUserDomain)
 			ar.Get("/domains/{domain}/dns", domainHandler.APIUserDomainDNS)
 			ar.Get("/domains/{domain}/ssl", domainHandler.APIUserDomainSSL)
+			ar.With(RateLimitMiddleware(rateLimiter)).Post("/domains/{domain}/ssl", domainHandler.APIUserDomainSSLConfigure)
+			ar.With(RateLimitMiddleware(rateLimiter)).Post("/domains/{domain}/ssl/renew", domainHandler.APIUserDomainSSLRenew)
 			ar.Delete("/domains/{domain}", domainHandler.APIDeleteUserDomain)
 			ar.With(RateLimitMiddleware(rateLimiter)).Post("/domains/{domain}/verify", domainHandler.APIVerifyUserDomain)
 		})
@@ -926,6 +935,8 @@ func (s *Server) setupRoutes() {
 			ar.Get("/{slug}/domains/{domain}", domainHandler.APIGetOrgDomain)
 			ar.Get("/{slug}/domains/{domain}/dns", domainHandler.APIOrgDomainDNS)
 			ar.Get("/{slug}/domains/{domain}/ssl", domainHandler.APIOrgDomainSSL)
+			ar.With(RateLimitMiddleware(rateLimiter)).Post("/{slug}/domains/{domain}/ssl", domainHandler.APIOrgDomainSSLConfigure)
+			ar.With(RateLimitMiddleware(rateLimiter)).Post("/{slug}/domains/{domain}/ssl/renew", domainHandler.APIOrgDomainSSLRenew)
 			ar.Delete("/{slug}/domains/{domain}", domainHandler.APIDeleteOrgDomain)
 			ar.With(RateLimitMiddleware(rateLimiter)).Post("/{slug}/domains/{domain}/verify", domainHandler.APIVerifyOrgDomain)
 		})
@@ -1122,10 +1133,29 @@ func (s *Server) Start(address string, port int, afterBind func() error) error {
 	if s.acmeManager != nil &&
 		(s.config.Server.SSL.LetsEncrypt.Challenge == "tls-alpn-01" ||
 			s.config.Server.SSL.LetsEncrypt.Challenge == "") {
+		// Serve app-managed DNS-01 certificates (PART 36) ahead of autocert:
+		// custom domains that configured a DNS provider have their cert stored
+		// (encrypted) in the DB, and CertificateFor returns it at handshake time.
+		// A nil cert falls through to autocert (HTTP-01 / TLS-ALPN-01 issuance).
+		tlsConfig := s.acmeManager.TLSConfig()
+		autocertGetCert := tlsConfig.GetCertificate
+		tlsConfig.GetCertificate = func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			if s.domainService != nil && hello.ServerName != "" {
+				if cert, err := s.domainService.CertificateFor(hello.Context(), hello.ServerName); err != nil {
+					log.Printf("tls: DNS-01 cert lookup for %q failed, falling through to autocert: %v", hello.ServerName, err)
+				} else if cert != nil {
+					return cert, nil
+				}
+			}
+			if autocertGetCert != nil {
+				return autocertGetCert(hello)
+			}
+			return nil, fmt.Errorf("tls: no certificate available for %q", hello.ServerName)
+		}
 		tlsSrv = &http.Server{
 			Addr:         ":443",
 			Handler:      s.router,
-			TLSConfig:    s.acmeManager.TLSConfig(),
+			TLSConfig:    tlsConfig,
 			ReadTimeout:  s.server.ReadTimeout,
 			WriteTimeout: s.server.WriteTimeout,
 			IdleTimeout:  s.server.IdleTimeout,

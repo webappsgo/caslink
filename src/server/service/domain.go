@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
+	"crypto/tls"
 	"database/sql"
 	"encoding/hex"
 	"errors"
@@ -63,6 +64,12 @@ type DomainService struct {
 	leEmail       string
 	leStaging     bool
 	onCertChange  func(host string)
+
+	// certCache memoises decrypted DNS-01 TLS certificates keyed by host so the
+	// TLS handshake path (CertificateFor) does not decrypt the stored PEM on
+	// every connection. Entries are purged on (re)issue via purgeCachedCert.
+	certCacheMu sync.RWMutex
+	certCache   map[string]*tls.Certificate
 }
 
 // NewDomainService creates a new domain service
@@ -71,6 +78,7 @@ func NewDomainService(st *store.Store, cfg config.CustomDomainsConfig) *DomainSe
 		store:        st,
 		cfg:          cfg,
 		resolveCache: make(map[string]resolveCacheEntry),
+		certCache:    make(map[string]*tls.Certificate),
 	}
 }
 

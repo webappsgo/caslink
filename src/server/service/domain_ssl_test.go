@@ -2,8 +2,15 @@ package service
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
+	"math/big"
 	"testing"
 	"time"
 
@@ -13,6 +20,149 @@ import (
 	"github.com/webappsgo/caslink/src/server/service/acmedns"
 	"github.com/webappsgo/caslink/src/server/store"
 )
+
+// genSelfSignedPEM returns a valid self-signed cert/key PEM pair for host, so
+// CertificateFor's tls.X509KeyPair parse succeeds in tests.
+func genSelfSignedPEM(t *testing.T, host string) (certPEM, keyPEM []byte) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: host},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(24 * time.Hour),
+		DNSNames:     []string{host},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("create certificate: %v", err)
+	}
+	certPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatalf("marshal key: %v", err)
+	}
+	keyPEM = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+	return certPEM, keyPEM
+}
+
+// insertActiveSSLDomain inserts an active, SSL-enabled domain row with the given
+// cert/key encrypted under testSSLKey, so CertificateFor resolves it.
+func insertActiveSSLDomain(t *testing.T, st *store.Store, host string, certPEM, keyPEM []byte) {
+	t.Helper()
+	encCert, err := appcrypto.EncryptGCM(testSSLKey(), certPEM)
+	if err != nil {
+		t.Fatalf("encrypt cert: %v", err)
+	}
+	encKey, err := appcrypto.EncryptGCM(testSSLKey(), keyPEM)
+	if err != nil {
+		t.Fatalf("encrypt key: %v", err)
+	}
+	_, err = st.UsersDB.Exec(
+		`INSERT INTO custom_domains
+		 (owner_type, owner_id, domain, verification_status, verified_at, status,
+		  ssl_status, ssl_enabled, ssl_cert_pem, ssl_key_pem, ssl_expires_at)
+		 VALUES ('user', 1, ?, 'verified', ?, 'active', 'active', 1, ?, ?, ?)`,
+		host, time.Now(), encCert, encKey, time.Now().Add(24*time.Hour))
+	if err != nil {
+		t.Fatalf("insert active ssl domain %q: %v", host, err)
+	}
+}
+
+// TestCertificateForReturnsDecryptedCert verifies CertificateFor loads,
+// decrypts, parses, and memoises an active domain's certificate.
+func TestCertificateForReturnsDecryptedCert(t *testing.T) {
+	s, st := newSSLDomainService(t, &acmedns.MockIssuer{}, nil)
+	certPEM, keyPEM := genSelfSignedPEM(t, "cert.example.com")
+	insertActiveSSLDomain(t, st, "cert.example.com", certPEM, keyPEM)
+
+	cert, err := s.CertificateFor(context.Background(), "cert.example.com")
+	if err != nil {
+		t.Fatalf("CertificateFor: %v", err)
+	}
+	if cert == nil || len(cert.Certificate) == 0 {
+		t.Fatalf("expected a parsed certificate, got %v", cert)
+	}
+
+	// Second call must hit the in-memory cache and return the same pointer.
+	cert2, err := s.CertificateFor(context.Background(), "cert.example.com")
+	if err != nil {
+		t.Fatalf("CertificateFor (cached): %v", err)
+	}
+	if cert2 != cert {
+		t.Errorf("expected cached certificate pointer to be reused")
+	}
+}
+
+// TestCertificateForCaseInsensitiveAndPort verifies SNI hosts with mixed case
+// and a port still resolve (normalizeResolveHost strips them).
+func TestCertificateForCaseInsensitiveAndPort(t *testing.T) {
+	s, st := newSSLDomainService(t, &acmedns.MockIssuer{}, nil)
+	certPEM, keyPEM := genSelfSignedPEM(t, "case.example.com")
+	insertActiveSSLDomain(t, st, "case.example.com", certPEM, keyPEM)
+
+	cert, err := s.CertificateFor(context.Background(), "CASE.Example.COM:443")
+	if err != nil {
+		t.Fatalf("CertificateFor: %v", err)
+	}
+	if cert == nil {
+		t.Fatalf("expected certificate for case/port-normalised host")
+	}
+}
+
+// TestCertificateForNoRowReturnsNil verifies an unknown host yields (nil, nil)
+// so the caller falls through to the autocert manager.
+func TestCertificateForNoRowReturnsNil(t *testing.T) {
+	s, _ := newSSLDomainService(t, &acmedns.MockIssuer{}, nil)
+	cert, err := s.CertificateFor(context.Background(), "unknown.example.com")
+	if err != nil {
+		t.Fatalf("CertificateFor: %v", err)
+	}
+	if cert != nil {
+		t.Errorf("expected nil cert for unknown host, got %v", cert)
+	}
+}
+
+// TestCertificateForPurgeEvictsCache verifies purgeCachedCert forces the next
+// lookup to re-read from the database.
+func TestCertificateForPurgeEvictsCache(t *testing.T) {
+	s, st := newSSLDomainService(t, &acmedns.MockIssuer{}, nil)
+	certPEM, keyPEM := genSelfSignedPEM(t, "purge.example.com")
+	insertActiveSSLDomain(t, st, "purge.example.com", certPEM, keyPEM)
+
+	first, err := s.CertificateFor(context.Background(), "purge.example.com")
+	if err != nil || first == nil {
+		t.Fatalf("first CertificateFor: cert=%v err=%v", first, err)
+	}
+
+	s.purgeCachedCert("purge.example.com")
+
+	second, err := s.CertificateFor(context.Background(), "purge.example.com")
+	if err != nil || second == nil {
+		t.Fatalf("second CertificateFor: cert=%v err=%v", second, err)
+	}
+	if second == first {
+		t.Errorf("expected a freshly reloaded certificate pointer after purge")
+	}
+}
+
+// TestCertificateForInactiveDomainReturnsNil verifies a verified-but-not-active
+// SSL domain does not resolve a certificate.
+func TestCertificateForInactiveDomainReturnsNil(t *testing.T) {
+	s, st := newSSLDomainService(t, &acmedns.MockIssuer{}, nil)
+	insertVerifiedDomain(t, st, "user", 1, "inactive.example.com", false)
+
+	cert, err := s.CertificateFor(context.Background(), "inactive.example.com")
+	if err != nil {
+		t.Fatalf("CertificateFor: %v", err)
+	}
+	if cert != nil {
+		t.Errorf("expected nil cert for non-active domain, got %v", cert)
+	}
+}
 
 // testSSLKey returns a deterministic 32-byte AES key for SSL credential tests.
 func testSSLKey() []byte {

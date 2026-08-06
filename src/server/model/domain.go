@@ -37,6 +37,18 @@ type AddDomainRequest struct {
 	Domain string `json:"domain" validate:"required,fqdn"`
 }
 
+// SSLProviderRequest configures SSL issuance for a custom domain (PART 36).
+// Challenge is one of auto/http-01/tls-alpn-01 (automatic, served by the server
+// autocert manager) or dns-01 (manual — requires Provider + Credentials); it
+// defaults to dns-01 when a Provider is supplied, otherwise auto. Credentials
+// are the provider's required fields (e.g. {"api_token": "..."}) and are
+// AES-256-GCM encrypted at rest, never persisted or logged in plaintext.
+type SSLProviderRequest struct {
+	Challenge   string            `json:"challenge"`
+	Provider    string            `json:"provider"`
+	Credentials map[string]string `json:"credentials"`
+}
+
 // DomainAudit represents a custom domain audit log entry
 type DomainAudit struct {
 	ID        int64     `json:"id"`

@@ -679,6 +679,153 @@ func (h *DomainHandler) APIOrgDomainSSL(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// sslStatusFromError maps a domain SSL service error to an HTTP status.
+// Ownership failures are 404, a real issuance failure (ACME/DNS round-trip
+// failed) is 500, and every configuration/validation failure — invalid
+// provider, bad credentials, challenge failure, unverified domain, SSL not
+// configured — is a 400 the caller can correct.
+func sslStatusFromError(err error) int {
+	switch {
+	case errors.Is(err, model.ErrDomainNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, model.ErrSSLIssuanceFailed):
+		return http.StatusInternalServerError
+	default:
+		return http.StatusBadRequest
+	}
+}
+
+// ownerSSLStatus loads an owner-scoped domain and returns its SSL status report,
+// used by the automatic-challenge path where no synchronous issuance happens
+// (the autocert manager mints the cert on the first TLS handshake).
+func (h *DomainHandler) ownerSSLStatus(r *http.Request, ownerType string, ownerID int64, domainName string) (service.SSLStatusInfo, bool) {
+	var domains []*service.CustomDomain
+	var err error
+	if ownerType == "org" {
+		domains, err = h.domainService.GetOrgDomains(r.Context(), ownerID)
+	} else {
+		domains, err = h.domainService.GetUserDomains(r.Context(), ownerID)
+	}
+	if err != nil {
+		return service.SSLStatusInfo{}, false
+	}
+	cd := domainByName(domains, domainName)
+	if cd == nil {
+		return service.SSLStatusInfo{}, false
+	}
+	return h.domainService.SSLStatusFor(r.Context(), cd), true
+}
+
+// configureDomainSSL handles POST .../domains/{domain}/ssl for both owner types.
+// For dns-01 it validates + stores the encrypted provider credentials and
+// synchronously issues the certificate; for auto/http-01/tls-alpn-01 issuance is
+// automatic (autocert manager) so it only reports current status.
+func (h *DomainHandler) configureDomainSSL(w http.ResponseWriter, r *http.Request, ownerType string, ownerID int64, domainName string) {
+	var req model.SSLProviderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	challenge := strings.ToLower(strings.TrimSpace(req.Challenge))
+	if challenge == "" {
+		if strings.TrimSpace(req.Provider) != "" {
+			challenge = "dns-01"
+		} else {
+			challenge = "auto"
+		}
+	}
+
+	if challenge != "dns-01" {
+		status, ok := h.ownerSSLStatus(r, ownerType, ownerID, domainName)
+		if !ok {
+			respondError(w, http.StatusNotFound, "domain not found")
+			return
+		}
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"ssl":     status,
+			"message": "SSL issuance for this challenge type is automatic; the certificate is obtained on first request.",
+		})
+		return
+	}
+
+	if err := h.domainService.SetDNSProvider(r.Context(), ownerType, ownerID, domainName, req.Provider, req.Credentials); err != nil {
+		respondError(w, sslStatusFromError(err), err.Error())
+		return
+	}
+	cd, err := h.domainService.IssueDNS01Cert(r.Context(), ownerType, ownerID, domainName)
+	if err != nil {
+		respondError(w, sslStatusFromError(err), err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"ssl": h.domainService.SSLStatusFor(r.Context(), cd),
+	})
+}
+
+// renewDomainSSL handles POST .../domains/{domain}/ssl/renew for both owner
+// types by forcing a DNS-01 re-issue. Domains on automatic challenges renew
+// themselves; calling renew on one (no DNS provider configured) returns a 400.
+func (h *DomainHandler) renewDomainSSL(w http.ResponseWriter, r *http.Request, ownerType string, ownerID int64, domainName string) {
+	cd, err := h.domainService.IssueDNS01Cert(r.Context(), ownerType, ownerID, domainName)
+	if err != nil {
+		respondError(w, sslStatusFromError(err), err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"ssl": h.domainService.SSLStatusFor(r.Context(), cd),
+	})
+}
+
+// APIUserDomainSSLConfigure — POST /api/v1/users/domains/{domain}/ssl
+func (h *DomainHandler) APIUserDomainSSLConfigure(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.currentAPIUser(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+	h.configureDomainSSL(w, r, "user", user.ID, chi.URLParam(r, "domain"))
+}
+
+// APIUserDomainSSLRenew — POST /api/v1/users/domains/{domain}/ssl/renew
+func (h *DomainHandler) APIUserDomainSSLRenew(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.currentAPIUser(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+	h.renewDomainSSL(w, r, "user", user.ID, chi.URLParam(r, "domain"))
+}
+
+// APIOrgDomainSSLConfigure — POST /api/v1/orgs/{slug}/domains/{domain}/ssl
+// Requires owner or admin role in the organization (manage permission).
+func (h *DomainHandler) APIOrgDomainSSLConfigure(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.currentAPIUser(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+	org, ok := h.apiOrgForMember(w, r.Context(), user, chi.URLParam(r, "slug"), true)
+	if !ok {
+		return
+	}
+	h.configureDomainSSL(w, r, "org", org.ID, chi.URLParam(r, "domain"))
+}
+
+// APIOrgDomainSSLRenew — POST /api/v1/orgs/{slug}/domains/{domain}/ssl/renew
+// Requires owner or admin role in the organization (manage permission).
+func (h *DomainHandler) APIOrgDomainSSLRenew(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.currentAPIUser(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+	org, ok := h.apiOrgForMember(w, r.Context(), user, chi.URLParam(r, "slug"), true)
+	if !ok {
+		return
+	}
+	h.renewDomainSSL(w, r, "org", org.ID, chi.URLParam(r, "domain"))
+}
+
 // adminActorID returns a pointer to the acting admin's numeric ID, resolved
 // from the admin-scoped (adm_) bearer token the RequireBearerAdmin gate has
 // already validated. Nil when no bearer record is present (defensive only).

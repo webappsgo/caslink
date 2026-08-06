@@ -3,13 +3,17 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/webappsgo/caslink/src/config"
 	"github.com/webappsgo/caslink/src/server/service"
+	"github.com/webappsgo/caslink/src/server/service/acmedns"
+	"github.com/webappsgo/caslink/src/server/store"
 )
 
 func newDomainTestHandler(t *testing.T) (*DomainHandler, *service.OrgService, *service.AuthService, *service.User) {
@@ -1115,5 +1119,273 @@ func TestAPIOrgDomainSSLForbiddenForNonMember(t *testing.T) {
 
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("expected 403 for non-member ssl read, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// ---- user/org domain SSL configure + renew (POST) ----------------------
+
+// handlerSSLKey returns a deterministic 32-byte AES key for handler SSL tests.
+func handlerSSLKey() []byte {
+	k := make([]byte, 32)
+	for i := range k {
+		k[i] = byte(i + 7)
+	}
+	return k
+}
+
+// newSSLDomainTestHandler mirrors newDomainTestHandler but enables the DNS-01
+// issuance path on the domain service with the supplied mock issuer, and also
+// returns the backing store so tests can insert verified domains directly (the
+// issuance path requires a verified+active row).
+func newSSLDomainTestHandler(t *testing.T, issuer acmedns.Issuer) (*DomainHandler, *service.OrgService, *service.AuthService, *service.User, *store.Store) {
+	t.Helper()
+
+	st := newSchemaTestStore(t)
+	domainService := service.NewDomainService(st, config.CustomDomainsConfig{})
+	domainService.EnableDNS01SSL(issuer, handlerSSLKey(), 1, "admin@example.com", true, nil)
+	orgService := service.NewOrgService(st)
+	authService := service.NewAuthService(st)
+
+	user, err := authService.RegisterUser(context.Background(), "alice", "alice@example.com", "correct-horse-battery-staple")
+	if err != nil {
+		t.Fatalf("RegisterUser failed: %v", err)
+	}
+	auditService := service.NewAuditService(st)
+	return NewDomainHandler(domainService, authService, orgService, auditService), orgService, authService, user, st
+}
+
+// insertVerifiedDomainRow inserts a verified+active custom_domains row so the
+// SSL issuance path can run against it in handler tests.
+func insertVerifiedDomainRow(t *testing.T, st *store.Store, ownerType string, ownerID int64, domain string, wildcard bool) {
+	t.Helper()
+	_, err := st.UsersDB.Exec(
+		`INSERT INTO custom_domains
+		 (owner_type, owner_id, domain, is_apex, is_wildcard, verification_status, verified_at, status, ssl_status)
+		 VALUES (?, ?, ?, 0, ?, 'verified', ?, 'active', 'none')`,
+		ownerType, ownerID, domain, wildcard, time.Now())
+	if err != nil {
+		t.Fatalf("insert verified domain %q: %v", domain, err)
+	}
+}
+
+// registerHandlerTestProvider registers a DNS provider factory (requiring an
+// api_token) under a unique name for the duration of a handler test.
+func registerHandlerTestProvider(name string) {
+	acmedns.RegisterProvider(name, func(creds map[string]string) (acmedns.DNSChallengeProvider, error) {
+		if creds["api_token"] == "" {
+			return nil, errors.New("missing api_token")
+		}
+		return acmedns.NewMockProvider(name), nil
+	})
+}
+
+// TestAPIUserDomainSSLConfigureUnauthenticated verifies 401 with no acting user.
+func TestAPIUserDomainSSLConfigureUnauthenticated(t *testing.T) {
+	h, _, _, _, _ := newSSLDomainTestHandler(t, &acmedns.MockIssuer{})
+
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/users/domains/x.example.com/ssl", strings.NewReader(`{"challenge":"auto"}`))
+	r = withChiURLParam(r, "domain", "x.example.com")
+	w := httptest.NewRecorder()
+	h.APIUserDomainSSLConfigure(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", w.Code)
+	}
+}
+
+// TestAPIUserDomainSSLConfigureAutoStatusOnly verifies the automatic-challenge
+// path issues nothing synchronously and returns the current SSL status plus a
+// message noting issuance is automatic.
+func TestAPIUserDomainSSLConfigureAutoStatusOnly(t *testing.T) {
+	h, _, _, user, st := newSSLDomainTestHandler(t, &acmedns.MockIssuer{})
+	insertVerifiedDomainRow(t, st, "user", user.ID, "auto.example.com", false)
+
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: user.ID}
+	r := withBearer(httptest.NewRequest(http.MethodPost, "/api/v1/users/domains/auto.example.com/ssl", strings.NewReader(`{"challenge":"auto"}`)), rec)
+	r = withChiURLParam(r, "domain", "auto.example.com")
+	w := httptest.NewRecorder()
+	h.APIUserDomainSSLConfigure(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var env struct {
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if _, ok := env.Data["message"]; !ok {
+		t.Errorf("expected a message noting automatic issuance, got %v", env.Data)
+	}
+	if _, ok := env.Data["ssl"].(map[string]interface{}); !ok {
+		t.Errorf("expected ssl status object, got %v", env.Data)
+	}
+}
+
+// TestAPIUserDomainSSLConfigureDNS01Success verifies the dns-01 path stores the
+// provider, synchronously issues, and returns active SSL status.
+func TestAPIUserDomainSSLConfigureDNS01Success(t *testing.T) {
+	prov := "handler-dns01-provider"
+	registerHandlerTestProvider(prov)
+	issuer := &acmedns.MockIssuer{Result: &acmedns.CertResult{
+		CertPEM: []byte("CERT"), KeyPEM: []byte("KEY"), NotAfter: time.Now().Add(90 * 24 * time.Hour),
+	}}
+	h, _, _, user, st := newSSLDomainTestHandler(t, issuer)
+	insertVerifiedDomainRow(t, st, "user", user.ID, "dns01.example.com", false)
+
+	body := `{"challenge":"dns-01","provider":"` + prov + `","credentials":{"api_token":"tok"}}`
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: user.ID}
+	r := withBearer(httptest.NewRequest(http.MethodPost, "/api/v1/users/domains/dns01.example.com/ssl", strings.NewReader(body)), rec)
+	r = withChiURLParam(r, "domain", "dns01.example.com")
+	w := httptest.NewRecorder()
+	h.APIUserDomainSSLConfigure(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var env struct {
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	ssl, ok := env.Data["ssl"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected ssl object, got %v", env.Data)
+	}
+	if ssl["status"] != "active" {
+		t.Errorf("expected ssl status active, got %v", ssl["status"])
+	}
+	if d := issuer.Domains(); len(d) != 1 || d[0] != "dns01.example.com" {
+		t.Errorf("issuer called with %v, want [dns01.example.com]", d)
+	}
+}
+
+// TestAPIUserDomainSSLConfigureDNS01BadCredentials verifies a provider that
+// rejects the supplied credentials maps to a 400.
+func TestAPIUserDomainSSLConfigureDNS01BadCredentials(t *testing.T) {
+	prov := "handler-dns01-badcreds"
+	registerHandlerTestProvider(prov)
+	h, _, _, user, st := newSSLDomainTestHandler(t, &acmedns.MockIssuer{})
+	insertVerifiedDomainRow(t, st, "user", user.ID, "badcreds.example.com", false)
+
+	body := `{"challenge":"dns-01","provider":"` + prov + `","credentials":{}}`
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: user.ID}
+	r := withBearer(httptest.NewRequest(http.MethodPost, "/api/v1/users/domains/badcreds.example.com/ssl", strings.NewReader(body)), rec)
+	r = withChiURLParam(r, "domain", "badcreds.example.com")
+	w := httptest.NewRecorder()
+	h.APIUserDomainSSLConfigure(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for bad credentials, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestAPIUserDomainSSLRenewNoProvider verifies renew on a verified domain with
+// no DNS provider configured returns 400 (SSL not configured).
+func TestAPIUserDomainSSLRenewNoProvider(t *testing.T) {
+	h, _, _, user, st := newSSLDomainTestHandler(t, &acmedns.MockIssuer{})
+	insertVerifiedDomainRow(t, st, "user", user.ID, "renewnp.example.com", false)
+
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: user.ID}
+	r := withBearer(httptest.NewRequest(http.MethodPost, "/api/v1/users/domains/renewnp.example.com/ssl/renew", nil), rec)
+	r = withChiURLParam(r, "domain", "renewnp.example.com")
+	w := httptest.NewRecorder()
+	h.APIUserDomainSSLRenew(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for renew without provider, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestAPIUserDomainSSLRenewSuccess verifies renew re-issues via the configured
+// DNS provider after an initial dns-01 configure.
+func TestAPIUserDomainSSLRenewSuccess(t *testing.T) {
+	prov := "handler-renew-provider"
+	registerHandlerTestProvider(prov)
+	issuer := &acmedns.MockIssuer{Result: &acmedns.CertResult{
+		CertPEM: []byte("CERT"), KeyPEM: []byte("KEY"), NotAfter: time.Now().Add(90 * 24 * time.Hour),
+	}}
+	h, _, _, user, st := newSSLDomainTestHandler(t, issuer)
+	insertVerifiedDomainRow(t, st, "user", user.ID, "renew.example.com", false)
+
+	configBody := `{"challenge":"dns-01","provider":"` + prov + `","credentials":{"api_token":"tok"}}`
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: user.ID}
+	cr := withBearer(httptest.NewRequest(http.MethodPost, "/api/v1/users/domains/renew.example.com/ssl", strings.NewReader(configBody)), rec)
+	cr = withChiURLParam(cr, "domain", "renew.example.com")
+	cw := httptest.NewRecorder()
+	h.APIUserDomainSSLConfigure(cw, cr)
+	if cw.Code != http.StatusOK {
+		t.Fatalf("configure precondition failed: %d: %s", cw.Code, cw.Body.String())
+	}
+
+	rr := withBearer(httptest.NewRequest(http.MethodPost, "/api/v1/users/domains/renew.example.com/ssl/renew", nil), rec)
+	rr = withChiURLParam(rr, "domain", "renew.example.com")
+	rw := httptest.NewRecorder()
+	h.APIUserDomainSSLRenew(rw, rr)
+
+	if rw.Code != http.StatusOK {
+		t.Fatalf("expected 200 on renew, got %d: %s", rw.Code, rw.Body.String())
+	}
+}
+
+// TestAPIOrgDomainSSLConfigureForbiddenForMember verifies a plain member cannot
+// configure SSL for an org domain.
+func TestAPIOrgDomainSSLConfigureForbiddenForMember(t *testing.T) {
+	h, orgService, authService, user, st := newSSLDomainTestHandler(t, &acmedns.MockIssuer{})
+	owner, err := authService.RegisterUser(context.Background(), "orgowner", "owner@example.com", "correct-horse-battery-staple")
+	if err != nil {
+		t.Fatalf("RegisterUser failed: %v", err)
+	}
+	org, err := orgService.CreateOrganization(context.Background(), owner.ID, "Acme Corp", "acme")
+	if err != nil {
+		t.Fatalf("CreateOrganization failed: %v", err)
+	}
+	if err := orgService.AddMemberByEmail(context.Background(), org.ID, "alice@example.com", "member"); err != nil {
+		t.Fatalf("AddMemberByEmail failed: %v", err)
+	}
+	insertVerifiedDomainRow(t, st, "org", org.ID, "orgssl.example.com", false)
+
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: user.ID}
+	r := withBearer(httptest.NewRequest(http.MethodPost, "/api/v1/orgs/"+org.Slug+"/domains/orgssl.example.com/ssl", strings.NewReader(`{"challenge":"auto"}`)), rec)
+	r = withChiURLParam(r, "slug", org.Slug)
+	r = withChiURLParam(r, "domain", "orgssl.example.com")
+	w := httptest.NewRecorder()
+	h.APIOrgDomainSSLConfigure(w, r)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for member configure, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestAPIOrgDomainSSLConfigureDNS01SuccessForOwner verifies the org owner can
+// configure dns-01 SSL and it issues.
+func TestAPIOrgDomainSSLConfigureDNS01SuccessForOwner(t *testing.T) {
+	prov := "handler-org-dns01-provider"
+	registerHandlerTestProvider(prov)
+	issuer := &acmedns.MockIssuer{Result: &acmedns.CertResult{
+		CertPEM: []byte("CERT"), KeyPEM: []byte("KEY"), NotAfter: time.Now().Add(90 * 24 * time.Hour),
+	}}
+	h, orgService, _, user, st := newSSLDomainTestHandler(t, issuer)
+	org, err := orgService.CreateOrganization(context.Background(), user.ID, "Acme Corp", "acme")
+	if err != nil {
+		t.Fatalf("CreateOrganization failed: %v", err)
+	}
+	insertVerifiedDomainRow(t, st, "org", org.ID, "orgdns01.example.com", false)
+
+	body := `{"challenge":"dns-01","provider":"` + prov + `","credentials":{"api_token":"tok"}}`
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: user.ID}
+	r := withBearer(httptest.NewRequest(http.MethodPost, "/api/v1/orgs/"+org.Slug+"/domains/orgdns01.example.com/ssl", strings.NewReader(body)), rec)
+	r = withChiURLParam(r, "slug", org.Slug)
+	r = withChiURLParam(r, "domain", "orgdns01.example.com")
+	w := httptest.NewRecorder()
+	h.APIOrgDomainSSLConfigure(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if d := issuer.Domains(); len(d) != 1 || d[0] != "orgdns01.example.com" {
+		t.Errorf("issuer called with %v, want [orgdns01.example.com]", d)
 	}
 }
