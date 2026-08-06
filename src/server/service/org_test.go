@@ -55,9 +55,9 @@ func TestCreateOrganization(t *testing.T) {
 			wantSlug: "widget-makers-inc",
 		},
 		{
-			name:      "slug too short is invalid",
-			orgName:   "Ab",
-			slug:      "ab",
+			name:      "single-char slug is too short",
+			orgName:   "A",
+			slug:      "a",
 			wantErr:   true,
 			errSubstr: "invalid organization slug",
 		},

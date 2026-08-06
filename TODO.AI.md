@@ -89,8 +89,15 @@ fixed inline and committed separately.
   any non-open mode or when the limit is reached. Still remaining: the
   invite-code creation flow and admin_only admin-initiated creation (both
   depend on the shared invite subsystem), plus per-org `visibility`
-  (public/private) which is a distinct org-level setting. Feature build.
-  Deferred.
+  (public/private) which is a distinct org-level setting. Org slug
+  validation is now spec-aligned (PART 35: 2-39 chars, no consecutive
+  hyphens, reserved-name blocklist) via the shared
+  `validate.ValidateOrgSlug`, used by both the handler and the service. The
+  one remaining slug gap is the full shared-namespace check — a slug must
+  also not collide with an existing username (spec `CheckNameAvailable`);
+  today only org-vs-org slug uniqueness is enforced at the data layer.
+  Cross-table user/org collision needs the unified namespace lookup and is
+  deferred with the rest of this feature build.
 
 - Admin panel WebUI completeness + cookie-consent banner (PART 16/17): the
   full set of admin config templates and the always-on GDPR cookie-consent

@@ -181,7 +181,7 @@ func TestCreateOrgFormInvalidSlug(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200 (re-rendered form), got %d", w.Code)
 	}
-	if !bytes.Contains(w.Body.Bytes(), []byte("Slug must be")) {
+	if !bytes.Contains(w.Body.Bytes(), []byte("slug must be")) {
 		t.Errorf("expected slug validation error in body, got: %s", w.Body.String())
 	}
 }
@@ -711,8 +711,8 @@ func TestAPICreateOrgInvalidSlug(t *testing.T) {
 	if env["error"] != "BAD_REQUEST" {
 		t.Errorf("unexpected error code: %q", env["error"])
 	}
-	if env["message"] != "Invalid slug format" {
-		t.Errorf("unexpected error message: %q", env["message"])
+	if env["message"] == "" {
+		t.Errorf("expected a slug validation message, got empty")
 	}
 }
 

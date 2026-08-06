@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/webappsgo/caslink/src/server/store"
+	"github.com/webappsgo/caslink/src/server/validate"
 )
 
 // OrgService handles organization operations
@@ -590,23 +591,22 @@ func generateSlug(name string) string {
 	// Replace spaces and special chars with hyphens
 	slug = regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(slug, "-")
 
+	// Collapse any accidental consecutive hyphens (PART 35 forbids them)
+	slug = regexp.MustCompile(`-+`).ReplaceAllString(slug, "-")
+
 	// Remove leading/trailing hyphens
 	slug = strings.Trim(slug, "-")
 
-	// Limit length to 50 chars
-	if len(slug) > 50 {
-		slug = slug[:50]
+	// Limit length to the PART 35 maximum, re-trimming any hyphen the cut left
+	if len(slug) > 39 {
+		slug = strings.Trim(slug[:39], "-")
 	}
 
 	return slug
 }
 
-// isValidSlug checks if a slug is valid (3-50 chars, lowercase alphanumeric + hyphens)
+// isValidSlug checks if a slug is valid per AI.md PART 35 (2-39 chars,
+// lowercase alphanumeric + hyphens, no consecutive hyphens, not reserved).
 func isValidSlug(slug string) bool {
-	if len(slug) < 3 || len(slug) > 50 {
-		return false
-	}
-
-	validSlugRegex := regexp.MustCompile(`^[a-z0-9][a-z0-9-]*[a-z0-9]$`)
-	return validSlugRegex.MatchString(slug)
+	return validate.ValidateOrgSlug(slug) == nil
 }

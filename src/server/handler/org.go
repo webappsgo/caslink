@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strconv"
 	"time"
 
@@ -15,9 +14,8 @@ import (
 	"github.com/webappsgo/caslink/src/server/model"
 	"github.com/webappsgo/caslink/src/server/service"
 	"github.com/webappsgo/caslink/src/server/tmpl"
+	"github.com/webappsgo/caslink/src/server/validate"
 )
-
-var slugRegex = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$`)
 
 // OrgSummary is the view model for each row in the org list.
 type OrgSummary struct {
@@ -188,8 +186,8 @@ func (h *OrgHandler) CreateOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !slugRegex.MatchString(slug) {
-		h.renderNewOrgWithError(w, r, user, name, slug, "Slug must be 3–40 lowercase letters, digits, and hyphens, and cannot start or end with a hyphen")
+	if err := validate.ValidateOrgSlug(slug); err != nil {
+		h.renderNewOrgWithError(w, r, user, name, slug, err.Error())
 		return
 	}
 
@@ -475,9 +473,11 @@ func (h *OrgHandler) APICreateOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Slug != "" && !slugRegex.MatchString(req.Slug) {
-		respondError(w, http.StatusBadRequest, "Invalid slug format")
-		return
+	if req.Slug != "" {
+		if err := validate.ValidateOrgSlug(req.Slug); err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
