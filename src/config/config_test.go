@@ -757,15 +757,16 @@ func TestRegistrationModeGating(t *testing.T) {
 		mode        string
 		wantNorm    string
 		wantAllowed bool
+		wantInvite  bool
 	}{
-		{"open default", true, "open", "open", true},
-		{"empty defaults to open", true, "", "open", true},
-		{"unknown defaults to open", true, "bogus", "open", true},
-		{"mixed case open", true, "OpEn", "open", true},
-		{"invite blocks public", true, "invite", "invite", false},
-		{"admin_only blocks public", true, "admin_only", "admin_only", false},
-		{"disabled blocks public", true, "disabled", "disabled", false},
-		{"registration disabled blocks even open", false, "open", "open", false},
+		{"open default", true, "open", "open", true, true},
+		{"empty defaults to open", true, "", "open", true, true},
+		{"unknown defaults to open", true, "bogus", "open", true, true},
+		{"mixed case open", true, "OpEn", "open", true, true},
+		{"invite blocks public but honors links", true, "invite", "invite", false, true},
+		{"admin_only blocks public but honors links", true, "admin_only", "admin_only", false, true},
+		{"disabled blocks public and rejects links", true, "disabled", "disabled", false, false},
+		{"registration disabled blocks even open", false, "open", "open", false, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -775,6 +776,9 @@ func TestRegistrationModeGating(t *testing.T) {
 			}
 			if got := r.PublicSelfRegistrationAllowed(); got != tc.wantAllowed {
 				t.Errorf("PublicSelfRegistrationAllowed() = %v, want %v", got, tc.wantAllowed)
+			}
+			if got := r.InviteAcceptanceAllowed(); got != tc.wantInvite {
+				t.Errorf("InviteAcceptanceAllowed() = %v, want %v", got, tc.wantInvite)
 			}
 		})
 	}

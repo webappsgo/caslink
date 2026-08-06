@@ -85,6 +85,11 @@ func (h *AuthUserHandler) hasValidRegistrationInvite(r *http.Request, token stri
 	if token == "" || h.inviteService == nil {
 		return false
 	}
+	// disabled mode rejects every existing unused invite/activation link,
+	// even one that is otherwise still valid (PART 34).
+	if !h.cfg.Server.Features.Users.Registration.InviteAcceptanceAllowed() {
+		return false
+	}
 	_, err := h.inviteService.ValidateInvite(r.Context(), token, service.InviteKindUserRegistration)
 	return err == nil
 }

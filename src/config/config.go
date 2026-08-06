@@ -512,6 +512,22 @@ func (r RegistrationConfig) PublicSelfRegistrationAllowed() bool {
 	return r.Enabled && r.NormalizedMode() == "open"
 }
 
+// InviteAcceptanceAllowed reports whether a valid user-registration invite or
+// activation link may still be consumed under the current mode. Invites are
+// honored in open, invite, and admin_only modes, but the disabled mode rejects
+// every existing unused link (PART 34); disabling the feature honors none.
+func (r RegistrationConfig) InviteAcceptanceAllowed() bool {
+	if !r.Enabled {
+		return false
+	}
+	switch r.NormalizedMode() {
+	case "open", "invite", "admin_only":
+		return true
+	default:
+		return false
+	}
+}
+
 // ProfileConfig holds user profile settings
 type ProfileConfig struct {
 	AllowDisplayName bool `yaml:"allow_display_name"`

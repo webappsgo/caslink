@@ -322,6 +322,18 @@ func (s *Server) setupRoutes() {
 	qrService.SetMetrics(s.metrics)
 	orgService := service.NewOrgService(s.store)
 	inviteService := service.NewInviteService(s.store)
+	// disabled registration mode must reject all outstanding unused
+	// invite/activation links (PART 34). server.yml is the source of truth for
+	// the mode, so reconcile once at startup; the acceptance path also rejects
+	// links defensively when the mode is disabled.
+	if s.config.Server.Features.Users.Enabled &&
+		s.config.Server.Features.Users.Registration.NormalizedMode() == "disabled" {
+		if n, err := inviteService.RevokeUnusedByKind(context.Background(), service.InviteKindUserRegistration); err != nil {
+			s.log.Error.Printf("revoking unused user-registration invites for disabled mode: %v", err)
+		} else if n > 0 {
+			s.log.Server.Printf("registration disabled: revoked %d outstanding user-registration invite(s)", n)
+		}
+	}
 	domainService := service.NewDomainService(s.store, s.config.Server.Features.CustomDomains)
 	analyticsService := service.NewAnalyticsService(s.store)
 	bulkService := service.NewBulkService(s.store, urlService)

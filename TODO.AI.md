@@ -140,10 +140,14 @@ fixed inline and committed separately.
   (one-time acceptance link shown once), lists active invites, and revokes
   them (audit-logged); the public `/register` GET+POST accept a valid
   `?invite=` / hidden-field user-registration token even under invite /
-  admin_only mode and consume it on successful account creation. Still
-  remaining: explicit rejection of unused links when mode flips to disabled
-  (RevokeUnusedByKind is wired in the service but not yet triggered on the
-  mode-change save path). Feature build.
+  admin_only mode and consume it on successful account creation. The
+  disabled-mode rejection of existing unused invite/activation links is now
+  implemented: `RegistrationConfig.InviteAcceptanceAllowed()` gates the
+  acceptance path (`hasValidRegistrationInvite` rejects every token when the
+  mode is disabled), and server startup proactively revokes outstanding unused
+  user-registration invites via `RevokeUnusedByKind` when the configured mode
+  is disabled (server.yml is the source of truth for the mode). PART 34
+  registration-mode work is complete.
 
 - PART 35 organization creation policy: the creation gate is implemented —
   `OrganizationsConfig.Creation.Mode` (default open) with

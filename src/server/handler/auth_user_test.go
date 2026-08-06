@@ -488,6 +488,41 @@ func TestRegisterFormInviteAllowsClosedRegistration(t *testing.T) {
 	}
 }
 
+// TestRegisterFormInviteRejectedWhenDisabled verifies that even an otherwise
+// valid user-registration invite is rejected once the mode is disabled — the
+// account is not created and the invite is left unconsumed (PART 34).
+func TestRegisterFormInviteRejectedWhenDisabled(t *testing.T) {
+	h, _, st := newAuthUserTestHandler(t)
+	h.cfg.Server.Features.Users.Registration.Mode = "disabled"
+
+	inviteSvc := service.NewInviteService(st)
+	plaintext, _, err := inviteSvc.CreateInvite(context.Background(), service.CreateInviteParams{
+		Kind: service.InviteKindUserRegistration,
+	})
+	if err != nil {
+		t.Fatalf("CreateInvite failed: %v", err)
+	}
+
+	form := url.Values{
+		"username": {"mallory"},
+		"email":    {"mallory@example.com"},
+		"password": {"longenoughpw"},
+		"invite":   {plaintext},
+	}
+	r := httptest.NewRequest(http.MethodPost, "/server/auth/register", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.Register(w, r)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 when registration is disabled, got %d: %s", w.Code, w.Body.String())
+	}
+	// The invite must remain unconsumed — the account was never created.
+	if _, verr := inviteSvc.ValidateInvite(context.Background(), plaintext, service.InviteKindUserRegistration); verr != nil {
+		t.Fatalf("expected invite to remain valid after a rejected disabled-mode registration, got: %v", verr)
+	}
+}
+
 // TestRegisterPageInviteRendersWhenClosed verifies the registration page renders
 // (200) with a valid invite token even when public registration is closed, and
 // carries the token forward in a hidden field (PART 34).
