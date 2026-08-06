@@ -12,13 +12,6 @@ deleted). Each is feature-sized or needs verification unavailable in this
 environment; all bounded security/logic/config findings from that pass were
 fixed inline and committed separately.
 
-- Service user UID/GID safe-range allocation (PART 24): `ensureServiceUser()`
-  delegates to `useradd --system`, so it does not enforce the spec's
-  UID==GID, 200-899 safe range, or reserved-ID skip. Correct enforcement means
-  scanning existing IDs and creating the group/user with an explicit matching
-  numeric id; verifying it needs a root Linux host with the real user/group
-  databases. Deferred — cannot be exercised in this container-only environment.
-
 - Frontend CSP externalization (PART 16): move any remaining inline handlers
   into external app.js, replace native confirm/alert/prompt with `<dialog>`
   components, and tighten CSP back to `script-src 'self'`. Large UI change that
