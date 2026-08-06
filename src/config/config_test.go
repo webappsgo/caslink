@@ -779,3 +779,38 @@ func TestRegistrationModeGating(t *testing.T) {
 		})
 	}
 }
+
+func TestOrgCreationModeGating(t *testing.T) {
+	cases := []struct {
+		name        string
+		enabled     bool
+		allow       bool
+		mode        string
+		wantNorm    string
+		wantAllowed bool
+	}{
+		{"open default", true, true, "open", "open", true},
+		{"empty defaults to open", true, true, "", "open", true},
+		{"unknown defaults to open", true, true, "bogus", "open", true},
+		{"invite blocks self-service", true, true, "invite", "invite", false},
+		{"admin_only blocks self-service", true, true, "admin_only", "admin_only", false},
+		{"disabled blocks self-service", true, true, "disabled", "disabled", false},
+		{"allow_creation off blocks open", true, false, "open", "open", false},
+		{"feature disabled blocks open", false, true, "open", "open", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			o := OrganizationsConfig{
+				Enabled:       tc.enabled,
+				AllowCreation: tc.allow,
+				Creation:      OrgCreationConfig{Mode: tc.mode},
+			}
+			if got := o.NormalizedCreationMode(); got != tc.wantNorm {
+				t.Errorf("NormalizedCreationMode() = %q, want %q", got, tc.wantNorm)
+			}
+			if got := o.AuthenticatedCreationAllowed(); got != tc.wantAllowed {
+				t.Errorf("AuthenticatedCreationAllowed() = %v, want %v", got, tc.wantAllowed)
+			}
+		})
+	}
+}

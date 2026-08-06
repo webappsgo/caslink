@@ -111,6 +111,18 @@ func (s *OrgService) CreateOrganization(ctx context.Context, userID int64, name,
 	return org, nil
 }
 
+// CountOwnedOrgs returns how many organizations the given user owns. Used to
+// enforce the per-user creation limit (PART 35, max_per_user).
+func (s *OrgService) CountOwnedOrgs(ctx context.Context, userID int64) (int, error) {
+	var count int
+	err := s.store.UsersDB.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM organizations WHERE owner_id = ?", userID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count owned organizations: %w", err)
+	}
+	return count, nil
+}
+
 // GetUserOrganizations gets all organizations for a user
 func (s *OrgService) GetUserOrganizations(ctx context.Context, userID int64) ([]*Organization, error) {
 	query := `SELECT o.id, o.name, o.slug, o.owner_id, o.created_at, o.updated_at

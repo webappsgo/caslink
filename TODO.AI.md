@@ -81,9 +81,16 @@ fixed inline and committed separately.
   expiry) and explicit rejection of unused links when mode flips to disabled.
   Feature build. Deferred.
 
-- PART 35 organization creation policy: implement `server.orgs.creation.mode`
-  (open/invite/admin_only/disabled) distinct from per-org `visibility`
-  (public/private), with owner/admin/member roles. Feature build. Deferred.
+- PART 35 organization creation policy: the creation gate is implemented —
+  `OrganizationsConfig.Creation.Mode` (default open) with
+  `NormalizedCreationMode()`/`AuthenticatedCreationAllowed()`, the per-user
+  `max_per_user` limit enforced via `OrgService.CountOwnedOrgs`, and both the
+  form (`/orgs`) and API (`/api/v1/orgs`) create paths reject with 403 under
+  any non-open mode or when the limit is reached. Still remaining: the
+  invite-code creation flow and admin_only admin-initiated creation (both
+  depend on the shared invite subsystem), plus per-org `visibility`
+  (public/private) which is a distinct org-level setting. Feature build.
+  Deferred.
 
 - Admin panel WebUI completeness + cookie-consent banner (PART 16/17): the
   full set of admin config templates and the always-on GDPR cookie-consent

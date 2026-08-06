@@ -514,10 +514,35 @@ type ProfileConfig struct {
 
 // OrganizationsConfig holds organization settings
 type OrganizationsConfig struct {
-	Enabled       bool     `yaml:"enabled"`
-	AllowCreation bool     `yaml:"allow_creation"`
-	MaxPerUser    int      `yaml:"max_per_user"`
-	Roles         []string `yaml:"roles"`
+	Enabled       bool              `yaml:"enabled"`
+	AllowCreation bool              `yaml:"allow_creation"`
+	Creation      OrgCreationConfig `yaml:"creation"`
+	MaxPerUser    int               `yaml:"max_per_user"`
+	Roles         []string          `yaml:"roles"`
+}
+
+// OrgCreationConfig holds the server-level organization creation policy.
+type OrgCreationConfig struct {
+	Mode string `yaml:"mode"`
+}
+
+// NormalizedCreationMode returns the org creation mode lowercased and trimmed,
+// substituting the "open" default for an empty or unrecognized value (PART 35).
+func (o OrganizationsConfig) NormalizedCreationMode() string {
+	switch m := strings.ToLower(strings.TrimSpace(o.Creation.Mode)); m {
+	case "open", "invite", "admin_only", "disabled":
+		return m
+	default:
+		return "open"
+	}
+}
+
+// AuthenticatedCreationAllowed reports whether an ordinary authenticated user
+// may create a new organization through the self-service routes. Only the
+// "open" mode permits it (PART 35); invite, admin_only, and disabled route
+// creation elsewhere or forbid it, as does turning off AllowCreation entirely.
+func (o OrganizationsConfig) AuthenticatedCreationAllowed() bool {
+	return o.Enabled && o.AllowCreation && o.NormalizedCreationMode() == "open"
 }
 
 // CustomDomainsConfig holds custom domain settings
@@ -1065,6 +1090,7 @@ func DefaultConfig() *Config {
 				Organizations: OrganizationsConfig{
 					Enabled:       true,
 					AllowCreation: true,
+					Creation:      OrgCreationConfig{Mode: "open"},
 					MaxPerUser:    5,
 					Roles:         []string{"owner", "admin", "member"},
 				},

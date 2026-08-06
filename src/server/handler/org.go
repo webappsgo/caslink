@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -131,6 +132,35 @@ func (h *OrgHandler) CreateOrgPage(w http.ResponseWriter, r *http.Request) {
 	h.renderer.Render(w, "template/page/orgs/new.html", data)
 }
 
+// creationBlockedReason applies the server-level org creation policy (PART 35):
+// the creation mode gate (only "open" allows self-service creation) and the
+// per-user ownership limit (max_per_user, 0 = unlimited). It returns a
+// human-readable reason and HTTP status when creation must be refused, or an
+// empty reason and 0 when the user may proceed.
+func (h *OrgHandler) creationBlockedReason(ctx context.Context, userID int64) (string, int) {
+	orgCfg := h.config.Server.Features.Organizations
+	if !orgCfg.AuthenticatedCreationAllowed() {
+		switch orgCfg.NormalizedCreationMode() {
+		case "invite":
+			return "Organization creation is invite-only. Use the creation invite issued by an administrator.", http.StatusForbidden
+		case "admin_only":
+			return "Organizations are created by an administrator. Contact your administrator to request one.", http.StatusForbidden
+		default:
+			return "Organization creation is currently disabled.", http.StatusForbidden
+		}
+	}
+	if max := orgCfg.MaxPerUser; max > 0 {
+		count, err := h.orgService.CountOwnedOrgs(ctx, userID)
+		if err != nil {
+			return "Unable to verify your organization limit. Please try again.", http.StatusInternalServerError
+		}
+		if count >= max {
+			return fmt.Sprintf("You have reached the maximum of %d organizations.", max), http.StatusForbidden
+		}
+	}
+	return "", 0
+}
+
 // CreateOrg handles organization creation (POST /orgs/new).
 func (h *OrgHandler) CreateOrg(w http.ResponseWriter, r *http.Request) {
 	user, ok := getUserFromRequest(r)
@@ -146,6 +176,12 @@ func (h *OrgHandler) CreateOrg(w http.ResponseWriter, r *http.Request) {
 
 	name := r.FormValue("name")
 	slug := r.FormValue("slug")
+
+	if reason, status := h.creationBlockedReason(r.Context(), user.ID); reason != "" {
+		w.WriteHeader(status)
+		h.renderNewOrgWithError(w, r, user, name, slug, reason)
+		return
+	}
 
 	if len(name) < 3 || len(name) > 40 {
 		h.renderNewOrgWithError(w, r, user, name, slug, "Organization name must be between 3 and 40 characters")
@@ -446,6 +482,11 @@ func (h *OrgHandler) APICreateOrg(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
+
+	if reason, status := h.creationBlockedReason(ctx, user.ID); reason != "" {
+		respondError(w, status, reason)
+		return
+	}
 
 	org, err := h.orgService.CreateOrganization(ctx, user.ID, req.Name, req.Slug)
 	if err != nil {
