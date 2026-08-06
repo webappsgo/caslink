@@ -459,6 +459,29 @@ func (s *Store) initUsersSchema() error {
 			used_at INTEGER
 		)`,
 
+		// Invites — shared single-use tokens for admin-registration invites
+		// (PART 17), user-registration invites (PART 34), and org-membership
+		// invites (PART 35). SHA-256 hashed at rest, 7-day default expiry.
+		// Single-use by default (max_uses = 1); max_uses may be raised, and
+		// max_uses = 0 means unlimited. Consumed atomically via use_count.
+		`CREATE TABLE IF NOT EXISTS invites (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			token_hash TEXT NOT NULL UNIQUE,
+			kind TEXT NOT NULL,
+			email TEXT NOT NULL DEFAULT '',
+			org_id INTEGER,
+			role TEXT NOT NULL DEFAULT '',
+			created_by INTEGER NOT NULL DEFAULT 0,
+			created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+			expires_at INTEGER NOT NULL,
+			max_uses INTEGER NOT NULL DEFAULT 1,
+			use_count INTEGER NOT NULL DEFAULT 0,
+			revoked INTEGER NOT NULL DEFAULT 0,
+			used_at INTEGER,
+			used_by INTEGER,
+			FOREIGN KEY (org_id) REFERENCES organizations(id) ON DELETE CASCADE
+		)`,
+
 		// Email verification tokens per PART 23
 		`CREATE TABLE IF NOT EXISTS email_verifications (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -584,6 +607,9 @@ func (s *Store) initUsersSchema() error {
 		`CREATE INDEX IF NOT EXISTS idx_org_tokens_token_hash ON org_tokens(token_hash) WHERE active = 1`,
 		`CREATE INDEX IF NOT EXISTS idx_password_resets_token_hash ON password_resets(token_hash)`,
 		`CREATE INDEX IF NOT EXISTS idx_email_verifications_token_hash ON email_verifications(token_hash)`,
+		`CREATE INDEX IF NOT EXISTS idx_invites_token_hash ON invites(token_hash)`,
+		`CREATE INDEX IF NOT EXISTS idx_invites_kind ON invites(kind)`,
+		`CREATE INDEX IF NOT EXISTS idx_invites_org_id ON invites(org_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_passkey_credentials_user_id ON passkey_credentials(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_passkey_credentials_credential_id ON passkey_credentials(credential_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_recovery_keys_user_id ON recovery_keys(user_id)`,

@@ -550,6 +550,19 @@ func (s *Scheduler) cleanupTokens(ctx context.Context) error {
 	if n > 0 {
 		log.Printf("[scheduler] cleanupTokens: removed %d expired tokens", n)
 	}
+
+	// Invites use INTEGER unix-second expiries (see password_resets convention),
+	// so they are compared against time.Now().Unix(), not a DATETIME.
+	invRes, err := s.store.UsersDB.ExecContext(ctx,
+		`DELETE FROM invites WHERE expires_at < ?`,
+		time.Now().Unix(),
+	)
+	if err != nil {
+		return fmt.Errorf("cleanupTokens (invites): %w", err)
+	}
+	if in, _ := invRes.RowsAffected(); in > 0 {
+		log.Printf("[scheduler] cleanupTokens: removed %d expired invites", in)
+	}
 	return nil
 }
 
