@@ -75,10 +75,15 @@ fixed inline and committed separately.
   DomainService.RetryPendingVerifications and deletes rows left unverified
   past verification_ttl via CleanupExpiredPendingVerifications. The user and
   org custom-domain API routes now exist too, at CRUD parity with the web
-  routes (PART 14): GET/POST /api/v1/users/domains and
+  routes (PART 14): GET/POST /api/v1/users/domains,
+  GET/DELETE /api/v1/users/domains/{domain},
+  GET /api/v1/users/domains/{domain}/dns, and
   POST /api/v1/users/domains/{domain}/verify, plus the org equivalents under
   /api/v1/orgs/{slug}/domains — all bearer-or-session authenticated, with the
   same ownership scoping and owner/admin role gating as the web handlers.
+  DeleteOwnedDomain enforces owner_type+owner_id in the DELETE so cross-owner
+  deletes 404 and never remove another owner's row (tested); reads of another
+  owner's domain 404 rather than leak the record.
   The custom-domain resolver middleware and domain caching are now
   implemented: DomainService.Resolve(host) resolves a verified+active,
   non-wildcard domain (host normalized for port/case/trailing-dot) via a 60s
@@ -96,7 +101,11 @@ fixed inline and committed separately.
   GetDomainByName/ListAllDomains/SuspendDomain/UnsuspendDomain/
   AdminDeleteDomain, each writing a custom_domain_audit row plus a
   server-wide admin audit.log entry and invalidating the resolve cache.
-  Still remaining: admin WEB pages for the same actions,
+  The custom_domain_audit lifecycle trail is now wired on the ownership
+  paths too: AddDomain records "created" and VerifyDomain records "verified"
+  (spec canonical vocabulary created/verified/ssl_issued/suspended/deleted),
+  with TestDomainAuditTrail asserting the created/suspended/unsuspended
+  sequence. Still remaining: admin WEB pages for the same actions,
   /{domain}/ssl/renew (deferred to ACME), DNS-01 ACME issuance and cert
   persistence, scheduled SSL-renewal task, and rate limiting. Deferred.
 

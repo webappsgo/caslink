@@ -521,6 +521,26 @@ func (s *DomainService) AdminDeleteDomain(ctx context.Context, domainID int64, a
 	return nil
 }
 
+// DeleteOwnedDomain deletes a custom domain, enforcing ownership in the DELETE
+// itself so a caller can never remove another owner's domain. Returns
+// model.ErrDomainNotFound when no row matches both the id and the owner. The
+// resolve cache is invalidated. No custom_domain_audit row is written: the
+// schema cascades audit rows on delete (ON DELETE CASCADE), so any "deleted"
+// row would be removed in the same statement — mirroring AdminDeleteDomain.
+func (s *DomainService) DeleteOwnedDomain(ctx context.Context, ownerType string, ownerID, domainID int64) error {
+	res, err := s.store.UsersDB.ExecContext(ctx,
+		`DELETE FROM custom_domains WHERE id = ? AND owner_type = ? AND owner_id = ?`,
+		domainID, ownerType, ownerID)
+	if err != nil {
+		return fmt.Errorf("failed to delete domain: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return model.ErrDomainNotFound
+	}
+	s.invalidateResolveCache()
+	return nil
+}
+
 // discoverPublicIPv4 fetches the server's outbound IPv4 address from an
 // external service. It tries multiple providers in order and returns the
 // first usable address. Returns nil when all attempts fail.

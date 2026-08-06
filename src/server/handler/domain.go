@@ -458,6 +458,174 @@ func (h *DomainHandler) APIVerifyOrgDomain(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+// domainByName returns the named domain from an owner-scoped list, or nil when
+// the caller does not own it.
+func domainByName(domains []*service.CustomDomain, name string) *service.CustomDomain {
+	for _, d := range domains {
+		if d.Domain == name {
+			return d
+		}
+	}
+	return nil
+}
+
+// APIGetUserDomain — GET /api/v1/users/domains/{domain}
+func (h *DomainHandler) APIGetUserDomain(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.currentAPIUser(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+	domains, err := h.domainService.GetUserDomains(r.Context(), user.ID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to load domains")
+		return
+	}
+	cd := domainByName(domains, chi.URLParam(r, "domain"))
+	if cd == nil {
+		respondError(w, http.StatusNotFound, "domain not found for this user")
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"domain":           cd,
+		"dns_instructions": h.domainService.BuildDNSInstructions(r.Context(), cd),
+	})
+}
+
+// APIUserDomainDNS — GET /api/v1/users/domains/{domain}/dns
+func (h *DomainHandler) APIUserDomainDNS(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.currentAPIUser(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+	domains, err := h.domainService.GetUserDomains(r.Context(), user.ID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to load domains")
+		return
+	}
+	cd := domainByName(domains, chi.URLParam(r, "domain"))
+	if cd == nil {
+		respondError(w, http.StatusNotFound, "domain not found for this user")
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"dns_instructions": h.domainService.BuildDNSInstructions(r.Context(), cd),
+	})
+}
+
+// APIDeleteUserDomain — DELETE /api/v1/users/domains/{domain}
+func (h *DomainHandler) APIDeleteUserDomain(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.currentAPIUser(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+	domainName := chi.URLParam(r, "domain")
+	domains, err := h.domainService.GetUserDomains(r.Context(), user.ID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to load domains")
+		return
+	}
+	cd := domainByName(domains, domainName)
+	if cd == nil {
+		respondError(w, http.StatusNotFound, "domain not found for this user")
+		return
+	}
+	if err := h.domainService.DeleteOwnedDomain(r.Context(), "user", user.ID, cd.ID); err != nil {
+		respondError(w, domainStatusFromError(err), err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"message": fmt.Sprintf("domain %s deleted", domainName),
+	})
+}
+
+// APIGetOrgDomain — GET /api/v1/orgs/{slug}/domains/{domain}
+func (h *DomainHandler) APIGetOrgDomain(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.currentAPIUser(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+	org, ok := h.apiOrgForMember(w, r.Context(), user, chi.URLParam(r, "slug"), false)
+	if !ok {
+		return
+	}
+	domains, err := h.domainService.GetOrgDomains(r.Context(), org.ID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to load domains")
+		return
+	}
+	cd := domainByName(domains, chi.URLParam(r, "domain"))
+	if cd == nil {
+		respondError(w, http.StatusNotFound, "domain not found for this organization")
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"domain":           cd,
+		"dns_instructions": h.domainService.BuildDNSInstructions(r.Context(), cd),
+	})
+}
+
+// APIOrgDomainDNS — GET /api/v1/orgs/{slug}/domains/{domain}/dns
+func (h *DomainHandler) APIOrgDomainDNS(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.currentAPIUser(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+	org, ok := h.apiOrgForMember(w, r.Context(), user, chi.URLParam(r, "slug"), false)
+	if !ok {
+		return
+	}
+	domains, err := h.domainService.GetOrgDomains(r.Context(), org.ID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to load domains")
+		return
+	}
+	cd := domainByName(domains, chi.URLParam(r, "domain"))
+	if cd == nil {
+		respondError(w, http.StatusNotFound, "domain not found for this organization")
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"dns_instructions": h.domainService.BuildDNSInstructions(r.Context(), cd),
+	})
+}
+
+// APIDeleteOrgDomain — DELETE /api/v1/orgs/{slug}/domains/{domain}
+// Requires owner or admin role in the organization.
+func (h *DomainHandler) APIDeleteOrgDomain(w http.ResponseWriter, r *http.Request) {
+	user, ok := h.currentAPIUser(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+	org, ok := h.apiOrgForMember(w, r.Context(), user, chi.URLParam(r, "slug"), true)
+	if !ok {
+		return
+	}
+	domainName := chi.URLParam(r, "domain")
+	domains, err := h.domainService.GetOrgDomains(r.Context(), org.ID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to load domains")
+		return
+	}
+	cd := domainByName(domains, domainName)
+	if cd == nil {
+		respondError(w, http.StatusNotFound, "domain not found for this organization")
+		return
+	}
+	if err := h.domainService.DeleteOwnedDomain(r.Context(), "org", org.ID, cd.ID); err != nil {
+		respondError(w, domainStatusFromError(err), err.Error())
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"message": fmt.Sprintf("domain %s deleted", domainName),
+	})
+}
+
 // adminActorID returns a pointer to the acting admin's numeric ID, resolved
 // from the admin-scoped (adm_) bearer token the RequireBearerAdmin gate has
 // already validated. Nil when no bearer record is present (defensive only).

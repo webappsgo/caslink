@@ -798,3 +798,217 @@ func statusOf(d *service.CustomDomain) string {
 	}
 	return d.Status
 }
+
+// seedOrgDomain adds an org-owned domain directly through the service layer.
+func seedOrgDomain(t *testing.T, h *DomainHandler, orgID int64, name string) string {
+	t.Helper()
+	d, err := h.domainService.AddDomain(context.Background(), "org", orgID, name)
+	if err != nil {
+		t.Fatalf("seed org AddDomain(%q) failed: %v", name, err)
+	}
+	return d.Domain
+}
+
+// ---- user domain detail / dns / delete (CRUD parity) -------------------
+
+// TestAPIGetUserDomainSuccess verifies the owner can read a single domain and
+// gets both the domain object and its dns_instructions.
+func TestAPIGetUserDomainSuccess(t *testing.T) {
+	h, _, _, user := newDomainTestHandler(t)
+	name := seedUserDomain(t, h, user.ID, "detail.example.com")
+
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: user.ID}
+	r := withBearer(httptest.NewRequest(http.MethodGet, "/api/v1/users/domains/"+name, nil), rec)
+	r = withChiURLParam(r, "domain", name)
+	w := httptest.NewRecorder()
+	h.APIGetUserDomain(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var env struct {
+		OK   bool                   `json:"ok"`
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if _, ok := env.Data["domain"]; !ok {
+		t.Errorf("expected a domain field, got %v", env.Data)
+	}
+	if _, ok := env.Data["dns_instructions"]; !ok {
+		t.Errorf("expected dns_instructions, got %v", env.Data)
+	}
+}
+
+// TestAPIGetUserDomainNotFoundForOtherUser verifies one user cannot read
+// another user's domain — it 404s rather than leaking the record.
+func TestAPIGetUserDomainNotFoundForOtherUser(t *testing.T) {
+	h, _, authService, owner := newDomainTestHandler(t)
+	name := seedUserDomain(t, h, owner.ID, "private.example.com")
+
+	other, err := authService.RegisterUser(context.Background(), "bob", "bob@example.com", "correct-horse-battery-staple")
+	if err != nil {
+		t.Fatalf("RegisterUser failed: %v", err)
+	}
+
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: other.ID}
+	r := withBearer(httptest.NewRequest(http.MethodGet, "/api/v1/users/domains/"+name, nil), rec)
+	r = withChiURLParam(r, "domain", name)
+	w := httptest.NewRecorder()
+	h.APIGetUserDomain(w, r)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for cross-user read, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestAPIUserDomainDNSSuccess verifies the DNS-instructions-only endpoint.
+func TestAPIUserDomainDNSSuccess(t *testing.T) {
+	h, _, _, user := newDomainTestHandler(t)
+	name := seedUserDomain(t, h, user.ID, "dns.example.com")
+
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: user.ID}
+	r := withBearer(httptest.NewRequest(http.MethodGet, "/api/v1/users/domains/"+name+"/dns", nil), rec)
+	r = withChiURLParam(r, "domain", name)
+	w := httptest.NewRecorder()
+	h.APIUserDomainDNS(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var env struct {
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if _, ok := env.Data["dns_instructions"]; !ok {
+		t.Errorf("expected dns_instructions, got %v", env.Data)
+	}
+}
+
+// TestAPIDeleteUserDomainSuccess verifies the owner deletes their domain and
+// the row is actually removed.
+func TestAPIDeleteUserDomainSuccess(t *testing.T) {
+	h, _, _, user := newDomainTestHandler(t)
+	name := seedUserDomain(t, h, user.ID, "gone.example.com")
+
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: user.ID}
+	r := withBearer(httptest.NewRequest(http.MethodDelete, "/api/v1/users/domains/"+name, nil), rec)
+	r = withChiURLParam(r, "domain", name)
+	w := httptest.NewRecorder()
+	h.APIDeleteUserDomain(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if _, err := h.domainService.GetDomainByName(context.Background(), name); err == nil {
+		t.Fatalf("expected domain gone after delete")
+	}
+}
+
+// TestAPIDeleteUserDomainCrossOwnerRejected verifies one user cannot delete
+// another user's domain — 404, and the row survives.
+func TestAPIDeleteUserDomainCrossOwnerRejected(t *testing.T) {
+	h, _, authService, owner := newDomainTestHandler(t)
+	name := seedUserDomain(t, h, owner.ID, "keep.example.com")
+
+	other, err := authService.RegisterUser(context.Background(), "mallory", "mallory@example.com", "correct-horse-battery-staple")
+	if err != nil {
+		t.Fatalf("RegisterUser failed: %v", err)
+	}
+
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: other.ID}
+	r := withBearer(httptest.NewRequest(http.MethodDelete, "/api/v1/users/domains/"+name, nil), rec)
+	r = withChiURLParam(r, "domain", name)
+	w := httptest.NewRecorder()
+	h.APIDeleteUserDomain(w, r)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for cross-user delete, got %d: %s", w.Code, w.Body.String())
+	}
+	if _, err := h.domainService.GetDomainByName(context.Background(), name); err != nil {
+		t.Fatalf("cross-user delete must not remove the row: %v", err)
+	}
+}
+
+// ---- org domain detail / delete (CRUD parity) --------------------------
+
+// TestAPIGetOrgDomainSuccessForMember verifies a member can read an org domain.
+func TestAPIGetOrgDomainSuccessForMember(t *testing.T) {
+	h, orgService, _, user := newDomainTestHandler(t)
+	org, err := orgService.CreateOrganization(context.Background(), user.ID, "Acme Corp", "acme")
+	if err != nil {
+		t.Fatalf("CreateOrganization failed: %v", err)
+	}
+	name := seedOrgDomain(t, h, org.ID, "org.example.com")
+
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: user.ID}
+	r := withBearer(httptest.NewRequest(http.MethodGet, "/api/v1/orgs/"+org.Slug+"/domains/"+name, nil), rec)
+	r = withChiURLParam(r, "slug", org.Slug)
+	r = withChiURLParam(r, "domain", name)
+	w := httptest.NewRecorder()
+	h.APIGetOrgDomain(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestAPIDeleteOrgDomainSuccessForOwner verifies the org owner deletes a domain
+// and the row is removed.
+func TestAPIDeleteOrgDomainSuccessForOwner(t *testing.T) {
+	h, orgService, _, user := newDomainTestHandler(t)
+	org, err := orgService.CreateOrganization(context.Background(), user.ID, "Acme Corp", "acme")
+	if err != nil {
+		t.Fatalf("CreateOrganization failed: %v", err)
+	}
+	name := seedOrgDomain(t, h, org.ID, "orgdel.example.com")
+
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: user.ID}
+	r := withBearer(httptest.NewRequest(http.MethodDelete, "/api/v1/orgs/"+org.Slug+"/domains/"+name, nil), rec)
+	r = withChiURLParam(r, "slug", org.Slug)
+	r = withChiURLParam(r, "domain", name)
+	w := httptest.NewRecorder()
+	h.APIDeleteOrgDomain(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if _, err := h.domainService.GetDomainByName(context.Background(), name); err == nil {
+		t.Fatalf("expected org domain gone after delete")
+	}
+}
+
+// TestAPIDeleteOrgDomainForbiddenForMember verifies a plain member (not
+// owner/admin) cannot delete an org domain, and the row survives.
+func TestAPIDeleteOrgDomainForbiddenForMember(t *testing.T) {
+	h, orgService, authService, user := newDomainTestHandler(t)
+	owner, err := authService.RegisterUser(context.Background(), "orgowner3", "owner3@example.com", "correct-horse-battery-staple")
+	if err != nil {
+		t.Fatalf("RegisterUser failed: %v", err)
+	}
+	org, err := orgService.CreateOrganization(context.Background(), owner.ID, "Acme Corp", "acme")
+	if err != nil {
+		t.Fatalf("CreateOrganization failed: %v", err)
+	}
+	if err := orgService.AddMemberByEmail(context.Background(), org.ID, "alice@example.com", "member"); err != nil {
+		t.Fatalf("AddMemberByEmail failed: %v", err)
+	}
+	name := seedOrgDomain(t, h, org.ID, "orgkeep.example.com")
+
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: user.ID}
+	r := withBearer(httptest.NewRequest(http.MethodDelete, "/api/v1/orgs/"+org.Slug+"/domains/"+name, nil), rec)
+	r = withChiURLParam(r, "slug", org.Slug)
+	r = withChiURLParam(r, "domain", name)
+	w := httptest.NewRecorder()
+	h.APIDeleteOrgDomain(w, r)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for member delete, got %d: %s", w.Code, w.Body.String())
+	}
+	if _, err := h.domainService.GetDomainByName(context.Background(), name); err != nil {
+		t.Fatalf("forbidden delete must not remove the row: %v", err)
+	}
+}

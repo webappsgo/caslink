@@ -543,7 +543,10 @@ func (s *Server) setupRoutes() {
 		// Custom domain management per PART 35
 		r.Get("/domains", domainHandler.ListUserDomains)
 		r.Post("/domains", domainHandler.AddUserDomain)
+		r.Get("/domains/{domain}", domainHandler.APIGetUserDomain)
+		r.Get("/domains/{domain}/dns", domainHandler.APIUserDomainDNS)
 		r.Post("/domains/{domain}/verify", domainHandler.VerifyUserDomain)
+		r.Delete("/domains/{domain}", domainHandler.APIDeleteUserDomain)
 	})
 
 	// Organization routes — /orgs/* per spec PART 17 (requires auth)
@@ -573,7 +576,10 @@ func (s *Server) setupRoutes() {
 			// Custom domain management per PART 35
 			sr.Get("/domains", domainHandler.ListOrgDomains)
 			sr.Post("/domains", domainHandler.AddOrgDomain)
+			sr.Get("/domains/{domain}", domainHandler.APIGetOrgDomain)
+			sr.Get("/domains/{domain}/dns", domainHandler.APIOrgDomainDNS)
 			sr.Post("/domains/{domain}/verify", domainHandler.VerifyOrgDomain)
+			sr.Delete("/domains/{domain}", domainHandler.APIDeleteOrgDomain)
 		})
 	})
 
@@ -832,6 +838,9 @@ func (s *Server) setupRoutes() {
 			// Custom domains (PART 36) — CRUD parity with /users/domains web routes.
 			ar.Get("/domains", domainHandler.APIListUserDomains)
 			ar.Post("/domains", domainHandler.APIAddUserDomain)
+			ar.Get("/domains/{domain}", domainHandler.APIGetUserDomain)
+			ar.Get("/domains/{domain}/dns", domainHandler.APIUserDomainDNS)
+			ar.Delete("/domains/{domain}", domainHandler.APIDeleteUserDomain)
 			ar.Post("/domains/{domain}/verify", domainHandler.APIVerifyUserDomain)
 		})
 
@@ -858,6 +867,9 @@ func (s *Server) setupRoutes() {
 			// Org custom domains (PART 36) — CRUD parity with /orgs/{slug}/domains.
 			ar.Get("/{slug}/domains", domainHandler.APIListOrgDomains)
 			ar.Post("/{slug}/domains", domainHandler.APIAddOrgDomain)
+			ar.Get("/{slug}/domains/{domain}", domainHandler.APIGetOrgDomain)
+			ar.Get("/{slug}/domains/{domain}/dns", domainHandler.APIOrgDomainDNS)
+			ar.Delete("/{slug}/domains/{domain}", domainHandler.APIDeleteOrgDomain)
 			ar.Post("/{slug}/domains/{domain}/verify", domainHandler.APIVerifyOrgDomain)
 		})
 	})
