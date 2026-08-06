@@ -31,41 +31,46 @@
         <textarea class="form-control" id="description" name="description"
                   maxlength="500" rows="3">{{.Org.Description}}</textarea>
       </div>
+      <div class="form-group">
+        <label for="website">Website</label>
+        <input class="form-control" type="url" id="website" name="website"
+               maxlength="255" value="{{.Org.Website}}"
+               placeholder="https://example.com">
+      </div>
+      <div class="form-group">
+        <label for="location">Location</label>
+        <input class="form-control" type="text" id="location" name="location"
+               maxlength="100" value="{{.Org.Location}}">
+      </div>
+      <div class="form-group">
+        <label for="visibility">Visibility</label>
+        <select class="form-control" id="visibility" name="visibility">
+          <option value="public"{{if eq .Org.Visibility "public"}} selected{{end}}>Public — anyone can view this organization</option>
+          <option value="private"{{if eq .Org.Visibility "private"}} selected{{end}}>Private — only members can view this organization</option>
+        </select>
+      </div>
       <button type="submit" class="btn btn-primary">Save Changes</button>
     </form>
   </div>
 
+  {{if .IsOwner}}
   <div class="card card-danger">
     <h2 class="card-title text-danger">Danger Zone</h2>
-    <p class="text-muted text-sm">Deleting this organization is permanent and cannot be undone. All links and data will be lost.</p>
-    <button class="btn btn-danger btn-sm" onclick="showDeleteConfirm()">Delete Organization</button>
-    <div id="delete-confirm" style="display:none;" class="mt-3">
-      <form method="POST" action="/orgs/{{.Org.Slug}}/settings">
+    <p class="text-muted text-sm">Deleting this organization is permanent and cannot be undone. All members, tokens, and custom domains will be removed.</p>
+    <details class="mt-2">
+      <summary class="btn btn-danger btn-sm">Delete Organization</summary>
+      <form method="POST" action="/orgs/{{.Org.Slug}}/settings" class="mt-3">
         <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
         <input type="hidden" name="action" value="delete">
         <div class="form-group">
-          <label>Type <strong>{{.Org.Slug}}</strong> to confirm deletion</label>
+          <label for="confirm-slug">Type <strong>{{.Org.Slug}}</strong> to confirm deletion</label>
           <input class="form-control" type="text" name="confirm_slug" id="confirm-slug"
-                 required placeholder="{{.Org.Slug}}">
+                 required autocomplete="off" placeholder="{{.Org.Slug}}">
         </div>
-        <button type="submit" class="btn btn-danger"
-                onclick="return validateDeleteConfirm('{{.Org.Slug}}')">Permanently Delete Organization</button>
+        <button type="submit" class="btn btn-danger">Permanently Delete Organization</button>
       </form>
-    </div>
+    </details>
   </div>
+  {{end}}
 </div>
-<script>
-function showDeleteConfirm() {
-  document.getElementById('delete-confirm').style.display = 'block';
-  document.getElementById('confirm-slug').focus();
-}
-function validateDeleteConfirm(expected) {
-  var val = document.getElementById('confirm-slug').value;
-  if (val !== expected) {
-    alert('Organization slug does not match. Deletion cancelled.');
-    return false;
-  }
-  return true;
-}
-</script>
 {{end}}

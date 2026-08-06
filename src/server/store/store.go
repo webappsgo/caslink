@@ -389,6 +389,10 @@ func (s *Store) initUsersSchema() error {
 			name TEXT NOT NULL,
 			slug TEXT NOT NULL UNIQUE,
 			owner_id INTEGER NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			website TEXT NOT NULL DEFAULT '',
+			location TEXT NOT NULL DEFAULT '',
+			visibility TEXT NOT NULL DEFAULT 'public',
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
@@ -670,6 +674,10 @@ func (s *Store) initUsersSchema() error {
 		`ALTER TABLE users ADD COLUMN display_name TEXT`,
 		`ALTER TABLE users ADD COLUMN bio TEXT`,
 		`ALTER TABLE custom_domains ADD COLUMN verification_token TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE organizations ADD COLUMN description TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE organizations ADD COLUMN website TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE organizations ADD COLUMN location TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE organizations ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'`,
 	}
 	for _, q := range addColumnQueries {
 		ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)

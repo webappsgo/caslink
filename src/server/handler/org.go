@@ -30,6 +30,9 @@ type OrgView struct {
 	Name        string
 	Slug        string
 	Description string
+	Website     string
+	Location    string
+	Visibility  string
 }
 
 // OrgStats holds aggregate statistics for the org dashboard.
@@ -269,6 +272,14 @@ func (h *OrgHandler) OrgSettings(w http.ResponseWriter, r *http.Request) {
 
 	slug := chi.URLParam(r, "slug")
 
+	h.renderSettingsPage(w, r, user, slug, nil)
+}
+
+// renderSettingsPage loads the org for slug and renders the settings page,
+// optionally with a one-shot flash. Shared by OrgSettings (GET) and
+// OrgSettingsSave (POST). Only owners/admins reach the mutating POST path;
+// the delete control in the danger zone is gated on IsOwner.
+func (h *OrgHandler) renderSettingsPage(w http.ResponseWriter, r *http.Request, user *service.User, slug string, flash *tmpl.Flash) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
@@ -278,18 +289,97 @@ func (h *OrgHandler) OrgSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	_, userRole, _ := h.orgService.IsMember(ctx, org.ID, user.ID)
+
 	data := struct {
 		tmpl.Data
-		Org OrgView
+		Org     OrgView
+		IsOwner bool
 	}{
 		Data: newPageData(h.config, r, org.Name+" — Settings", user),
 		Org: OrgView{
-			Name: org.Name,
-			Slug: org.Slug,
+			Name:        org.Name,
+			Slug:        org.Slug,
+			Description: org.Description,
+			Website:     org.Website,
+			Location:    org.Location,
+			Visibility:  org.Visibility,
 		},
+		IsOwner: userRole == "owner",
 	}
+	data.Data.Flash = flash
 
 	h.renderer.Render(w, "template/page/orgs/settings.html", data)
+}
+
+// OrgSettingsSave handles POST /orgs/{slug}/settings — the General-settings
+// update form and the Danger Zone delete, dispatched on the hidden "action"
+// field. Update is allowed for owners and admins; delete is owner-only
+// (PART 35 role permissions).
+func (h *OrgHandler) OrgSettingsSave(w http.ResponseWriter, r *http.Request) {
+	user, ok := getUserFromRequest(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	slug := chi.URLParam(r, "slug")
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Invalid form", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	org, err := h.orgService.GetOrganizationBySlug(ctx, slug)
+	if err != nil {
+		http.Error(w, "Organization not found", http.StatusNotFound)
+		return
+	}
+
+	_, userRole, _ := h.orgService.IsMember(ctx, org.ID, user.ID)
+	if userRole != "owner" && userRole != "admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	switch r.FormValue("action") {
+	case "delete":
+		if userRole != "owner" {
+			http.Error(w, "Only the organization owner can delete it", http.StatusForbidden)
+			return
+		}
+		if r.FormValue("confirm_slug") != org.Slug {
+			h.renderSettingsPage(w, r, user, slug, &tmpl.Flash{Type: "danger", Message: "Confirmation text did not match the organization slug."})
+			return
+		}
+		if err := h.orgService.DeleteOrganization(ctx, org.ID); err != nil {
+			h.renderSettingsPage(w, r, user, slug, &tmpl.Flash{Type: "danger", Message: err.Error()})
+			return
+		}
+		http.Redirect(w, r, "/orgs", http.StatusSeeOther)
+		return
+
+	case "update":
+		err := h.orgService.UpdateOrganization(ctx, org.ID, service.OrgProfileUpdate{
+			Name:        r.FormValue("name"),
+			Description: r.FormValue("description"),
+			Website:     r.FormValue("website"),
+			Location:    r.FormValue("location"),
+			Visibility:  r.FormValue("visibility"),
+		})
+		if err != nil {
+			h.renderSettingsPage(w, r, user, slug, &tmpl.Flash{Type: "danger", Message: err.Error()})
+			return
+		}
+		h.renderSettingsPage(w, r, user, slug, &tmpl.Flash{Type: "success", Message: "Organization settings saved."})
+		return
+
+	default:
+		h.renderSettingsPage(w, r, user, slug, &tmpl.Flash{Type: "danger", Message: "Unknown action."})
+	}
 }
 
 // OrgMembers renders the organization members page.
@@ -720,4 +810,114 @@ func (h *OrgHandler) APITransferOrgOwnership(w http.ResponseWriter, r *http.Requ
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{"message": "Ownership transferred"})
+}
+
+// APIUpdateOrg handles PATCH /api/v1/orgs/{slug} — update General settings
+// (name, description, website, location, visibility). Owners and admins only
+// (PART 35 role permissions). Absent JSON fields fall back to the current
+// stored value so a partial patch does not blank unspecified fields.
+func (h *OrgHandler) APIUpdateOrg(w http.ResponseWriter, r *http.Request) {
+	user, ok := getUserFromRequest(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+
+	slug := chi.URLParam(r, "slug")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	org, err := h.orgService.GetOrganizationBySlug(ctx, slug)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Organization not found")
+		return
+	}
+
+	isMember, role, err := h.orgService.IsMember(ctx, org.ID, user.ID)
+	if err != nil || !isMember || (role != "owner" && role != "admin") {
+		respondError(w, http.StatusForbidden, "Only org owners and admins can update settings")
+		return
+	}
+
+	var req struct {
+		Name        *string `json:"name"`
+		Description *string `json:"description"`
+		Website     *string `json:"website"`
+		Location    *string `json:"location"`
+		Visibility  *string `json:"visibility"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid JSON body")
+		return
+	}
+
+	in := service.OrgProfileUpdate{
+		Name:        org.Name,
+		Description: org.Description,
+		Website:     org.Website,
+		Location:    org.Location,
+		Visibility:  org.Visibility,
+	}
+	if req.Name != nil {
+		in.Name = *req.Name
+	}
+	if req.Description != nil {
+		in.Description = *req.Description
+	}
+	if req.Website != nil {
+		in.Website = *req.Website
+	}
+	if req.Location != nil {
+		in.Location = *req.Location
+	}
+	if req.Visibility != nil {
+		in.Visibility = *req.Visibility
+	}
+
+	if err := h.orgService.UpdateOrganization(ctx, org.ID, in); err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	updated, err := h.orgService.GetOrganizationBySlug(ctx, slug)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to reload organization")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, updated)
+}
+
+// APIDeleteOrg handles DELETE /api/v1/orgs/{slug} — permanently delete an
+// organization. Owner only (PART 35). FK cascade removes members, tokens,
+// and org-owned custom domains.
+func (h *OrgHandler) APIDeleteOrg(w http.ResponseWriter, r *http.Request) {
+	user, ok := getUserFromRequest(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+
+	slug := chi.URLParam(r, "slug")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	org, err := h.orgService.GetOrganizationBySlug(ctx, slug)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Organization not found")
+		return
+	}
+
+	isMember, role, err := h.orgService.IsMember(ctx, org.ID, user.ID)
+	if err != nil || !isMember || role != "owner" {
+		respondError(w, http.StatusForbidden, "Only the organization owner can delete it")
+		return
+	}
+
+	if err := h.orgService.DeleteOrganization(ctx, org.ID); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{"message": "Organization deleted"})
 }

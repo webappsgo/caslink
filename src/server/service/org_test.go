@@ -254,6 +254,89 @@ func TestGetOrganizationBySlug(t *testing.T) {
 	}
 }
 
+// UpdateOrganization must persist the General-settings fields, normalize
+// visibility, and enforce field-length limits.
+func TestUpdateOrganization(t *testing.T) {
+	st := newFullSchemaStore(t)
+	svc := NewOrgService(st)
+	ctx := context.Background()
+	owner := insertOrgTestUser(t, st, "updowner", "updowner@example.com")
+
+	org, err := svc.CreateOrganization(ctx, owner, "Upd Org", "upd-org")
+	if err != nil {
+		t.Fatalf("CreateOrganization failed: %v", err)
+	}
+
+	err = svc.UpdateOrganization(ctx, org.ID, OrgProfileUpdate{
+		Name:        "Renamed Org",
+		Description: "A new description",
+		Website:     "https://example.org",
+		Location:    "Phoenix, AZ",
+		Visibility:  "PRIVATE",
+	})
+	if err != nil {
+		t.Fatalf("UpdateOrganization failed: %v", err)
+	}
+
+	got, err := svc.GetOrganizationBySlug(ctx, "upd-org")
+	if err != nil {
+		t.Fatalf("GetOrganizationBySlug failed: %v", err)
+	}
+	if got.Name != "Renamed Org" {
+		t.Errorf("name = %q, want %q", got.Name, "Renamed Org")
+	}
+	if got.Description != "A new description" {
+		t.Errorf("description = %q, want %q", got.Description, "A new description")
+	}
+	if got.Website != "https://example.org" {
+		t.Errorf("website = %q, want %q", got.Website, "https://example.org")
+	}
+	if got.Location != "Phoenix, AZ" {
+		t.Errorf("location = %q, want %q", got.Location, "Phoenix, AZ")
+	}
+	if got.Visibility != "private" {
+		t.Errorf("visibility = %q, want %q (normalized)", got.Visibility, "private")
+	}
+
+	// Too-short name is rejected.
+	if err := svc.UpdateOrganization(ctx, org.ID, OrgProfileUpdate{Name: "ab"}); err == nil {
+		t.Error("expected error for too-short name")
+	}
+
+	// Unknown org id reports not found.
+	if err := svc.UpdateOrganization(ctx, 999999, OrgProfileUpdate{Name: "Valid Name"}); err == nil {
+		t.Error("expected error updating nonexistent org")
+	}
+}
+
+// A fresh org defaults to public visibility, and any non-"private" input
+// normalizes back to public.
+func TestUpdateOrganizationVisibilityDefaultsPublic(t *testing.T) {
+	st := newFullSchemaStore(t)
+	svc := NewOrgService(st)
+	ctx := context.Background()
+	owner := insertOrgTestUser(t, st, "visowner", "visowner@example.com")
+
+	org, err := svc.CreateOrganization(ctx, owner, "Vis Org", "vis-org")
+	if err != nil {
+		t.Fatalf("CreateOrganization failed: %v", err)
+	}
+	if org.Visibility != "public" {
+		t.Errorf("new org visibility = %q, want %q", org.Visibility, "public")
+	}
+
+	if err := svc.UpdateOrganization(ctx, org.ID, OrgProfileUpdate{Name: "Vis Org", Visibility: "garbage"}); err != nil {
+		t.Fatalf("UpdateOrganization failed: %v", err)
+	}
+	got, err := svc.GetOrganizationBySlug(ctx, "vis-org")
+	if err != nil {
+		t.Fatalf("GetOrganizationBySlug failed: %v", err)
+	}
+	if got.Visibility != "public" {
+		t.Errorf("visibility = %q, want %q", got.Visibility, "public")
+	}
+}
+
 // Membership add/list/detail round trip, including the username join in
 // GetMembersWithUsernames.
 func TestAddMemberByEmailAndListMembers(t *testing.T) {

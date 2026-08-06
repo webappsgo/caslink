@@ -27,12 +27,16 @@ func NewOrgService(st *store.Store) *OrgService {
 
 // Organization represents an organization
 type Organization struct {
-	ID        int64
-	Name      string
-	Slug      string
-	OwnerID   int64
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID          int64
+	Name        string
+	Slug        string
+	OwnerID     int64
+	Description  string
+	Website     string
+	Location    string
+	Visibility  string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // OrgMember represents an organization member
@@ -101,12 +105,13 @@ func (s *OrgService) CreateOrganization(ctx context.Context, userID int64, name,
 
 	// Return created organization
 	org := &Organization{
-		ID:        orgID,
-		Name:      name,
-		Slug:      slug,
-		OwnerID:   userID,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:         orgID,
+		Name:       name,
+		Slug:       slug,
+		OwnerID:    userID,
+		Visibility: "public",
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
 	}
 
 	return org, nil
@@ -194,13 +199,15 @@ func (s *OrgService) GetUserOrganizationsWithSummary(ctx context.Context, userID
 
 // GetOrganizationBySlug gets an organization by slug
 func (s *OrgService) GetOrganizationBySlug(ctx context.Context, slug string) (*Organization, error) {
-	query := `SELECT id, name, slug, owner_id, created_at, updated_at
+	query := `SELECT id, name, slug, owner_id, description, website, location, visibility, created_at, updated_at
 	          FROM organizations
 	          WHERE slug = ?`
 
 	var org Organization
 	err := s.store.UsersDB.QueryRowContext(ctx, query, slug).Scan(
-		&org.ID, &org.Name, &org.Slug, &org.OwnerID, &org.CreatedAt, &org.UpdatedAt,
+		&org.ID, &org.Name, &org.Slug, &org.OwnerID,
+		&org.Description, &org.Website, &org.Location, &org.Visibility,
+		&org.CreatedAt, &org.UpdatedAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -211,6 +218,88 @@ func (s *OrgService) GetOrganizationBySlug(ctx context.Context, slug string) (*O
 	}
 
 	return &org, nil
+}
+
+// OrgProfileUpdate carries the editable General-settings fields (PART 35 Org
+// Profile). Slug and owner_id are intentionally excluded — the slug is
+// immutable and ownership changes go through TransferOwnership.
+type OrgProfileUpdate struct {
+	Name        string
+	Description string
+	Website     string
+	Location    string
+	Visibility  string
+}
+
+// NormalizeOrgVisibility returns the canonical per-org visibility value,
+// defaulting anything other than "private" to "public" (PART 35: visibility is
+// public by default). This per-org visibility is distinct from the server-level
+// org creation mode and must never be conflated with it.
+func NormalizeOrgVisibility(v string) string {
+	if strings.ToLower(strings.TrimSpace(v)) == "private" {
+		return "private"
+	}
+	return "public"
+}
+
+// UpdateOrganization updates an organization's editable General-settings
+// fields. Callers must enforce that the actor is an owner or admin (PART 35:
+// General settings are editable by Owner and Admin). Field constraints mirror
+// the Org Profile table: name 3-40 chars, description <= 500 chars.
+func (s *OrgService) UpdateOrganization(ctx context.Context, orgID int64, in OrgProfileUpdate) error {
+	name := strings.TrimSpace(in.Name)
+	if len(name) < 3 || len(name) > 40 {
+		return fmt.Errorf("organization name must be between 3 and 40 characters")
+	}
+	description := strings.TrimSpace(in.Description)
+	if len(description) > 500 {
+		return fmt.Errorf("description must be at most 500 characters")
+	}
+	website := strings.TrimSpace(in.Website)
+	if len(website) > 255 {
+		return fmt.Errorf("website must be at most 255 characters")
+	}
+	location := strings.TrimSpace(in.Location)
+	if len(location) > 100 {
+		return fmt.Errorf("location must be at most 100 characters")
+	}
+	visibility := NormalizeOrgVisibility(in.Visibility)
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	res, err := s.store.UsersDB.ExecContext(ctx,
+		`UPDATE organizations
+		 SET name = ?, description = ?, website = ?, location = ?, visibility = ?, updated_at = CURRENT_TIMESTAMP
+		 WHERE id = ?`,
+		name, description, website, location, visibility, orgID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update organization: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("organization not found")
+	}
+	return nil
+}
+
+// DeleteOrganization permanently deletes an organization. Members, org tokens,
+// and any org-owned custom domains are removed via ON DELETE CASCADE foreign
+// keys. Callers must enforce that the actor is the organization owner (PART 35:
+// only the Owner can delete an org).
+func (s *OrgService) DeleteOrganization(ctx context.Context, orgID int64) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	res, err := s.store.UsersDB.ExecContext(ctx,
+		`DELETE FROM organizations WHERE id = ?`, orgID)
+	if err != nil {
+		return fmt.Errorf("failed to delete organization: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("organization not found")
+	}
+	return nil
 }
 
 // GetOrgMembers gets all members of an organization

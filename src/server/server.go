@@ -553,6 +553,7 @@ func (s *Server) setupRoutes() {
 
 			sr.Get("/", orgHandler.OrgDashboard)
 			sr.Get("/settings", orgHandler.OrgSettings)
+			sr.Post("/settings", orgHandler.OrgSettingsSave)
 			sr.Get("/members", orgHandler.OrgMembers)
 			sr.Post("/members", orgHandler.OrgMembersAction)
 
@@ -810,6 +811,8 @@ func (s *Server) setupRoutes() {
 			ar.Get("/", orgHandler.APIListOrgs)
 			ar.Post("/", orgHandler.APICreateOrg)
 			ar.Get("/{slug}", orgHandler.APIGetOrg)
+			ar.Patch("/{slug}", orgHandler.APIUpdateOrg)
+			ar.Delete("/{slug}", orgHandler.APIDeleteOrg)
 			ar.Get("/{slug}/members", orgHandler.APIGetMembers)
 			// Org-scoped API tokens (PART 35)
 			ar.Get("/{slug}/tokens", orgHandler.APIListOrgTokens)
