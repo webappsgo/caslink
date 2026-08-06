@@ -75,3 +75,20 @@ func TestCreateOrganizationRejectsUsernameCollision(t *testing.T) {
 		t.Fatal("expected org creation to fail on username collision")
 	}
 }
+
+func TestRegisterUserRejectsOrgSlugCollision(t *testing.T) {
+	st := newFullSchemaStore(t)
+	ctx := context.Background()
+	// Seed an owner and an organization whose slug will collide with a future
+	// username registration, exercising the reverse shared-namespace direction.
+	ownerID := insertOrgTestUser(t, st, "owner", "owner@example.com")
+	if _, err := st.UsersDB.ExecContext(ctx,
+		`INSERT INTO organizations (name, slug, owner_id, created_at, updated_at)
+		 VALUES ('Widgets', 'widgets', ?, ?, ?)`, ownerID, time.Now(), time.Now()); err != nil {
+		t.Fatalf("insert org: %v", err)
+	}
+	svc := NewAuthService(st)
+	if _, err := svc.RegisterUser(ctx, "widgets", "widgets@example.com", "correct-password"); err == nil {
+		t.Fatal("expected user registration to fail on org-slug collision")
+	}
+}

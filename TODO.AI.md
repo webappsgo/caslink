@@ -169,11 +169,14 @@ fixed inline and committed separately.
   validation is now spec-aligned (PART 35: 2-39 chars, no consecutive
   hyphens, reserved-name blocklist) via the shared
   `validate.ValidateOrgSlug`, used by both the handler and the service. The
-  one remaining slug gap is the full shared-namespace check — a slug must
-  also not collide with an existing username (spec `CheckNameAvailable`);
-  today only org-vs-org slug uniqueness is enforced at the data layer.
-  Cross-table user/org collision needs the unified namespace lookup and is
-  deferred with the rest of this feature build.
+  full shared-namespace check is now implemented too: `CheckNameAvailable`
+  (src/server/service/namespace.go) consults the reserved blocklist plus both
+  the users and organizations tables, and is wired into both creation paths —
+  `OrgService.CreateOrganization` (org slug blocked by an existing username or
+  slug) and `AuthService.RegisterUser` (username blocked by an existing org
+  slug), each returning a generic error to avoid enumeration. Both directions
+  are covered by namespace_test.go (TestCreateOrganizationRejectsUsernameCollision
+  and TestRegisterUserRejectsOrgSlugCollision). Shared-namespace work complete.
 
 - Admin panel WebUI completeness + cookie-consent banner (PART 16/17): the
   full set of admin config templates and the always-on GDPR cookie-consent
