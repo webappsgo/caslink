@@ -552,13 +552,14 @@ func (s *Server) setupRoutes() {
 		r.Post("/passkeys/begin-login", userSecurityHandler.PasskeyBeginLogin)
 		r.Post("/passkeys/finish-login", userSecurityHandler.PasskeyFinishLogin)
 
-		// Custom domain management per PART 35
+		// Custom domain management per PART 35. Add + verify are rate limited
+		// (PART 36) — verify triggers an outbound DNS lookup.
 		r.Get("/domains", domainHandler.ListUserDomains)
-		r.Post("/domains", domainHandler.AddUserDomain)
+		r.With(RateLimitMiddleware(rateLimiter)).Post("/domains", domainHandler.AddUserDomain)
 		r.Get("/domains/{domain}", domainHandler.APIGetUserDomain)
 		r.Get("/domains/{domain}/dns", domainHandler.APIUserDomainDNS)
 		r.Get("/domains/{domain}/ssl", domainHandler.APIUserDomainSSL)
-		r.Post("/domains/{domain}/verify", domainHandler.VerifyUserDomain)
+		r.With(RateLimitMiddleware(rateLimiter)).Post("/domains/{domain}/verify", domainHandler.VerifyUserDomain)
 		r.Delete("/domains/{domain}", domainHandler.APIDeleteUserDomain)
 	})
 
@@ -586,13 +587,14 @@ func (s *Server) setupRoutes() {
 			sr.Get("/members", orgHandler.OrgMembers)
 			sr.Post("/members", orgHandler.OrgMembersAction)
 
-			// Custom domain management per PART 35
+			// Custom domain management per PART 35. Add + verify are rate
+			// limited (PART 36) — verify triggers an outbound DNS lookup.
 			sr.Get("/domains", domainHandler.ListOrgDomains)
-			sr.Post("/domains", domainHandler.AddOrgDomain)
+			sr.With(RateLimitMiddleware(rateLimiter)).Post("/domains", domainHandler.AddOrgDomain)
 			sr.Get("/domains/{domain}", domainHandler.APIGetOrgDomain)
 			sr.Get("/domains/{domain}/dns", domainHandler.APIOrgDomainDNS)
 			sr.Get("/domains/{domain}/ssl", domainHandler.APIOrgDomainSSL)
-			sr.Post("/domains/{domain}/verify", domainHandler.VerifyOrgDomain)
+			sr.With(RateLimitMiddleware(rateLimiter)).Post("/domains/{domain}/verify", domainHandler.VerifyOrgDomain)
 			sr.Delete("/domains/{domain}", domainHandler.APIDeleteOrgDomain)
 		})
 	})
@@ -864,13 +866,14 @@ func (s *Server) setupRoutes() {
 			ar.Get("/urls/export", bulkHandler.Export)
 			ar.Post("/urls/import", bulkHandler.Import)
 			// Custom domains (PART 36) — CRUD parity with /users/domains web routes.
+			// Add + verify are rate limited; verify triggers an outbound DNS lookup.
 			ar.Get("/domains", domainHandler.APIListUserDomains)
-			ar.Post("/domains", domainHandler.APIAddUserDomain)
+			ar.With(RateLimitMiddleware(rateLimiter)).Post("/domains", domainHandler.APIAddUserDomain)
 			ar.Get("/domains/{domain}", domainHandler.APIGetUserDomain)
 			ar.Get("/domains/{domain}/dns", domainHandler.APIUserDomainDNS)
 			ar.Get("/domains/{domain}/ssl", domainHandler.APIUserDomainSSL)
 			ar.Delete("/domains/{domain}", domainHandler.APIDeleteUserDomain)
-			ar.Post("/domains/{domain}/verify", domainHandler.APIVerifyUserDomain)
+			ar.With(RateLimitMiddleware(rateLimiter)).Post("/domains/{domain}/verify", domainHandler.APIVerifyUserDomain)
 		})
 
 		// Orgs API — /api/v1/orgs/*
@@ -894,13 +897,14 @@ func (s *Server) setupRoutes() {
 			// Org ownership transfer (PART 35)
 			ar.Post("/{slug}/transfer", orgHandler.APITransferOrgOwnership)
 			// Org custom domains (PART 36) — CRUD parity with /orgs/{slug}/domains.
+			// Add + verify are rate limited; verify triggers an outbound DNS lookup.
 			ar.Get("/{slug}/domains", domainHandler.APIListOrgDomains)
-			ar.Post("/{slug}/domains", domainHandler.APIAddOrgDomain)
+			ar.With(RateLimitMiddleware(rateLimiter)).Post("/{slug}/domains", domainHandler.APIAddOrgDomain)
 			ar.Get("/{slug}/domains/{domain}", domainHandler.APIGetOrgDomain)
 			ar.Get("/{slug}/domains/{domain}/dns", domainHandler.APIOrgDomainDNS)
 			ar.Get("/{slug}/domains/{domain}/ssl", domainHandler.APIOrgDomainSSL)
 			ar.Delete("/{slug}/domains/{domain}", domainHandler.APIDeleteOrgDomain)
-			ar.Post("/{slug}/domains/{domain}/verify", domainHandler.APIVerifyOrgDomain)
+			ar.With(RateLimitMiddleware(rateLimiter)).Post("/{slug}/domains/{domain}/verify", domainHandler.APIVerifyOrgDomain)
 		})
 	})
 

@@ -256,6 +256,78 @@ func TestRateLimitMiddlewareUnmatchedPathBypasses(t *testing.T) {
 	}
 }
 
+// TestRateLimitMiddlewareDomainAddLimited verifies POST .../domains (add a
+// custom domain, PART 36) is limited to 10 per hour, 11th returns 429.
+func TestRateLimitMiddlewareDomainAddLimited(t *testing.T) {
+	rl := &RateLimiter{buckets: make(map[string]*rateBucket)}
+	mw := RateLimitMiddleware(rl)
+	var last *httptest.ResponseRecorder
+	for i := 0; i < 11; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/users/domains", nil)
+		req.RemoteAddr = "9.9.9.9:1234"
+		w := httptest.NewRecorder()
+		mw(okHandler()).ServeHTTP(w, req)
+		last = w
+	}
+	if last.Code != http.StatusTooManyRequests {
+		t.Fatalf("11th domain add: status = %d, want 429", last.Code)
+	}
+}
+
+// TestRateLimitMiddlewareDomainVerifySharesBucketAcrossDomains verifies that
+// verify attempts against DIFFERENT domain strings from one IP share a single
+// bucket (per-IP-per-rule key), so an attacker cannot sidestep the 15/hour
+// verify limit by cycling distinct domains. Each verify triggers an outbound
+// DNS TXT lookup, so this shared-bucket behavior is the abuse guard.
+func TestRateLimitMiddlewareDomainVerifySharesBucketAcrossDomains(t *testing.T) {
+	rl := &RateLimiter{buckets: make(map[string]*rateBucket)}
+	mw := RateLimitMiddleware(rl)
+	var last *httptest.ResponseRecorder
+	for i := 0; i < 16; i++ {
+		// A distinct domain each iteration — the bucket must still be shared.
+		path := fmt.Sprintf("/api/v1/users/domains/d%d.example.com/verify", i)
+		req := httptest.NewRequest(http.MethodPost, path, nil)
+		req.RemoteAddr = "9.9.9.9:1234"
+		w := httptest.NewRecorder()
+		mw(okHandler()).ServeHTTP(w, req)
+		last = w
+	}
+	if last.Code != http.StatusTooManyRequests {
+		t.Fatalf("16th verify (distinct domains): status = %d, want 429 (shared bucket)", last.Code)
+	}
+}
+
+// TestRateLimitMiddlewareDomainNamedLikeLoginNotMisclassified guards the switch
+// ordering: a domain literally named "login.example.com" must be treated as a
+// domain operation (10/hour add), not the stricter 5/15min login rule that a
+// naive substring match on "/login" would otherwise select.
+func TestRateLimitMiddlewareDomainNamedLikeLoginNotMisclassified(t *testing.T) {
+	rl := &RateLimiter{buckets: make(map[string]*rateBucket)}
+	mw := RateLimitMiddleware(rl)
+	// The add rule allows 10; if it were misclassified as "login" it would
+	// block after 5. Send 6 and require all 6 to pass.
+	for i := 0; i < 6; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/users/domains", nil)
+		req.RemoteAddr = "8.8.8.8:1234"
+		w := httptest.NewRecorder()
+		mw(okHandler()).ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("add request %d: status = %d, want 200 (domain_add rule, not login)", i, w.Code)
+		}
+	}
+	// A verify against a domain named like a login endpoint must classify as
+	// domain_verify (15/hour), not login (5/15min): 6 must all pass.
+	for i := 0; i < 6; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/users/domains/login.example.com/verify", nil)
+		req.RemoteAddr = "8.8.8.8:1234"
+		w := httptest.NewRecorder()
+		mw(okHandler()).ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("verify request %d: status = %d, want 200 (domain_verify rule, not login)", i, w.Code)
+		}
+	}
+}
+
 func contains(haystack, needle string) bool {
 	return len(haystack) >= len(needle) && (func() bool {
 		for i := 0; i+len(needle) <= len(haystack); i++ {

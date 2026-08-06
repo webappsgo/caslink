@@ -122,13 +122,23 @@ fixed inline and committed separately.
   POST/{domain}/delete force-delete) rendered via the admin layout and backed
   by the same DomainService methods as the API, with a "Domains" sidebar nav
   entry and POST-redirect-GET flash flow (admin_domains.go + tests).
-  Still remaining:
+  Domain-operation rate limiting is now implemented (PART 36): the add
+  (POST .../domains → 10/hr per IP) and verify
+  (POST .../domains/{domain}/verify → 15/hr per IP, all domains sharing one
+  bucket) paths are wrapped with RateLimitMiddleware on all four surfaces
+  (web + API, user + org). Verify is the primary abuse vector because each
+  attempt triggers an outbound DNS TXT lookup; the shared per-IP-per-rule
+  bucket prevents sidestepping the limit by cycling domain strings, and the
+  domain cases are ordered ahead of the generic login/register/2fa substring
+  cases so a domain literally named e.g. login.example.com is never
+  misclassified into a stricter rule (middleware.go + middleware_test.go).
+  Still remaining (INFRA-BLOCKED — needs a real DNS provider account/creds):
   POST /{domain}/ssl (DNS-01 provider config + AES-256-GCM credentials),
   POST /{domain}/ssl/renew force-renew (needs autocert-cache purge
-  design), DNS-01 ACME issuance and cert persistence, and rate limiting.
-  Deferred. (Scheduled SSL renewal and HTTP-01/TLS-ALPN-01 issuance are
-  already handled automatically by autocert.Manager — the ssl_renewal
-  scheduler task is an intentional no-op.)
+  design), and DNS-01 ACME issuance and cert persistence. Deferred.
+  (Scheduled SSL renewal and HTTP-01/TLS-ALPN-01 issuance are already
+  handled automatically by autocert.Manager — the ssl_renewal scheduler
+  task is an intentional no-op.)
 
 - PART 34 registration modes: the open/invite/admin_only/disabled gate is
   implemented — `RegistrationConfig.Mode` (default open),

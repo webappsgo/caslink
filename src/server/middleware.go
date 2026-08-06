@@ -284,10 +284,14 @@ func (rl *RateLimiter) Allow(ip string, limit int, window time.Duration) bool {
 	return rl.bucket(ip).allow(limit, window)
 }
 
-// RateLimitMiddleware applies auth-endpoint rate limits:
+// RateLimitMiddleware applies auth- and domain-endpoint rate limits:
 //   - /server/auth/login, /api/v1/server/auth/login → 5 / 15 min
 //   - /server/auth/register, /api/v1/server/auth/register → 5 / 1 h
 //   - /server/auth/password/* → 3 / 1 h
+//   - */2fa* → 5 / 15 min
+//   - POST */domains (add custom domain) → 10 / 1 h (per IP)
+//   - POST */domains/{domain}/verify → 15 / 1 h (per IP, all domains share
+//     one bucket; each verify triggers an outbound DNS TXT lookup)
 //
 // Returns 429 with a generic message; never exposes threshold numbers.
 func RateLimitMiddleware(rl *RateLimiter) func(http.Handler) http.Handler {
@@ -303,8 +307,25 @@ func RateLimitMiddleware(rl *RateLimiter) func(http.Handler) http.Handler {
 			var limit int
 			var window time.Duration
 			var ruleName string
+			// Default bucket key is per-IP-per-path (login/register/etc.).
+			// Domain operations override this to a per-IP-per-rule key so that
+			// all add/verify attempts from one IP share a single bucket
+			// regardless of which domain string is in the path — otherwise an
+			// attacker could sidestep the limit by cycling distinct domains.
+			key := ip + path
 
 			switch {
+			// Custom-domain operations (PART 36). Ordered before the generic
+			// substring cases because a user-supplied {domain} segment (e.g.
+			// "login.example.com") could otherwise match "/login" and get the
+			// wrong rule. Verification triggers outbound DNS TXT lookups, so it
+			// is a real abuse vector and must be throttled.
+			case strings.HasSuffix(path, "/domains"):
+				limit, window, ruleName = 10, time.Hour, "domain_add"
+				key = ip + "|domain_add"
+			case strings.Contains(path, "/domains/") && strings.HasSuffix(path, "/verify"):
+				limit, window, ruleName = 15, time.Hour, "domain_verify"
+				key = ip + "|domain_verify"
 			case strings.Contains(path, "/login"):
 				limit, window, ruleName = 5, 15*time.Minute, "login"
 			case strings.Contains(path, "/register"):
@@ -318,7 +339,7 @@ func RateLimitMiddleware(rl *RateLimiter) func(http.Handler) http.Handler {
 				return
 			}
 
-			if !rl.Allow(ip+path, limit, window) {
+			if !rl.Allow(key, limit, window) {
 				if rl.metrics != nil {
 					rl.metrics.RatelimitRequestsTotal.WithLabelValues(ruleName, "blocked").Inc()
 					rl.metrics.RatelimitBlockedTotal.WithLabelValues(ruleName).Inc()
