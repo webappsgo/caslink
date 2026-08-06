@@ -34,6 +34,7 @@ import (
 	"github.com/webappsgo/caslink/src/scheduler"
 	"github.com/webappsgo/caslink/src/server/handler"
 	"github.com/webappsgo/caslink/src/server/service"
+	"github.com/webappsgo/caslink/src/server/service/acmedns"
 	"github.com/webappsgo/caslink/src/server/store"
 	"github.com/webappsgo/caslink/src/server/tmpl"
 	"github.com/webappsgo/caslink/src/swagger"
@@ -339,6 +340,24 @@ func (s *Server) setupRoutes() {
 		}
 	}
 	domainService := service.NewDomainService(s.store, s.config.Server.Features.CustomDomains)
+	// Enable DNS-01 certificate issuance for custom domains (PART 36). Requires
+	// a valid 32-byte encryption key to store DNS provider credentials and the
+	// issued private key at rest; without it, DNS-01 stays disabled and the
+	// SSL endpoints report ErrSSLNotConfigured.
+	if len(encryptionKey) == appcrypto.KeySize {
+		if issuer, err := acmedns.NewACMEIssuer(s.config.Server.SSL.LetsEncrypt.Email, s.config.Server.SSL.LetsEncrypt.Staging); err != nil {
+			log.Printf("Warning: DNS-01 ACME issuer init failed (custom-domain DNS-01 SSL disabled): %v", err)
+		} else {
+			domainService.EnableDNS01SSL(
+				issuer,
+				encryptionKey,
+				s.config.Server.Security.EncryptionKeyVersion,
+				s.config.Server.SSL.LetsEncrypt.Email,
+				s.config.Server.SSL.LetsEncrypt.Staging,
+				nil,
+			)
+		}
+	}
 	analyticsService := service.NewAnalyticsService(s.store)
 	bulkService := service.NewBulkService(s.store, urlService)
 	userAdminService := service.NewUserAdminService(s.store)

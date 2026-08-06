@@ -18,6 +18,7 @@ import (
 
 	"github.com/webappsgo/caslink/src/config"
 	"github.com/webappsgo/caslink/src/server/model"
+	"github.com/webappsgo/caslink/src/server/service/acmedns"
 	"github.com/webappsgo/caslink/src/server/store"
 )
 
@@ -48,6 +49,20 @@ type DomainService struct {
 
 	resolveCacheMu sync.RWMutex
 	resolveCache   map[string]resolveCacheEntry
+
+	// DNS-01 SSL issuance capability (PART 36). Populated by EnableDNS01SSL;
+	// when issuer is nil the SetDNSProvider/IssueDNS01Cert paths return
+	// ErrSSLNotConfigured. encryptionKey is the decoded 32-byte
+	// server.security.encryption_key used to AES-256-GCM the stored DNS
+	// credentials and issued private key. onCertChange, when set, purges any
+	// cached TLS certificate for a domain after a (re)issue so the new cert is
+	// served immediately (the autocert-cache purge hook).
+	sslIssuer     acmedns.Issuer
+	encryptionKey []byte
+	encKeyVersion int
+	leEmail       string
+	leStaging     bool
+	onCertChange  func(host string)
 }
 
 // NewDomainService creates a new domain service
@@ -131,9 +146,21 @@ type CustomDomain struct {
 	SSLEnabled         bool
 	SSLStatus          string
 	SSLExpiresAt       *time.Time
-	Status             string
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	// DNS-01 SSL fields (PART 36). SSLProvider/SSLChallenge select the ACME
+	// challenge; SSLCredentials/SSLCertPEM/SSLKeyPEM are AES-256-GCM encrypted at
+	// rest (never stored plaintext); SSLLastError records the last issuance
+	// failure for the owner to see. These are only populated by the SSL issuance
+	// path (domain_ssl.go), not the standard-column reads.
+	SSLProvider    string
+	SSLChallenge   string
+	SSLCredentials string
+	SSLCertPEM     string
+	SSLKeyPEM      string
+	SSLIssuedAt    *time.Time
+	SSLLastError   string
+	Status         string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 // generateVerificationToken returns a random ownership-proof token of the form

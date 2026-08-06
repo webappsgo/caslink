@@ -58,4 +58,8 @@ var (
 	ErrDomainBlockedPattern  = errors.New("domain matches blocked pattern")
 	ErrSSLNotConfigured      = errors.New("SSL not configured")
 	ErrSSLCertificateExpired = errors.New("SSL certificate expired")
+	ErrSSLProviderInvalid    = errors.New("SSL DNS provider invalid")
+	ErrSSLCredentialsInvalid = errors.New("SSL DNS provider credentials invalid")
+	ErrSSLChallengeFailed    = errors.New("SSL DNS-01 challenge failed")
+	ErrSSLIssuanceFailed     = errors.New("SSL certificate issuance failed")
 )

@@ -109,10 +109,28 @@ fixed inline and committed separately.
   domain cases are ordered ahead of the generic login/register/2fa substring
   cases so a domain literally named e.g. login.example.com is never
   misclassified into a stricter rule (middleware.go + middleware_test.go).
-  Still remaining (INFRA-BLOCKED — needs a real DNS provider account/creds):
-  POST /{domain}/ssl (DNS-01 provider config + AES-256-GCM credentials),
-  POST /{domain}/ssl/renew force-renew (needs autocert-cache purge
-  design), and DNS-01 ACME issuance and cert persistence. Deferred.
+  DNS-01 ACME issuance is now implemented behind a mockable interface
+  (src/server/service/acmedns: Issuer/DNSChallengeProvider interfaces,
+  ACMEIssuer over golang.org/x/crypto/acme with zero new deps, mock/stub
+  provider+issuer for tests). DomainService gained EnableDNS01SSL (wired in
+  server.go when a 32-byte encryption_key is present), SetDNSProvider
+  (validates the provider factory, JSON+AES-256-GCM-encrypts the DNS
+  credentials into ssl_provider/ssl_credentials, ssl_challenge='dns-01',
+  owner-scoped), and IssueDNS01Cert (owner-scoped force-issue/renew: requires
+  verified+active, decrypts creds, runs the ACME order, AES-256-GCM-encrypts
+  BOTH cert and key into ssl_cert_pem/ssl_key_pem, sets ssl_status='active'/
+  ssl_enabled=1/ssl_issued_at/ssl_expires_at, clears ssl_last_error, purges
+  the resolve cache, and calls the onCertChange hook). Failures record
+  ssl_status='error'+ssl_last_error and map to SSL_PROVIDER_INVALID/
+  SSL_CREDENTIALS_INVALID/SSL_CHALLENGE_FAILED/SSL_ISSUANCE_FAILED. Unit
+  tests cover encryption-at-rest, owner isolation, wildcard SAN, and each
+  error path (domain_ssl.go + domain_ssl_test.go).
+  Still remaining (Slice C): handler routes POST /{domain}/ssl and
+  POST /{domain}/ssl/renew (user+org, web+API) + tests, and wiring a
+  DB-stored-cert GetCertificate into the server TLS config with the
+  onCertChange autocert-cache purge hook so DNS-01 certs are served.
+  End-to-end issuance against a live CA still needs a real DNS provider
+  account/credential (INFRA-BLOCKED) but the full code path is mock-tested.
   (Scheduled SSL renewal and HTTP-01/TLS-ALPN-01 issuance are already
   handled automatically by autocert.Manager — the ssl_renewal scheduler
   task is an intentional no-op.)
