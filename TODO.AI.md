@@ -12,14 +12,6 @@ deleted). Each is feature-sized or needs verification unavailable in this
 environment; all bounded security/logic/config findings from that pass were
 fixed inline and committed separately.
 
-- API version abstraction: the codebase hardcodes `v1` in routes and the
-  swagger/health handlers instead of driving it from a `server.api_version`
-  config value through an `APIBasePath()` helper (PART 13/14). Making this
-  configurable is a pervasive, cross-cutting change touching every route
-  registration, every handler doc-path, swagger/graphql generation, and the
-  CLI client's base-path resolution — a design change, not a spot fix.
-  Deferred; `v1` is correct and stable for the current single API version.
-
 - SSL certificate lookup order (PART 15): startup should probe
   `/etc/letsencrypt/live/{domain}/` → `/etc/letsencrypt/live/{fqdn}/` →
   `{config_dir}/ssl/letsencrypt/{fqdn}/` → `{config_dir}/ssl/local/{fqdn}/`
