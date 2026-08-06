@@ -51,6 +51,7 @@ type ServerConfig struct {
 	Tor            TorConfig            `yaml:"tor"`
 	Backup         BackupConfig         `yaml:"backup"`
 	Compliance     ComplianceConfig     `yaml:"compliance"`
+	Privacy        PrivacyConfig        `yaml:"privacy"`
 }
 
 // ResolvedAPIVersion returns the configured API version URL segment (PART 14),
@@ -291,6 +292,52 @@ type TrackingConfig struct {
 	Type string `yaml:"type"` // google|matomo|plausible|umami|fathom|simple|cloudflare
 	ID   string `yaml:"id"`   // tracking / measurement ID
 	URL  string `yaml:"url"`  // self-hosted instance URL (required for some types)
+}
+
+// PrivacyConfig holds server-wide privacy settings, including the always-on
+// cookie-consent banner (GDPR/CCPA) per AI.md PART 12. The banner is never
+// disabled — sessions and preferences use cookies — but its text adapts to
+// whether user data is sold (Data.Sold).
+type PrivacyConfig struct {
+	Data    PrivacyDataConfig `yaml:"data"`
+	Consent ConsentConfig     `yaml:"consent"`
+}
+
+// PrivacyDataConfig drives dynamic CCPA "Do Not Sell" messaging.
+type PrivacyDataConfig struct {
+	Sold bool `yaml:"sold"`
+}
+
+// ConsentConfig configures the cookie-consent banner text, links, and buttons.
+type ConsentConfig struct {
+	Message         string         `yaml:"message"`
+	MessageIfSold   string         `yaml:"message_if_sold"`
+	Policy          ConsentPolicy  `yaml:"policy"`
+	Buttons         ConsentButtons `yaml:"buttons"`
+	Position        string         `yaml:"position"`
+	ShowPreferences bool           `yaml:"show_preferences"`
+	PreferencesText string         `yaml:"preferences_text"`
+}
+
+// ConsentPolicy is the inline privacy-policy link shown in the banner.
+type ConsentPolicy struct {
+	Text string `yaml:"text"`
+	URL  string `yaml:"url"`
+}
+
+// ConsentButtons holds the accept/decline button labels.
+type ConsentButtons struct {
+	Accept  string `yaml:"accept"`
+	Decline string `yaml:"decline"`
+}
+
+// GetConsentMessage returns the banner message appropriate to the data-sold
+// setting: MessageIfSold when data is sold (and set), otherwise Message.
+func (p PrivacyConfig) GetConsentMessage() string {
+	if p.Data.Sold && p.Consent.MessageIfSold != "" {
+		return p.Consent.MessageIfSold
+	}
+	return p.Consent.Message
 }
 
 // ContactConfig holds unified notification recipient config per AI.md PART 12.
@@ -1082,6 +1129,24 @@ func DefaultConfig() *Config {
 				Type: "",
 				ID:   "",
 				URL:  "",
+			},
+			Privacy: PrivacyConfig{
+				Data: PrivacyDataConfig{Sold: false},
+				Consent: ConsentConfig{
+					Message:       "In accordance with the EU GDPR law this message is being displayed. By using this site you consent to our use of cookies.",
+					MessageIfSold: "This site uses cookies and may share limited data with third parties. See our privacy policy for details and your opt-out rights.",
+					Policy: ConsentPolicy{
+						Text: "Privacy Policy",
+						URL:  "/server/privacy",
+					},
+					Buttons: ConsentButtons{
+						Accept:  "I Agree",
+						Decline: "Decline",
+					},
+					Position:        "bottom",
+					ShowPreferences: true,
+					PreferencesText: "Manage Preferences",
+				},
 			},
 			SSL: SSLConfig{
 				Enabled:    false,

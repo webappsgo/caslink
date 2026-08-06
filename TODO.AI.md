@@ -194,8 +194,20 @@ fixed inline and committed separately.
   (open/invite/admin_only/disabled) are now fully implemented and enforced.
   Organization creation-modes work complete.
 
-- Admin panel WebUI completeness + cookie-consent banner (PART 16/17): the
-  full set of admin config templates and the always-on GDPR cookie-consent
-  banner (fixed bottom, server-read `cookie_consent` cookie, essential/
-  preferences/analytics categories) are a UI feature build needing browser
-  verification. Deferred.
+- Cookie-consent banner (PART 12/16): DONE. Always-on GDPR/CCPA banner is now
+  server-rendered from `server.privacy.consent` config, gated on the presence
+  of the `cookie_consent` cookie (`newPageData` reads it; `base.html` renders
+  `{{if not .HasConsentCookie}}`). Accept/Decline are plain POST forms to
+  `POST /server/consent` (`PagesHandler.Consent`) that store the
+  `{essential,preferences,analytics,timestamp}` state as URL-escaped JSON in
+  the `cookie_consent` cookie (Path=/, MaxAge 1y, SameSite=Lax, Secure when
+  TLS) and redirect back to a validated same-origin path (open-redirect
+  rejected). Works fully without JS; app.js adds a background-fetch + remove
+  enhancement. Data-sold message swap via `PrivacyConfig.GetConsentMessage`.
+  Handler + newPageData unit tests added and green. Also fixed a pre-existing
+  frontend-rules "NEVER inline CSS" violation on the nav language selector
+  (moved inline `style=` to `.lang-form`/`.lang-select` classes).
+
+- Admin panel WebUI completeness (PART 17): the full set of admin config
+  templates is a UI feature build needing browser verification. Deferred
+  (browser-verification-gated).

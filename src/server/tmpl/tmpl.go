@@ -117,6 +117,31 @@ type Data struct {
 	AvailableLanguages []LangOption
 	User               interface{}
 	Flash              *Flash
+	// HasConsentCookie is true when the request already carries a
+	// cookie_consent cookie; the consent banner is rendered only when false
+	// (server decides, so it works without JS) per AI.md PART 12/16.
+	HasConsentCookie bool
+	// Consent carries the banner text/links/labels; always non-nil so the
+	// layout can render the banner when HasConsentCookie is false.
+	Consent *ConsentView
+	// CurrentPath is the request path+query, posted back with the consent
+	// choice so a no-JS visitor is redirected to the page they were on.
+	CurrentPath string
+}
+
+// ConsentView is the rendered-ready cookie-consent banner context, derived
+// from server.privacy.consent (PART 12). Message is pre-selected via
+// PrivacyConfig.GetConsentMessage (data-sold aware).
+type ConsentView struct {
+	Message         string
+	PolicyText      string
+	PolicyURL       string
+	AcceptText      string
+	DeclineText     string
+	Position        string
+	ShowPreferences bool
+	PreferencesText string
+	DataSold        bool
 }
 
 // LangOption is a single entry in the language selector dropdown.

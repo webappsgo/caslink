@@ -232,6 +232,27 @@ func newPageData(cfg *config.Config, r *http.Request, title string, user *servic
 		})
 	}
 
+	// Cookie-consent banner (PART 12): the server decides whether to render
+	// the banner by looking for the cookie_consent cookie, so it works with
+	// JavaScript disabled. When the cookie is absent, build the view.
+	_, consentErr := r.Cookie("cookie_consent")
+	hasConsent := consentErr == nil
+	var consentView *tmpl.ConsentView
+	if !hasConsent {
+		p := cfg.Server.Privacy
+		consentView = &tmpl.ConsentView{
+			Message:         p.GetConsentMessage(),
+			PolicyText:      p.Consent.Policy.Text,
+			PolicyURL:       p.Consent.Policy.URL,
+			AcceptText:      p.Consent.Buttons.Accept,
+			DeclineText:     p.Consent.Buttons.Decline,
+			Position:        p.Consent.Position,
+			ShowPreferences: p.Consent.ShowPreferences,
+			PreferencesText: p.Consent.PreferencesText,
+			DataSold:        p.Data.Sold,
+		}
+	}
+
 	return tmpl.Data{
 		AppName:            appName,
 		AppDesc:            appDesc,
@@ -241,5 +262,8 @@ func newPageData(cfg *config.Config, r *http.Request, title string, user *servic
 		Lang:               activeLang,
 		AvailableLanguages: opts,
 		User:               user,
+		HasConsentCookie:   hasConsent,
+		Consent:            consentView,
+		CurrentPath:        r.URL.RequestURI(),
 	}
 }

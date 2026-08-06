@@ -688,6 +688,10 @@ func (s *Server) setupRoutes() {
 		r.Get("/", pagesHandler.Contact)
 		r.Post("/", pagesHandler.ContactSubmit)
 	})
+	// Cookie-consent banner choice (PART 12) — plain POST, no CSRF: shown to
+	// anonymous visitors before any session/CSRF token exists; only sets a
+	// non-privileged preference cookie.
+	s.router.Post("/server/consent", pagesHandler.Consent)
 
 	// Admin panel routes — /server/{adminPath}/* per spec PART 17
 	s.router.Route("/server/"+adminPath, func(r chi.Router) {

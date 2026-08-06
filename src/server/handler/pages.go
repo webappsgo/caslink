@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
 	"github.com/webappsgo/caslink/src/config"
 	"github.com/webappsgo/caslink/src/server/tmpl"
@@ -308,6 +310,69 @@ func (h *PagesHandler) ContactSubmit(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[contact] from=%s <%s> to=%s subject=%q len=%d", name, email, recipient, subject, len(message))
 
 	http.Redirect(w, r, "/server/contact?sent=1", http.StatusSeeOther)
+}
+
+// consentState is the JSON payload stored in the cookie_consent cookie so the
+// server can read the visitor's cookie preferences on later requests (PART 12).
+// Essential is always true; the site cannot function without session/CSRF cookies.
+type consentState struct {
+	Essential   bool  `json:"essential"`
+	Preferences bool  `json:"preferences"`
+	Analytics   bool  `json:"analytics"`
+	Timestamp   int64 `json:"timestamp"`
+}
+
+// Consent records the visitor's cookie-consent choice from the banner (PART 12).
+// It is a plain form POST so it works without JavaScript; the JS enhancement
+// simply removes the banner without a reload. No CSRF token is required because
+// the banner is shown to anonymous visitors before any session exists and the
+// action only sets a preference cookie carrying no privileged capability.
+func (h *PagesHandler) Consent(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	state := consentState{Essential: true, Timestamp: time.Now().Unix()}
+	switch r.FormValue("choice") {
+	case "accept":
+		state.Preferences = true
+		state.Analytics = true
+	case "save":
+		state.Preferences = r.FormValue("preferences") == "on"
+		state.Analytics = r.FormValue("analytics") == "on"
+	default:
+		// "decline" and any unknown value store essential-only consent.
+	}
+
+	payload, err := json.Marshal(state)
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "cookie_consent",
+		Value:    url.QueryEscape(string(payload)),
+		Path:     "/",
+		MaxAge:   31536000,
+		HttpOnly: false,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	http.Redirect(w, r, safeConsentRedirect(r), http.StatusSeeOther)
+}
+
+// safeConsentRedirect returns a same-origin path to return the visitor to
+// after recording consent. It accepts only a local absolute path (starting
+// with a single "/") from the "redirect" form field, falling back to "/".
+func safeConsentRedirect(r *http.Request) string {
+	dest := r.FormValue("redirect")
+	if strings.HasPrefix(dest, "/") && !strings.HasPrefix(dest, "//") {
+		return dest
+	}
+	return "/"
 }
 
 // Terms renders the /server/terms page.

@@ -26,6 +26,29 @@
       {{.AppName}} {{.Version}} &mdash; <a href="/server/healthz">Status</a>
     </div>
   </footer>
+  {{if not .HasConsentCookie}}{{with .Consent}}
+  <div id="cookie-consent" class="cookie-banner cookie-banner-{{if eq .Position "top"}}top{{else}}bottom{{end}}" role="region" aria-label="Cookie consent" data-sold="{{.DataSold}}">
+    <div class="container cookie-banner-inner">
+      <p class="cookie-banner-msg">
+        {{.Message}}
+        {{if .PolicyURL}}<a href="{{.PolicyURL}}">{{.PolicyText}}</a>{{end}}
+      </p>
+      <div class="cookie-banner-actions">
+        {{if .ShowPreferences}}<a href="/server/privacy#cookies" class="btn btn-outline btn-sm">{{.PreferencesText}}</a>{{end}}
+        <form method="POST" action="/server/consent" class="cookie-banner-form">
+          <input type="hidden" name="choice" value="decline">
+          <input type="hidden" name="redirect" value="{{$.CurrentPath}}">
+          <button type="submit" class="btn btn-outline btn-sm">{{.DeclineText}}</button>
+        </form>
+        <form method="POST" action="/server/consent" class="cookie-banner-form">
+          <input type="hidden" name="choice" value="accept">
+          <input type="hidden" name="redirect" value="{{$.CurrentPath}}">
+          <button type="submit" class="btn btn-primary btn-sm">{{.AcceptText}}</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {{end}}{{end}}
   <script src="/static/js/app.js"></script>
 </body>
 </html>{{end}}
@@ -42,9 +65,9 @@
   </div>
   <div class="nav-actions">
     {{if .AvailableLanguages}}
-    <form method="GET" action="" class="lang-form" style="display:inline;margin-right:8px">
+    <form method="GET" action="" class="lang-form">
       <label class="sr-only" for="lang-select">Language</label>
-      <select id="lang-select" name="lang" class="lang-select" data-autosubmit aria-label="Select language" style="background:transparent;border:1px solid #555;color:inherit;border-radius:4px;padding:2px 4px;font-size:0.85em;cursor:pointer">
+      <select id="lang-select" name="lang" class="lang-select" data-autosubmit aria-label="Select language">
         {{range .AvailableLanguages}}<option value="{{.Code}}"{{if .Active}} selected{{end}}>{{.NativeName}}</option>{{end}}
       </select>
     </form>

@@ -352,10 +352,57 @@ tr:hover td { background: rgba(255,255,255,.02); }
   gap: .5rem;
 }
 
+/* ---- Language selector ------------------------------------------------ */
+.lang-form { display: inline; margin-right: .5rem; }
+.lang-select {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: inherit;
+  border-radius: var(--radius);
+  padding: .125rem .25rem;
+  font-size: .85em;
+  cursor: pointer;
+}
+
+/* ---- Cookie consent banner (always-on, GDPR — PART 12) ---------------- */
+.cookie-banner {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  padding: .75rem 0;
+}
+.cookie-banner-bottom { bottom: 0; }
+.cookie-banner-top { top: 0; border-top: none; border-bottom: 1px solid var(--border); }
+.cookie-banner-inner {
+  display: flex;
+  flex-direction: column;
+  gap: .75rem;
+}
+.cookie-banner-msg {
+  margin: 0;
+  font-size: .875rem;
+  overflow-wrap: break-word;
+}
+.cookie-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  justify-content: flex-end;
+  align-items: center;
+}
+.cookie-banner-form { margin: 0; }
+
 /* ---- Responsive (mobile-first: base = mobile, scale up at min-width) --- */
 @media (min-width: 768px) {
   h1 { font-size: 1.75rem; }
   .nav-links { gap: .75rem; }
   .card { padding: 1.5rem; }
   main { padding: 2rem 1rem; }
+  .cookie-banner-inner { flex-direction: row; align-items: center; }
+  .cookie-banner-msg { flex: 1; }
+  .cookie-banner-actions { flex-wrap: nowrap; }
 }

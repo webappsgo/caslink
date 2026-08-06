@@ -230,6 +230,174 @@ func TestTermsRenders(t *testing.T) {
 	}
 }
 
+// ---- Consent (cookie banner) ----
+
+// consentCookie returns the cookie_consent cookie set on the response, or nil.
+func consentCookie(w *httptest.ResponseRecorder) *http.Cookie {
+	for _, c := range w.Result().Cookies() {
+		if c.Name == "cookie_consent" {
+			return c
+		}
+	}
+	return nil
+}
+
+func TestConsentAcceptSetsAllTrue(t *testing.T) {
+	h := newPagesTestHandler(t)
+
+	form := url.Values{"choice": {"accept"}, "redirect": {"/dashboard"}}
+	r := httptest.NewRequest(http.MethodPost, "/server/consent", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.Consent(w, r)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "/dashboard" {
+		t.Errorf("expected redirect to /dashboard, got %q", loc)
+	}
+	c := consentCookie(w)
+	if c == nil {
+		t.Fatal("expected a cookie_consent cookie to be set")
+	}
+	if c.Path != "/" || c.MaxAge != 31536000 || c.SameSite != http.SameSiteLaxMode {
+		t.Errorf("unexpected cookie attributes: path=%q maxage=%d samesite=%d", c.Path, c.MaxAge, c.SameSite)
+	}
+	raw, err := url.QueryUnescape(c.Value)
+	if err != nil {
+		t.Fatalf("cookie value not URL-escaped JSON: %v", err)
+	}
+	var st consentState
+	if err := json.Unmarshal([]byte(raw), &st); err != nil {
+		t.Fatalf("cookie value not valid JSON: %v", err)
+	}
+	if !st.Essential || !st.Preferences || !st.Analytics {
+		t.Errorf("expected all consent flags true on accept, got %+v", st)
+	}
+	if st.Timestamp == 0 {
+		t.Error("expected a non-zero timestamp")
+	}
+}
+
+func TestConsentDeclineSetsEssentialOnly(t *testing.T) {
+	h := newPagesTestHandler(t)
+
+	form := url.Values{"choice": {"decline"}}
+	r := httptest.NewRequest(http.MethodPost, "/server/consent", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.Consent(w, r)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d", w.Code)
+	}
+	if loc := w.Header().Get("Location"); loc != "/" {
+		t.Errorf("expected fallback redirect to /, got %q", loc)
+	}
+	c := consentCookie(w)
+	if c == nil {
+		t.Fatal("expected a cookie_consent cookie to be set")
+	}
+	raw, _ := url.QueryUnescape(c.Value)
+	var st consentState
+	if err := json.Unmarshal([]byte(raw), &st); err != nil {
+		t.Fatalf("cookie value not valid JSON: %v", err)
+	}
+	if !st.Essential || st.Preferences || st.Analytics {
+		t.Errorf("expected essential-only on decline, got %+v", st)
+	}
+}
+
+func TestConsentSaveHonorsGranularChoices(t *testing.T) {
+	h := newPagesTestHandler(t)
+
+	form := url.Values{"choice": {"save"}, "preferences": {"on"}}
+	r := httptest.NewRequest(http.MethodPost, "/server/consent", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.Consent(w, r)
+
+	c := consentCookie(w)
+	if c == nil {
+		t.Fatal("expected a cookie_consent cookie to be set")
+	}
+	raw, _ := url.QueryUnescape(c.Value)
+	var st consentState
+	if err := json.Unmarshal([]byte(raw), &st); err != nil {
+		t.Fatalf("cookie value not valid JSON: %v", err)
+	}
+	if !st.Essential || !st.Preferences || st.Analytics {
+		t.Errorf("expected preferences on, analytics off, got %+v", st)
+	}
+}
+
+func TestConsentRejectsProtocolRelativeRedirect(t *testing.T) {
+	h := newPagesTestHandler(t)
+
+	form := url.Values{"choice": {"accept"}, "redirect": {"//evil.example/phish"}}
+	r := httptest.NewRequest(http.MethodPost, "/server/consent", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.Consent(w, r)
+
+	if loc := w.Header().Get("Location"); loc != "/" {
+		t.Errorf("expected an open-redirect to be rejected in favor of /, got %q", loc)
+	}
+}
+
+// ---- newPageData consent view ----
+
+func TestNewPageDataRendersBannerWhenNoConsentCookie(t *testing.T) {
+	cfg := config.DefaultConfig()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	d := newPageData(cfg, r, "Home", nil)
+
+	if d.HasConsentCookie {
+		t.Error("expected HasConsentCookie=false with no cookie present")
+	}
+	if d.Consent == nil {
+		t.Fatal("expected a non-nil Consent view when the banner should render")
+	}
+	if d.Consent.AcceptText != "I Agree" || d.Consent.DeclineText != "Decline" {
+		t.Errorf("unexpected banner button labels: %+v", d.Consent)
+	}
+	if d.CurrentPath != "/" {
+		t.Errorf("expected CurrentPath=/, got %q", d.CurrentPath)
+	}
+}
+
+func TestNewPageDataSkipsBannerWithConsentCookie(t *testing.T) {
+	cfg := config.DefaultConfig()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.AddCookie(&http.Cookie{Name: "cookie_consent", Value: "x"})
+	d := newPageData(cfg, r, "Home", nil)
+
+	if !d.HasConsentCookie {
+		t.Error("expected HasConsentCookie=true when the cookie is present")
+	}
+	if d.Consent != nil {
+		t.Error("expected a nil Consent view when the banner is suppressed")
+	}
+}
+
+func TestNewPageDataUsesSoldMessageWhenDataSold(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Server.Privacy.Data.Sold = true
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	d := newPageData(cfg, r, "Home", nil)
+
+	if d.Consent == nil {
+		t.Fatal("expected a non-nil Consent view")
+	}
+	if !strings.Contains(d.Consent.Message, "share limited data") {
+		t.Errorf("expected the data-sold message, got %q", d.Consent.Message)
+	}
+	if !d.Consent.DataSold {
+		t.Error("expected DataSold=true on the view")
+	}
+}
+
 // ---- JSON API handlers ----
 
 func TestAPIAboutReturnsJSON(t *testing.T) {

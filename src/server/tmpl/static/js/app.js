@@ -430,4 +430,33 @@
     });
   });
 
+  // ---- Cookie consent banner (PART 12) -------------------------------
+  // Progressive enhancement only: without JS the Accept/Decline buttons are
+  // plain form POSTs to /server/consent that set the cookie and redirect
+  // back. With JS we submit in the background and remove the banner without
+  // a reload. The window.fetch patch above adds no CSRF header on this
+  // route (the server registers it without CSRF), and credentials must be
+  // included so Set-Cookie sticks.
+
+  document.addEventListener('DOMContentLoaded', function () {
+    var banner = document.getElementById('cookie-consent');
+    if (!banner) return;
+    banner.querySelectorAll('form.cookie-banner-form').forEach(function (form) {
+      form.addEventListener('submit', function (e) {
+        e.preventDefault();
+        _origFetch.call(window, '/server/consent', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams(new FormData(form)).toString()
+        }).then(function () {
+          banner.remove();
+        }).catch(function () {
+          // On failure fall back to the plain navigation submit.
+          form.submit();
+        });
+      });
+    });
+  });
+
 })();
