@@ -4,13 +4,16 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
+	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/webappsgo/caslink/src/config"
@@ -18,17 +21,41 @@ import (
 	"github.com/webappsgo/caslink/src/server/store"
 )
 
+// ErrDomainNotFound is returned by Resolve when the request host does not map
+// to a verified, active custom domain (i.e. it is the main application host or
+// an unknown host). Callers treat it as "serve the main application", never a
+// hard error.
+var ErrDomainNotFound = errors.New("custom domain not found")
+
+// domainResolveCacheTTL bounds how long a positive or negative host→owner
+// resolution is cached. Short by design: the redirect hot path must not hit
+// the DB on every request (PART 36 domain caching), but a freshly verified or
+// removed domain must go live within a minute even without explicit
+// invalidation.
+const domainResolveCacheTTL = 60 * time.Second
+
+// resolveCacheEntry is one cached host→domain resolution. A nil domain is a
+// negative cache entry (host is not a custom domain).
+type resolveCacheEntry struct {
+	domain  *CustomDomain
+	expires time.Time
+}
+
 // DomainService handles custom domain operations
 type DomainService struct {
 	store *store.Store
 	cfg   config.CustomDomainsConfig
+
+	resolveCacheMu sync.RWMutex
+	resolveCache   map[string]resolveCacheEntry
 }
 
 // NewDomainService creates a new domain service
 func NewDomainService(st *store.Store, cfg config.CustomDomainsConfig) *DomainService {
 	return &DomainService{
-		store: st,
-		cfg:   cfg,
+		store:        st,
+		cfg:          cfg,
+		resolveCache: make(map[string]resolveCacheEntry),
 	}
 }
 
@@ -495,6 +522,10 @@ func (s *DomainService) VerifyDomain(ctx context.Context, domainID int64) error 
 		return fmt.Errorf("failed to update domain: %w", err)
 	}
 
+	// The domain just became verified+active; drop any cached negative
+	// resolution so Resolve serves it immediately (PART 36 domain caching).
+	s.invalidateResolveCache()
+
 	return nil
 }
 
@@ -514,6 +545,97 @@ func (s *DomainService) IsDomainVerifiedActive(ctx context.Context, host string)
 		return false, fmt.Errorf("failed to check domain SSL eligibility: %w", err)
 	}
 	return count > 0, nil
+}
+
+// Resolve maps a request Host to the verified, active, non-wildcard custom
+// domain that owns it (PART 36 domain resolver). It returns ErrDomainNotFound
+// when host is the main application host or any host not registered as a live
+// custom domain — callers treat that as "serve the main application", never a
+// hard failure. Results (positive and negative) are cached for
+// domainResolveCacheTTL so the redirect hot path avoids a DB round-trip per
+// request.
+func (s *DomainService) Resolve(ctx context.Context, host string) (*CustomDomain, error) {
+	host = normalizeResolveHost(host)
+	if host == "" {
+		return nil, ErrDomainNotFound
+	}
+
+	if cd, ok := s.resolveCacheGet(host); ok {
+		if cd == nil {
+			return nil, ErrDomainNotFound
+		}
+		return cd, nil
+	}
+
+	query := `SELECT id, owner_type, owner_id, domain, is_apex, is_wildcard,
+	          verification_status, verified_at, ssl_enabled, ssl_status, ssl_expires_at,
+	          status, created_at, updated_at
+	          FROM custom_domains
+	          WHERE domain = ? AND verification_status = 'verified' AND status = 'active' AND is_wildcard = 0`
+
+	var d CustomDomain
+	err := s.store.UsersDB.QueryRowContext(ctx, query, host).Scan(
+		&d.ID, &d.OwnerType, &d.OwnerID, &d.Domain, &d.IsApex, &d.IsWildcard,
+		&d.VerificationStatus, &d.VerifiedAt, &d.SSLEnabled, &d.SSLStatus, &d.SSLExpiresAt,
+		&d.Status, &d.CreatedAt, &d.UpdatedAt,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		s.resolveCacheSet(host, nil)
+		return nil, ErrDomainNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve custom domain: %w", err)
+	}
+
+	s.resolveCacheSet(host, &d)
+	return &d, nil
+}
+
+// normalizeResolveHost strips any port, a trailing dot, and case from a request
+// Host so it matches the stored (already lowercased, FQDN) domain value.
+func normalizeResolveHost(host string) string {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return ""
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.TrimSuffix(host, ".")
+	return strings.ToLower(host)
+}
+
+// resolveCacheGet returns the cached resolution for host. The bool is false on
+// a miss or an expired entry; on a hit the *CustomDomain may be nil (a cached
+// negative result).
+func (s *DomainService) resolveCacheGet(host string) (*CustomDomain, bool) {
+	s.resolveCacheMu.RLock()
+	entry, ok := s.resolveCache[host]
+	s.resolveCacheMu.RUnlock()
+	if !ok || time.Now().After(entry.expires) {
+		return nil, false
+	}
+	return entry.domain, true
+}
+
+// resolveCacheSet records a host resolution (cd may be nil for a negative
+// result) with a TTL of domainResolveCacheTTL.
+func (s *DomainService) resolveCacheSet(host string, cd *CustomDomain) {
+	s.resolveCacheMu.Lock()
+	if s.resolveCache == nil {
+		s.resolveCache = make(map[string]resolveCacheEntry)
+	}
+	s.resolveCache[host] = resolveCacheEntry{domain: cd, expires: time.Now().Add(domainResolveCacheTTL)}
+	s.resolveCacheMu.Unlock()
+}
+
+// invalidateResolveCache clears every cached resolution. Called after a domain
+// transitions to (or from) verified+active so the change is visible immediately
+// rather than after the TTL.
+func (s *DomainService) invalidateResolveCache() {
+	s.resolveCacheMu.Lock()
+	s.resolveCache = make(map[string]resolveCacheEntry)
+	s.resolveCacheMu.Unlock()
 }
 
 // verificationTTL returns the configured verification window as a duration,

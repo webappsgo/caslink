@@ -341,6 +341,38 @@ func (s *URLService) GetURLByCode(ctx context.Context, shortCode string) (*model
 	return u, nil
 }
 
+// GetURLByCodeForOwner retrieves a non-expired URL by its short code, scoped to
+// a single owner (PART 36 custom-domain routing). When a request arrives on a
+// verified custom domain, only links owned by that domain's owner may be served
+// — a custom domain must never expose another account's links. ownerType is
+// "user" or "org"; any other value scopes to nothing and yields
+// model.ErrURLNotFound.
+func (s *URLService) GetURLByCodeForOwner(ctx context.Context, shortCode, ownerType string, ownerID int64) (*model.URL, error) {
+	var column string
+	switch ownerType {
+	case "user":
+		column = "user_id"
+	case "org":
+		column = "org_id"
+	default:
+		return nil, model.ErrURLNotFound
+	}
+
+	query := `SELECT ` + urlSelectColumns + ` FROM urls WHERE short_code = ? AND ` + column + ` = ?`
+	u, err := scanURLRow(s.store.ServerDB.QueryRowContext(ctx, query, shortCode, ownerID))
+	if err == sql.ErrNoRows {
+		return nil, model.ErrURLNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query URL: %w", err)
+	}
+
+	if u.ExpiresAt != nil && time.Now().After(*u.ExpiresAt) {
+		return nil, model.ErrURLExpired
+	}
+	return u, nil
+}
+
 // GetURLByCodeAny retrieves a URL by its short code without the expiry
 // check, so callers that need to operate on (or revive) an expired link —
 // UpdateURL, DeleteURL, and their ownership checks — are not blocked by

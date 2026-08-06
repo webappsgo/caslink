@@ -273,7 +273,16 @@ func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	url, err := h.urlService.GetURLByCode(r.Context(), code)
+	// On a verified custom domain, resolve the code only within that domain
+	// owner's links (PART 36): a custom domain must serve its owner's short
+	// links and never another account's. On the main host, resolve globally.
+	var url *model.URL
+	var err error
+	if cd, ok := getCustomDomainFromRequest(r); ok {
+		url, err = h.urlService.GetURLByCodeForOwner(r.Context(), code, cd.OwnerType, cd.OwnerID)
+	} else {
+		url, err = h.urlService.GetURLByCode(r.Context(), code)
+	}
 	if err != nil {
 		if err == model.ErrURLNotFound || err == model.ErrURLExpired {
 			http.NotFound(w, r)

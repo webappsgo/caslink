@@ -371,6 +371,13 @@ func (s *Server) setupRoutes() {
 	domainHandler := handler.NewDomainHandler(domainService, authService, orgService)
 	pagesHandler := handler.NewPagesHandler(s.config, s.renderer, s.Version, s.BuildDate, func() *apktor.TorManager { return s.torManager })
 
+	// Custom domain resolver (PART 36). Registered before any route is mounted
+	// on the router (chi requires all Use() calls to precede routing). It
+	// attaches the resolved custom domain to the request context when the Host
+	// is a verified, active custom domain, and passes every other Host through
+	// untouched.
+	s.router.Use(CustomDomainMiddleware(domainService))
+
 	// Static assets (CSS, JS, PWA manifest, service worker)
 	s.router.Handle("/static/*", tmpl.StaticHandler())
 

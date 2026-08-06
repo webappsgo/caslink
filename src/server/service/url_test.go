@@ -239,6 +239,61 @@ func TestDeleteURL(t *testing.T) {
 	}
 }
 
+func TestGetURLByCodeForOwner(t *testing.T) {
+	st := newTestURLStore(t)
+	svc := NewURLService(st)
+	ctx := context.Background()
+
+	userLink, err := svc.CreateURLForUser(ctx, 7, &model.CreateURLRequest{LongURL: "https://example.com/u"})
+	if err != nil {
+		t.Fatalf("CreateURLForUser: %v", err)
+	}
+	orgLink, err := svc.CreateURLForOrg(ctx, 42, &model.CreateURLRequest{LongURL: "https://example.com/o"})
+	if err != nil {
+		t.Fatalf("CreateURLForOrg: %v", err)
+	}
+	past := time.Now().Add(-time.Hour)
+	expiredLink, err := svc.CreateURLForUser(ctx, 7, &model.CreateURLRequest{LongURL: "https://example.com/x", ExpiresAt: &past})
+	if err != nil {
+		t.Fatalf("CreateURLForUser(expired): %v", err)
+	}
+
+	t.Run("user owner match", func(t *testing.T) {
+		got, err := svc.GetURLByCodeForOwner(ctx, userLink.ShortCode, "user", 7)
+		if err != nil || got == nil || got.ShortCode != userLink.ShortCode {
+			t.Fatalf("owner match = (%+v, %v), want %s", got, err, userLink.ShortCode)
+		}
+	})
+
+	t.Run("org owner match", func(t *testing.T) {
+		got, err := svc.GetURLByCodeForOwner(ctx, orgLink.ShortCode, "org", 42)
+		if err != nil || got == nil || got.ShortCode != orgLink.ShortCode {
+			t.Fatalf("org match = (%+v, %v), want %s", got, err, orgLink.ShortCode)
+		}
+	})
+
+	t.Run("wrong owner is not found", func(t *testing.T) {
+		if _, err := svc.GetURLByCodeForOwner(ctx, userLink.ShortCode, "user", 8); err != model.ErrURLNotFound {
+			t.Errorf("wrong user err = %v, want ErrURLNotFound", err)
+		}
+		if _, err := svc.GetURLByCodeForOwner(ctx, userLink.ShortCode, "org", 7); err != model.ErrURLNotFound {
+			t.Errorf("user link via org scope err = %v, want ErrURLNotFound", err)
+		}
+	})
+
+	t.Run("invalid owner type is not found", func(t *testing.T) {
+		if _, err := svc.GetURLByCodeForOwner(ctx, userLink.ShortCode, "banana", 7); err != model.ErrURLNotFound {
+			t.Errorf("invalid ownerType err = %v, want ErrURLNotFound", err)
+		}
+	})
+
+	t.Run("expired owned link reports expired", func(t *testing.T) {
+		if _, err := svc.GetURLByCodeForOwner(ctx, expiredLink.ShortCode, "user", 7); err != model.ErrURLExpired {
+			t.Errorf("expired err = %v, want ErrURLExpired", err)
+		}
+	})
+}
+
 func TestParseExpiration(t *testing.T) {
 	if got := parseExpiration("never"); got != nil {
 		t.Errorf(`parseExpiration("never") = %v, want nil`, got)

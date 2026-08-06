@@ -23,11 +23,33 @@ import (
 // and handlers refer to the same typed key (Go requires identical key
 // types — not just identical string values — for context.Value lookups).
 const (
-	userContextKey    = handler.UserContextKey
-	adminContextKey   = handler.AdminContextKey
-	orgContextKey     = handler.ContextKey("org")
-	orgRoleContextKey = handler.ContextKey("org_role")
+	userContextKey         = handler.UserContextKey
+	adminContextKey        = handler.AdminContextKey
+	orgContextKey          = handler.ContextKey("org")
+	orgRoleContextKey      = handler.ContextKey("org_role")
+	customDomainContextKey = handler.CustomDomainContextKey
 )
+
+// CustomDomainMiddleware resolves the request Host against registered custom
+// domains (PART 36 resolver). When the Host is a verified, active,
+// non-wildcard custom domain, the resolved *service.CustomDomain is attached
+// to the request context so downstream handlers can scope short-code lookups
+// to that domain's owner. Every other Host — the main application host, health
+// checks, unknown hosts — passes through untouched: resolution never blocks or
+// 404s a request, so it cannot break the primary site. Lookups are cached in
+// the domain service, so this adds no per-request DB cost on the hot path.
+func CustomDomainMiddleware(domainService *service.DomainService) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if domainService != nil && r.Host != "" {
+				if cd, err := domainService.Resolve(r.Context(), r.Host); err == nil && cd != nil {
+					r = r.WithContext(context.WithValue(r.Context(), customDomainContextKey, cd))
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
 
 // writeJSONError writes a canonical error envelope to w:
 //

@@ -170,6 +170,10 @@ const (
 	// attached by server.BearerAuthMiddleware on Bearer-authenticated API
 	// requests.
 	BearerContextKey ContextKey = "bearer_user"
+	// CustomDomainContextKey is the context key for the *service.CustomDomain
+	// attached by server.CustomDomainMiddleware when a request arrives on a
+	// verified, active custom domain (PART 36 resolver).
+	CustomDomainContextKey ContextKey = "custom_domain"
 )
 
 // getUserFromRequest returns the authenticated user attached by the
@@ -185,6 +189,14 @@ func getUserFromRequest(r *http.Request) (*service.User, bool) {
 func getBearerFromRequest(r *http.Request) (*service.TokenRecord, bool) {
 	rec, ok := r.Context().Value(BearerContextKey).(*service.TokenRecord)
 	return rec, ok
+}
+
+// getCustomDomainFromRequest returns the *service.CustomDomain attached by
+// server.CustomDomainMiddleware, or (nil, false) when the request did not
+// arrive on a verified, active custom domain.
+func getCustomDomainFromRequest(r *http.Request) (*service.CustomDomain, bool) {
+	cd, ok := r.Context().Value(CustomDomainContextKey).(*service.CustomDomain)
+	return cd, ok
 }
 
 // csrfToken returns the CSRF token from the csrf_token cookie.

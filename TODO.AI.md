@@ -79,9 +79,18 @@ fixed inline and committed separately.
   POST /api/v1/users/domains/{domain}/verify, plus the org equivalents under
   /api/v1/orgs/{slug}/domains — all bearer-or-session authenticated, with the
   same ownership scoping and owner/admin role gating as the web handlers.
-  Still remaining: resolver middleware, admin web/API routes, DNS-01 ACME
-  issuance and cert persistence, scheduled SSL-renewal task, domain caching,
-  and rate limiting. Deferred.
+  The custom-domain resolver middleware and domain caching are now
+  implemented: DomainService.Resolve(host) resolves a verified+active,
+  non-wildcard domain (host normalized for port/case/trailing-dot) via a 60s
+  in-memory positive+negative cache, invalidated on VerifyDomain success;
+  server.CustomDomainMiddleware attaches the resolved *CustomDomain to the
+  request context (attach-on-match, pass-through-on-miss so main-site and
+  health traffic is never broken) and is registered via router.Use before any
+  route mount; and RedirectURL now routes short-code lookups through the new
+  owner-scoped URLService.GetURLByCodeForOwner when a request arrives on a
+  custom domain, so a custom domain serves only its owner's links.
+  Still remaining: admin web/API routes, DNS-01 ACME issuance and cert
+  persistence, scheduled SSL-renewal task, and rate limiting. Deferred.
 
 - PART 34 registration modes: the open/invite/admin_only/disabled gate is
   implemented — `RegistrationConfig.Mode` (default open),

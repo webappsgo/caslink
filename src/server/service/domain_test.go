@@ -305,3 +305,106 @@ func TestRetryPendingVerifications(t *testing.T) {
 		t.Errorf("fresh pending check_count = %d, want 1 after one retry", checkCount)
 	}
 }
+
+// insertWildcardDomain inserts a verified+active wildcard domain directly,
+// since AddDomain/insertDomainRow do not set is_wildcard.
+func insertWildcardDomain(t *testing.T, st *store.Store, domain string) {
+	t.Helper()
+	now := time.Now()
+	_, err := st.UsersDB.ExecContext(context.Background(),
+		`INSERT INTO custom_domains (owner_type, owner_id, domain, is_wildcard, verification_status, verification_token, status, created_at, updated_at)
+		 VALUES ('user', 1, ?, 1, 'verified', 'tok', 'active', ?, ?)`,
+		domain, now, now,
+	)
+	if err != nil {
+		t.Fatalf("insert wildcard domain %q: %v", domain, err)
+	}
+}
+
+func TestResolve(t *testing.T) {
+	st := newTestDomainStore(t)
+	s := NewDomainService(st, config.CustomDomainsConfig{})
+	ctx := context.Background()
+	now := time.Now()
+
+	insertDomainRow(t, st, "links.acme.com", "verified", "active", now)
+	insertDomainRow(t, st, "pending.acme.com", "pending", "pending", now)
+	insertDomainRow(t, st, "suspended.acme.com", "verified", "suspended", now)
+	insertWildcardDomain(t, st, "wild.example.com")
+
+	t.Run("verified active resolves with owner", func(t *testing.T) {
+		cd, err := s.Resolve(ctx, "links.acme.com")
+		if err != nil {
+			t.Fatalf("Resolve: unexpected err: %v", err)
+		}
+		if cd == nil || cd.Domain != "links.acme.com" {
+			t.Fatalf("Resolve returned %+v, want domain links.acme.com", cd)
+		}
+		if cd.OwnerType != "user" || cd.OwnerID != 1 {
+			t.Errorf("owner = %s/%d, want user/1", cd.OwnerType, cd.OwnerID)
+		}
+	})
+
+	t.Run("host normalization (port, case, trailing dot)", func(t *testing.T) {
+		for _, host := range []string{"links.acme.com:8080", "LINKS.ACME.COM", "links.acme.com."} {
+			cd, err := s.Resolve(ctx, host)
+			if err != nil || cd == nil || cd.Domain != "links.acme.com" {
+				t.Errorf("Resolve(%q) = (%+v, %v), want links.acme.com", host, cd, err)
+			}
+		}
+	})
+
+	t.Run("unknown host is not found", func(t *testing.T) {
+		if _, err := s.Resolve(ctx, "nope.example"); err != ErrDomainNotFound {
+			t.Errorf("Resolve(unknown) err = %v, want ErrDomainNotFound", err)
+		}
+	})
+
+	t.Run("pending is not found", func(t *testing.T) {
+		if _, err := s.Resolve(ctx, "pending.acme.com"); err != ErrDomainNotFound {
+			t.Errorf("Resolve(pending) err = %v, want ErrDomainNotFound", err)
+		}
+	})
+
+	t.Run("suspended is not found", func(t *testing.T) {
+		if _, err := s.Resolve(ctx, "suspended.acme.com"); err != ErrDomainNotFound {
+			t.Errorf("Resolve(suspended) err = %v, want ErrDomainNotFound", err)
+		}
+	})
+
+	t.Run("wildcard is excluded", func(t *testing.T) {
+		if _, err := s.Resolve(ctx, "wild.example.com"); err != ErrDomainNotFound {
+			t.Errorf("Resolve(wildcard) err = %v, want ErrDomainNotFound", err)
+		}
+	})
+}
+
+func TestResolveCacheInvalidation(t *testing.T) {
+	st := newTestDomainStore(t)
+	s := NewDomainService(st, config.CustomDomainsConfig{})
+	ctx := context.Background()
+	now := time.Now()
+
+	id := insertDomainRow(t, st, "fresh.acme.com", "pending", "pending", now)
+
+	// Negative result is cached.
+	if _, err := s.Resolve(ctx, "fresh.acme.com"); err != ErrDomainNotFound {
+		t.Fatalf("Resolve(pending) err = %v, want ErrDomainNotFound", err)
+	}
+
+	// Promote to verified+active directly; the cached negative must persist.
+	if _, err := st.UsersDB.ExecContext(ctx,
+		`UPDATE custom_domains SET verification_status = 'verified', status = 'active' WHERE id = ?`, id); err != nil {
+		t.Fatalf("promote domain: %v", err)
+	}
+	if _, err := s.Resolve(ctx, "fresh.acme.com"); err != ErrDomainNotFound {
+		t.Errorf("Resolve after promote (still cached) err = %v, want ErrDomainNotFound", err)
+	}
+
+	// After invalidation the fresh state is visible.
+	s.invalidateResolveCache()
+	cd, err := s.Resolve(ctx, "fresh.acme.com")
+	if err != nil || cd == nil || cd.Domain != "fresh.acme.com" {
+		t.Errorf("Resolve after invalidate = (%+v, %v), want fresh.acme.com", cd, err)
+	}
+}
