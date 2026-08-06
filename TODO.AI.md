@@ -68,10 +68,15 @@ fixed inline and committed separately.
   and blocked_patterns; VerifyDomain now performs real TXT ownership-token
   verification (net.LookupTXT of _verify.{domain} + constant-time compare),
   AddDomain issues the token and returns dns_instructions, and the schema
-  carries verification_token plus the status/ssl_expires indexes. Still
+  carries verification_token plus the status/ssl_expires indexes. The
+  scheduled verify-retry/cleanup task is now implemented: the global,
+  skippable `domain_verification` scheduler task (DomainVerificationCron
+  @every 30m) re-checks in-TTL pending/failed rows via
+  DomainService.RetryPendingVerifications and deletes rows left unverified
+  past verification_ttl via CleanupExpiredPendingVerifications. Still
   remaining: resolver middleware, user+org+admin web/API routes, DNS-01 ACME
-  issuance and cert persistence, scheduled verify-retry/SSL-renewal/cleanup
-  tasks, domain caching, and rate limiting. Deferred.
+  issuance and cert persistence, scheduled SSL-renewal task, domain caching,
+  and rate limiting. Deferred.
 
 - PART 34 registration modes: the open/invite/admin_only/disabled gate is
   implemented — `RegistrationConfig.Mode` (default open),
