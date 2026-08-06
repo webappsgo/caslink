@@ -27,11 +27,12 @@ func newAdminTestHandler(t *testing.T) (*AdminHandler, *service.AuthService, *st
 	authService := service.NewAuthService(st)
 	userAdminService := service.NewUserAdminService(st)
 	auditService := service.NewAuditService(st)
+	domainService := service.NewDomainService(st, config.CustomDomainsConfig{})
 	cfg := config.DefaultConfig()
 
 	noTor := func() *apktor.TorManager { return nil }
 
-	h := NewAdminHandler(authService, userAdminService, auditService, "test-version", "development", "admin", cfg, st, noTor)
+	h := NewAdminHandler(authService, userAdminService, auditService, domainService, "test-version", "development", "admin", cfg, st, noTor)
 	return h, authService, st
 }
 

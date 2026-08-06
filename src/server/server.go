@@ -361,7 +361,7 @@ func (s *Server) setupRoutes() {
 	})
 	qrHandler := handler.NewQRHandler(qrService, urlService)
 	bulkHandler := handler.NewBulkHandler(bulkService)
-	adminHandler := handler.NewAdminHandler(authService, userAdminService, auditService, s.Version, s.mode.String(), adminPath, s.config, s.store, func() *apktor.TorManager { return s.torManager })
+	adminHandler := handler.NewAdminHandler(authService, userAdminService, auditService, domainService, s.Version, s.mode.String(), adminPath, s.config, s.store, func() *apktor.TorManager { return s.torManager })
 	setupHandler := handler.NewSetupHandler(authService, s.config, s.Version)
 	authUserHandler := handler.NewAuthUserHandler(authService, inviteService, s.renderer, s.config)
 	twoFactorHandler := handler.NewTwoFactorHandler(authService, totpService)
@@ -684,6 +684,13 @@ func (s *Server) setupRoutes() {
 			// Network — blocklists
 			ar.Get("/config/network/blocklists", adminHandler.ConfigNetworkBlocklists)
 			ar.Post("/config/network/blocklists", adminHandler.ConfigNetworkBlocklistsSave)
+
+			// Custom domain management (PART 36) — server-rendered admin pages.
+			ar.Get("/config/domains", adminHandler.ConfigDomains)
+			ar.Get("/config/domains/{domain}", adminHandler.ConfigDomainDetail)
+			ar.Post("/config/domains/{domain}/suspend", adminHandler.ConfigDomainSuspend)
+			ar.Post("/config/domains/{domain}/unsuspend", adminHandler.ConfigDomainUnsuspend)
+			ar.Post("/config/domains/{domain}/delete", adminHandler.ConfigDomainDelete)
 
 			// User moderation
 			ar.Get("/config/users", adminHandler.UserList)

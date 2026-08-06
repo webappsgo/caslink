@@ -141,6 +141,7 @@ func (h *AdminHandler) adminNav(activePath string) []adminNavItem {
 		{Label: "Tor", URL: base + "/config/network/tor", Icon: "🧅"},
 		{Label: "GeoIP", URL: base + "/config/network/geoip", Icon: "🌐"},
 		{Label: "Blocklists", URL: base + "/config/network/blocklists", Icon: "🚫"},
+		{Label: "Domains", URL: base + "/config/domains", Icon: "🌍"},
 		{Label: "Users", URL: base + "/config/users", Icon: "👥"},
 		{Label: "Invites", URL: base + "/config/users/invites", Icon: "✉️"},
 		{Label: "Moderation", URL: base + "/config/moderation/users", Icon: "🛂"},

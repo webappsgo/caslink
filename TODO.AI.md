@@ -116,7 +116,13 @@ fixed inline and committed separately.
   paths too: AddDomain records "created" and VerifyDomain records "verified"
   (spec canonical vocabulary created/verified/ssl_issued/suspended/deleted),
   with TestDomainAuditTrail asserting the created/suspended/unsuspended
-  sequence. Still remaining: admin WEB pages for the same actions,
+  sequence. The admin WEB pages are now implemented too: the CSRF-protected,
+  no-JS `/server/{admin_path}/config/domains` subtree (GET list paginated,
+  GET/{domain} view/manage, POST/{domain}/suspend, POST/{domain}/unsuspend,
+  POST/{domain}/delete force-delete) rendered via the admin layout and backed
+  by the same DomainService methods as the API, with a "Domains" sidebar nav
+  entry and POST-redirect-GET flash flow (admin_domains.go + tests).
+  Still remaining:
   POST /{domain}/ssl (DNS-01 provider config + AES-256-GCM credentials),
   POST /{domain}/ssl/renew force-renew (needs autocert-cache purge
   design), DNS-01 ACME issuance and cert persistence, and rate limiting.
