@@ -24,7 +24,7 @@ func newDomainTestHandler(t *testing.T) (*DomainHandler, *service.OrgService, *s
 	if err != nil {
 		t.Fatalf("RegisterUser failed: %v", err)
 	}
-	return NewDomainHandler(domainService, nil, orgService), orgService, authService, user
+	return NewDomainHandler(domainService, authService, orgService), orgService, authService, user
 }
 
 // TestListUserDomainsUnauthenticated verifies 401 when no user is attached.
@@ -490,5 +490,179 @@ func TestAddOrgDomainInvalidBody(t *testing.T) {
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// ---- API mirror handlers (/api/v1) -------------------------------------
+
+// TestAPIListUserDomainsBearerUserToken verifies the bearer path resolves the
+// token owner and returns 200 with the canonical envelope.
+func TestAPIListUserDomainsBearerUserToken(t *testing.T) {
+	h, _, _, user := newDomainTestHandler(t)
+
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: user.ID}
+	r := withBearer(httptest.NewRequest(http.MethodGet, "/api/v1/users/domains", nil), rec)
+	w := httptest.NewRecorder()
+	h.APIListUserDomains(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var env struct {
+		OK   bool                   `json:"ok"`
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if !env.OK {
+		t.Errorf("expected ok:true")
+	}
+	if _, ok := env.Data["domains"]; !ok {
+		t.Errorf("expected a domains field, got %v", env.Data)
+	}
+}
+
+// TestAPIListUserDomainsBearerNonUserTokenRejected verifies an admin- or
+// org-scoped token cannot reach a user-owned domain list.
+func TestAPIListUserDomainsBearerNonUserTokenRejected(t *testing.T) {
+	h, _, _, user := newDomainTestHandler(t)
+
+	rec := &service.TokenRecord{OwnerType: "admin", OwnerID: user.ID}
+	r := withBearer(httptest.NewRequest(http.MethodGet, "/api/v1/users/domains", nil), rec)
+	w := httptest.NewRecorder()
+	h.APIListUserDomains(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestAPIListUserDomainsUnauthenticated verifies 401 with neither session nor
+// bearer token.
+func TestAPIListUserDomainsUnauthenticated(t *testing.T) {
+	h, _, _, _ := newDomainTestHandler(t)
+
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/users/domains", nil)
+	w := httptest.NewRecorder()
+	h.APIListUserDomains(w, r)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", w.Code)
+	}
+}
+
+// TestAPIAddUserDomainBearerSuccess verifies the bearer path can create a
+// domain and returns 201 with the DNS instructions.
+func TestAPIAddUserDomainBearerSuccess(t *testing.T) {
+	h, _, _, user := newDomainTestHandler(t)
+
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: user.ID}
+	r := withBearer(httptest.NewRequest(http.MethodPost, "/api/v1/users/domains", strings.NewReader(`{"domain":"api.example.com"}`)), rec)
+	w := httptest.NewRecorder()
+	h.APIAddUserDomain(w, r)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var env struct {
+		OK   bool                   `json:"ok"`
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	if _, ok := env.Data["dns_instructions"]; !ok {
+		t.Errorf("expected dns_instructions in response, got %v", env.Data)
+	}
+}
+
+// TestAPIVerifyUserDomainNotFound verifies 404 when the named domain is not
+// owned by the bearer's user.
+func TestAPIVerifyUserDomainNotFound(t *testing.T) {
+	h, _, _, user := newDomainTestHandler(t)
+
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: user.ID}
+	r := withBearer(httptest.NewRequest(http.MethodPost, "/api/v1/users/domains/nope.example.com/verify", nil), rec)
+	r = withChiURLParam(r, "domain", "nope.example.com")
+	w := httptest.NewRecorder()
+	h.APIVerifyUserDomain(w, r)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestAPIListOrgDomainsBearerNonMemberForbidden verifies a user-scoped bearer
+// token for a non-member gets 403.
+func TestAPIListOrgDomainsBearerNonMemberForbidden(t *testing.T) {
+	h, orgService, authService, user := newDomainTestHandler(t)
+
+	owner, err := authService.RegisterUser(context.Background(), "orgowner2", "owner2@example.com", "correct-horse-battery-staple")
+	if err != nil {
+		t.Fatalf("RegisterUser failed: %v", err)
+	}
+	org, err := orgService.CreateOrganization(context.Background(), owner.ID, "Acme Corp", "acme")
+	if err != nil {
+		t.Fatalf("CreateOrganization failed: %v", err)
+	}
+
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: user.ID}
+	r := withBearer(httptest.NewRequest(http.MethodGet, "/api/v1/orgs/"+org.Slug+"/domains", nil), rec)
+	r = withChiURLParam(r, "slug", org.Slug)
+	w := httptest.NewRecorder()
+	h.APIListOrgDomains(w, r)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestAPIAddOrgDomainBearerMemberRoleForbidden verifies a plain member cannot
+// add an org domain via the API.
+func TestAPIAddOrgDomainBearerMemberRoleForbidden(t *testing.T) {
+	h, orgService, authService, user := newDomainTestHandler(t)
+
+	owner, err := authService.RegisterUser(context.Background(), "orgowner3", "owner3@example.com", "correct-horse-battery-staple")
+	if err != nil {
+		t.Fatalf("RegisterUser failed: %v", err)
+	}
+	org, err := orgService.CreateOrganization(context.Background(), owner.ID, "Acme Corp", "acme")
+	if err != nil {
+		t.Fatalf("CreateOrganization failed: %v", err)
+	}
+	if err := orgService.AddMemberByEmail(context.Background(), org.ID, "alice@example.com", "member"); err != nil {
+		t.Fatalf("AddMemberByEmail failed: %v", err)
+	}
+
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: user.ID}
+	r := withBearer(httptest.NewRequest(http.MethodPost, "/api/v1/orgs/"+org.Slug+"/domains", strings.NewReader(`{"domain":"acme.example.com"}`)), rec)
+	r = withChiURLParam(r, "slug", org.Slug)
+	w := httptest.NewRecorder()
+	h.APIAddOrgDomain(w, r)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestAPIAddOrgDomainBearerOwnerSuccess verifies the org owner can add a domain
+// via the API bearer path.
+func TestAPIAddOrgDomainBearerOwnerSuccess(t *testing.T) {
+	h, orgService, _, user := newDomainTestHandler(t)
+
+	org, err := orgService.CreateOrganization(context.Background(), user.ID, "Acme Corp", "acme")
+	if err != nil {
+		t.Fatalf("CreateOrganization failed: %v", err)
+	}
+
+	rec := &service.TokenRecord{OwnerType: "user", OwnerID: user.ID}
+	r := withBearer(httptest.NewRequest(http.MethodPost, "/api/v1/orgs/"+org.Slug+"/domains", strings.NewReader(`{"domain":"acme.example.com"}`)), rec)
+	r = withChiURLParam(r, "slug", org.Slug)
+	w := httptest.NewRecorder()
+	h.APIAddOrgDomain(w, r)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 }

@@ -811,6 +811,10 @@ func (s *Server) setupRoutes() {
 			// Bulk URL operations
 			ar.Get("/urls/export", bulkHandler.Export)
 			ar.Post("/urls/import", bulkHandler.Import)
+			// Custom domains (PART 36) — CRUD parity with /users/domains web routes.
+			ar.Get("/domains", domainHandler.APIListUserDomains)
+			ar.Post("/domains", domainHandler.APIAddUserDomain)
+			ar.Post("/domains/{domain}/verify", domainHandler.APIVerifyUserDomain)
 		})
 
 		// Orgs API — /api/v1/orgs/*
@@ -833,6 +837,10 @@ func (s *Server) setupRoutes() {
 			ar.Delete("/{slug}/tokens/{tokenID}", orgHandler.APIRevokeOrgToken)
 			// Org ownership transfer (PART 35)
 			ar.Post("/{slug}/transfer", orgHandler.APITransferOrgOwnership)
+			// Org custom domains (PART 36) — CRUD parity with /orgs/{slug}/domains.
+			ar.Get("/{slug}/domains", domainHandler.APIListOrgDomains)
+			ar.Post("/{slug}/domains", domainHandler.APIAddOrgDomain)
+			ar.Post("/{slug}/domains/{domain}/verify", domainHandler.APIVerifyOrgDomain)
 		})
 	})
 

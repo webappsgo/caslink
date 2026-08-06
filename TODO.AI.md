@@ -73,8 +73,13 @@ fixed inline and committed separately.
   skippable `domain_verification` scheduler task (DomainVerificationCron
   @every 30m) re-checks in-TTL pending/failed rows via
   DomainService.RetryPendingVerifications and deletes rows left unverified
-  past verification_ttl via CleanupExpiredPendingVerifications. Still
-  remaining: resolver middleware, user+org+admin web/API routes, DNS-01 ACME
+  past verification_ttl via CleanupExpiredPendingVerifications. The user and
+  org custom-domain API routes now exist too, at CRUD parity with the web
+  routes (PART 14): GET/POST /api/v1/users/domains and
+  POST /api/v1/users/domains/{domain}/verify, plus the org equivalents under
+  /api/v1/orgs/{slug}/domains — all bearer-or-session authenticated, with the
+  same ownership scoping and owner/admin role gating as the web handlers.
+  Still remaining: resolver middleware, admin web/API routes, DNS-01 ACME
   issuance and cert persistence, scheduled SSL-renewal task, domain caching,
   and rate limiting. Deferred.
 
