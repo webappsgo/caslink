@@ -47,6 +47,18 @@ func registerTestUser(t *testing.T, authService *service.AuthService, username, 
 	return u
 }
 
+// makeOrgPrivate flips an org's visibility to private via the real service,
+// preserving its name (UpdateOrganization re-validates the name).
+func makeOrgPrivate(t *testing.T, orgService *service.OrgService, orgID int64, name string) {
+	t.Helper()
+	if err := orgService.UpdateOrganization(context.Background(), orgID, service.OrgProfileUpdate{
+		Name:       name,
+		Visibility: "private",
+	}); err != nil {
+		t.Fatalf("makeOrgPrivate UpdateOrganization failed: %v", err)
+	}
+}
+
 // decodeErrorEnvelope decodes the canonical {"ok":false,"error":"CODE",
 // "message":"..."} error shape used throughout org.go's JSON handlers.
 func decodeErrorEnvelope(t *testing.T, body []byte) map[string]string {
@@ -278,6 +290,53 @@ func TestOrgDashboardSuccess(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestOrgDashboardPrivateHiddenFromNonMember verifies PART 35 visibility on the
+// web dashboard: a non-member of a private org gets 404, not a leaked view.
+func TestOrgDashboardPrivateHiddenFromNonMember(t *testing.T) {
+	h, orgService, authService, _ := newOrgTestHandler(t)
+	owner := registerTestUser(t, authService, "ianp", "ianp@example.com")
+	stranger := registerTestUser(t, authService, "ianx", "ianx@example.com")
+
+	org, err := orgService.CreateOrganization(context.Background(), owner.ID, "Ian Private", "ian-private")
+	if err != nil {
+		t.Fatalf("seed CreateOrganization failed: %v", err)
+	}
+	makeOrgPrivate(t, orgService, org.ID, org.Name)
+
+	r := httptest.NewRequest(http.MethodGet, "/orgs/"+org.Slug+"/", nil)
+	r = withChiURLParam(r, "slug", org.Slug)
+	r = withUser(r, stranger)
+	w := httptest.NewRecorder()
+	h.OrgDashboard(w, r)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for non-member of private org, got %d", w.Code)
+	}
+}
+
+// TestOrgDashboardPublicViewableByNonMember verifies PART 35 visibility: a
+// public org's dashboard is viewable by a non-member.
+func TestOrgDashboardPublicViewableByNonMember(t *testing.T) {
+	h, orgService, authService, _ := newOrgTestHandler(t)
+	owner := registerTestUser(t, authService, "ianpub", "ianpub@example.com")
+	stranger := registerTestUser(t, authService, "ianvis", "ianvis@example.com")
+
+	org, err := orgService.CreateOrganization(context.Background(), owner.ID, "Ian Public Dash", "ian-public-dash")
+	if err != nil {
+		t.Fatalf("seed CreateOrganization failed: %v", err)
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/orgs/"+org.Slug+"/", nil)
+	r = withChiURLParam(r, "slug", org.Slug)
+	r = withUser(r, stranger)
+	w := httptest.NewRecorder()
+	h.OrgDashboard(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for non-member of public org, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -1011,12 +1070,39 @@ func TestAPIGetOrgNotFound(t *testing.T) {
 	}
 }
 
-func TestAPIGetOrgForbiddenNonMember(t *testing.T) {
+// TestAPIGetOrgPrivateHiddenFromNonMember verifies PART 35 visibility: a
+// private org must return 404 (not 403) to a non-member so its existence is
+// not leaked.
+func TestAPIGetOrgPrivateHiddenFromNonMember(t *testing.T) {
 	h, orgService, authService, _ := newOrgTestHandler(t)
 	owner := registerTestUser(t, authService, "iris", "iris@example.com")
 	stranger := registerTestUser(t, authService, "jack2", "jack2@example.com")
 
 	org, err := orgService.CreateOrganization(context.Background(), owner.ID, "Iris Org", "iris-org")
+	if err != nil {
+		t.Fatalf("seed CreateOrganization failed: %v", err)
+	}
+	makeOrgPrivate(t, orgService, org.ID, org.Name)
+
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/"+org.Slug, nil)
+	r = withChiURLParam(r, "slug", org.Slug)
+	r = withUser(r, stranger)
+	w := httptest.NewRecorder()
+	h.APIGetOrg(w, r)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for non-member of private org, got %d", w.Code)
+	}
+}
+
+// TestAPIGetOrgPublicViewableByNonMember verifies PART 35 visibility: a public
+// org is viewable by any authenticated user, member or not.
+func TestAPIGetOrgPublicViewableByNonMember(t *testing.T) {
+	h, orgService, authService, _ := newOrgTestHandler(t)
+	owner := registerTestUser(t, authService, "iris3", "iris3@example.com")
+	stranger := registerTestUser(t, authService, "jack3", "jack3@example.com")
+
+	org, err := orgService.CreateOrganization(context.Background(), owner.ID, "Iris Public", "iris-public")
 	if err != nil {
 		t.Fatalf("seed CreateOrganization failed: %v", err)
 	}
@@ -1027,8 +1113,8 @@ func TestAPIGetOrgForbiddenNonMember(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.APIGetOrg(w, r)
 
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for non-member of public org, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -1056,12 +1142,39 @@ func TestAPIGetOrgSuccessMember(t *testing.T) {
 // APIGetMembers
 // ---------------------------------------------------------------------
 
-func TestAPIGetMembersForbiddenNonMember(t *testing.T) {
+// TestAPIGetMembersPrivateHiddenFromNonMember verifies PART 35 visibility: the
+// members list of a private org returns 404 (not 403) to a non-member so the
+// org's existence is not leaked.
+func TestAPIGetMembersPrivateHiddenFromNonMember(t *testing.T) {
 	h, orgService, authService, _ := newOrgTestHandler(t)
 	owner := registerTestUser(t, authService, "liam", "liam@example.com")
 	stranger := registerTestUser(t, authService, "mona", "mona@example.com")
 
 	org, err := orgService.CreateOrganization(context.Background(), owner.ID, "Liam Org", "liam-org")
+	if err != nil {
+		t.Fatalf("seed CreateOrganization failed: %v", err)
+	}
+	makeOrgPrivate(t, orgService, org.ID, org.Name)
+
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/"+org.Slug+"/members", nil)
+	r = withChiURLParam(r, "slug", org.Slug)
+	r = withUser(r, stranger)
+	w := httptest.NewRecorder()
+	h.APIGetMembers(w, r)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for non-member of private org, got %d", w.Code)
+	}
+}
+
+// TestAPIGetMembersPublicViewableByNonMember verifies PART 35 visibility: a
+// public org and its members are viewable by any authenticated user.
+func TestAPIGetMembersPublicViewableByNonMember(t *testing.T) {
+	h, orgService, authService, _ := newOrgTestHandler(t)
+	owner := registerTestUser(t, authService, "liam2", "liam2@example.com")
+	stranger := registerTestUser(t, authService, "mona2", "mona2@example.com")
+
+	org, err := orgService.CreateOrganization(context.Background(), owner.ID, "Liam Public", "liam-public")
 	if err != nil {
 		t.Fatalf("seed CreateOrganization failed: %v", err)
 	}
@@ -1072,8 +1185,8 @@ func TestAPIGetMembersForbiddenNonMember(t *testing.T) {
 	w := httptest.NewRecorder()
 	h.APIGetMembers(w, r)
 
-	if w.Code != http.StatusForbidden {
-		t.Fatalf("expected 403, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for non-member of public org, got %d: %s", w.Code, w.Body.String())
 	}
 }
 

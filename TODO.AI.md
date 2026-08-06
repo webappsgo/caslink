@@ -154,10 +154,18 @@ fixed inline and committed separately.
   `NormalizedCreationMode()`/`AuthenticatedCreationAllowed()`, the per-user
   `max_per_user` limit enforced via `OrgService.CountOwnedOrgs`, and both the
   form (`/orgs`) and API (`/api/v1/orgs`) create paths reject with 403 under
-  any non-open mode or when the limit is reached. Still remaining: the
+  any non-open mode or when the limit is reached. Per-org `visibility`
+  (public/private) is now enforced: the `OrgService.CanViewOrg` helper
+  (public → any authenticated user; private → members only) gates the web
+  dashboard (`OrgDashboard`) and the `APIGetOrg`/`APIGetMembers` API reads, so
+  a non-member of a private org gets 404 (not 403) — its existence is never
+  leaked — while public orgs are viewable by anyone. Storage/editing of the
+  setting already existed (`NormalizeOrgVisibility`, `UpdateOrganization`,
+  settings form, `APIUpdateOrg`); this closed the enforcement gap. No public
+  org listing/search exists (`ListUserOrganizations` is membership-scoped), so
+  "won't appear in public listings" is already satisfied. Still remaining: the
   invite-code creation flow and admin_only admin-initiated creation (both
-  depend on the shared invite subsystem), plus per-org `visibility`
-  (public/private) which is a distinct org-level setting. Org slug
+  depend on the shared invite subsystem). Org slug
   validation is now spec-aligned (PART 35: 2-39 chars, no consecutive
   hyphens, reserved-name blocklist) via the shared
   `validate.ValidateOrgSlug`, used by both the handler and the service. The

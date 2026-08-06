@@ -244,6 +244,13 @@ func (h *OrgHandler) OrgDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// PART 35 visibility: a private org is only visible to its members. A
+	// non-member must get 404 (not 403) so the org's existence is not leaked.
+	if canView, err := h.orgService.CanViewOrg(ctx, org, user.ID); err != nil || !canView {
+		http.Error(w, "Organization not found", http.StatusNotFound)
+		return
+	}
+
 	members, _ := h.orgService.GetOrgMembers(ctx, org.ID)
 
 	data := struct {
@@ -869,9 +876,11 @@ func (h *OrgHandler) APIGetOrg(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isMember, _, err := h.orgService.IsMember(ctx, org.ID, user.ID)
-	if err != nil || !isMember {
-		respondError(w, http.StatusForbidden, "Access denied")
+	// PART 35 visibility: public orgs are viewable by anyone; a private org is
+	// visible only to members, and a non-member gets 404 (not 403) so its
+	// existence is not leaked.
+	if canView, err := h.orgService.CanViewOrg(ctx, org, user.ID); err != nil || !canView {
+		respondError(w, http.StatusNotFound, "Organization not found")
 		return
 	}
 
@@ -897,9 +906,11 @@ func (h *OrgHandler) APIGetMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isMember, _, err := h.orgService.IsMember(ctx, org.ID, user.ID)
-	if err != nil || !isMember {
-		respondError(w, http.StatusForbidden, "Access denied")
+	// PART 35 visibility: a public org and its members are visible to anyone; a
+	// private org's members are visible only to members, and a non-member gets
+	// 404 (not 403) so the org's existence is not leaked.
+	if canView, err := h.orgService.CanViewOrg(ctx, org, user.ID); err != nil || !canView {
+		respondError(w, http.StatusNotFound, "Organization not found")
 		return
 	}
 

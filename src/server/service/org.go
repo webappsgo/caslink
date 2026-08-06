@@ -35,7 +35,7 @@ type Organization struct {
 	Name        string
 	Slug        string
 	OwnerID     int64
-	Description  string
+	Description string
 	Website     string
 	Location    string
 	Visibility  string
@@ -410,6 +410,22 @@ func (s *OrgService) IsMember(ctx context.Context, orgID, userID int64) (bool, s
 	}
 
 	return true, role, nil
+}
+
+// CanViewOrg reports whether the given user may view the organization at all
+// (PART 35 visibility). Public organizations are viewable by anyone; private
+// organizations are viewable only by their members. When this returns false the
+// caller must respond 404 — never 403 — so a private org's existence is not
+// leaked to non-members.
+func (s *OrgService) CanViewOrg(ctx context.Context, org *Organization, userID int64) (bool, error) {
+	if NormalizeOrgVisibility(org.Visibility) == "public" {
+		return true, nil
+	}
+	isMember, _, err := s.IsMember(ctx, org.ID, userID)
+	if err != nil {
+		return false, err
+	}
+	return isMember, nil
 }
 
 // OrgToken represents an API token scoped to an organisation.
