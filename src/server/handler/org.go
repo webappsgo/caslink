@@ -3,9 +3,11 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -60,19 +62,21 @@ type OrgMemberView struct {
 
 // OrgHandler handles organization operations.
 type OrgHandler struct {
-	orgService  *service.OrgService
-	authService *service.AuthService
-	renderer    *tmpl.Renderer
-	config      *config.Config
+	orgService    *service.OrgService
+	authService   *service.AuthService
+	inviteService *service.InviteService
+	renderer      *tmpl.Renderer
+	config        *config.Config
 }
 
 // NewOrgHandler creates a new organization handler.
-func NewOrgHandler(orgService *service.OrgService, authService *service.AuthService, renderer *tmpl.Renderer, cfg *config.Config) *OrgHandler {
+func NewOrgHandler(orgService *service.OrgService, authService *service.AuthService, inviteService *service.InviteService, renderer *tmpl.Renderer, cfg *config.Config) *OrgHandler {
 	return &OrgHandler{
-		orgService:  orgService,
-		authService: authService,
-		renderer:    renderer,
-		config:      cfg,
+		orgService:    orgService,
+		authService:   authService,
+		inviteService: inviteService,
+		renderer:      renderer,
+		config:        cfg,
 	}
 }
 
@@ -511,17 +515,276 @@ func (h *OrgHandler) OrgMembersAction(w http.ResponseWriter, r *http.Request) {
 	case "invite":
 		email := r.FormValue("email")
 		role := r.FormValue("role")
-		if err := h.orgService.AddMemberByEmail(ctx, org.ID, email, role); err != nil {
-			flash = &tmpl.Flash{Type: "danger", Message: err.Error()}
-		} else {
-			flash = &tmpl.Flash{Type: "success", Message: "Member added"}
-		}
+		flash = h.inviteMember(ctx, r, org, email, role)
 
 	default:
 		flash = &tmpl.Flash{Type: "danger", Message: "Unknown action"}
 	}
 
 	h.renderMembersPage(w, r, user, slug, flash)
+}
+
+// normalizeInviteRole restricts an org invite/membership role to member or
+// admin. Ownership is never granted by invite — it is transferred explicitly.
+func normalizeInviteRole(role string) string {
+	if strings.ToLower(strings.TrimSpace(role)) == "admin" {
+		return "admin"
+	}
+	return "member"
+}
+
+// requestBaseURL derives the public scheme://host origin for building shareable
+// links, honoring a reverse proxy's X-Forwarded-Proto (mirrors autodiscover).
+func requestBaseURL(r *http.Request) string {
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if r.Header.Get("X-Forwarded-Proto") == "https" {
+		scheme = "https"
+	}
+	return scheme + "://" + r.Host
+}
+
+// inviteMember adds an existing account to the org directly, or issues a
+// single-use org-membership invite link for an email with no account yet
+// (PART 35 membership via the shared invite subsystem). The returned flash
+// carries either the success/error message or the shareable invite link.
+func (h *OrgHandler) inviteMember(ctx context.Context, r *http.Request, org *service.Organization, email, role string) *tmpl.Flash {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return &tmpl.Flash{Type: "danger", Message: "Email is required"}
+	}
+	role = normalizeInviteRole(role)
+
+	hasAccount, err := h.orgService.EmailHasAccount(ctx, email)
+	if err != nil {
+		return &tmpl.Flash{Type: "danger", Message: "Failed to check account"}
+	}
+	if hasAccount {
+		if err := h.orgService.AddMemberByEmail(ctx, org.ID, email, role); err != nil {
+			return &tmpl.Flash{Type: "danger", Message: err.Error()}
+		}
+		return &tmpl.Flash{Type: "success", Message: "Member added"}
+	}
+
+	actor, _ := getUserFromRequest(r)
+	var createdBy int64
+	if actor != nil {
+		createdBy = actor.ID
+	}
+	plaintext, _, err := h.inviteService.CreateInvite(ctx, service.CreateInviteParams{
+		Kind:      service.InviteKindOrgMembership,
+		Email:     email,
+		OrgID:     org.ID,
+		Role:      role,
+		CreatedBy: createdBy,
+	})
+	if err != nil {
+		return &tmpl.Flash{Type: "danger", Message: "Failed to create invite"}
+	}
+	link := requestBaseURL(r) + "/orgs/invite/accept?token=" + plaintext
+	return &tmpl.Flash{
+		Type:    "success",
+		Message: "No account found for " + email + " — share this single-use invite link: " + link,
+	}
+}
+
+// OrgAcceptInvite handles GET /orgs/invite/accept?token=... — an authenticated
+// user consumes an org-membership invite and joins the target org with the
+// invite's role. Not membership-gated (the acceptor is not yet a member).
+func (h *OrgHandler) OrgAcceptInvite(w http.ResponseWriter, r *http.Request) {
+	user, ok := getUserFromRequest(r)
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		http.Error(w, "Missing invite token", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	inv, err := h.inviteService.ConsumeInvite(ctx, token, service.InviteKindOrgMembership, user.ID)
+	if err != nil {
+		http.Error(w, "Invite is invalid, expired, or already used", http.StatusBadRequest)
+		return
+	}
+
+	org, err := h.orgService.GetOrganizationByID(ctx, inv.OrgID)
+	if err != nil {
+		http.Error(w, "Organization not found", http.StatusNotFound)
+		return
+	}
+
+	if err := h.orgService.AddMemberByUserID(ctx, inv.OrgID, user.ID, inv.Role); err != nil {
+		// Already a member is a benign outcome — fall through to the dashboard.
+		if !errors.Is(err, service.ErrAlreadyMember) {
+			http.Error(w, "Failed to join organization", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	http.Redirect(w, r, "/orgs/"+org.Slug+"/", http.StatusSeeOther)
+}
+
+// APICreateOrgInvite issues an org-membership invite link. Owner/admin only.
+func (h *OrgHandler) APICreateOrgInvite(w http.ResponseWriter, r *http.Request) {
+	user, ok := getUserFromRequest(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+
+	slug := chi.URLParam(r, "slug")
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	org, err := h.orgService.GetOrganizationBySlug(ctx, slug)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Organization not found")
+		return
+	}
+	if _, role, _ := h.orgService.IsMember(ctx, org.ID, user.ID); role != "admin" && role != "owner" {
+		respondError(w, http.StatusForbidden, "Only owners and admins may invite members")
+		return
+	}
+
+	var req struct {
+		Email string `json:"email"`
+		Role  string `json:"role"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	if email == "" {
+		respondError(w, http.StatusBadRequest, "Email is required")
+		return
+	}
+	inviteRole := normalizeInviteRole(req.Role)
+
+	plaintext, inv, err := h.inviteService.CreateInvite(ctx, service.CreateInviteParams{
+		Kind:      service.InviteKindOrgMembership,
+		Email:     email,
+		OrgID:     org.ID,
+		Role:      inviteRole,
+		CreatedBy: user.ID,
+	})
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to create invite")
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, map[string]any{
+		"id":         inv.ID,
+		"email":      inv.Email,
+		"role":       inv.Role,
+		"expires_at": inv.ExpiresAt.Unix(),
+		"accept_url": requestBaseURL(r) + "/orgs/invite/accept?token=" + plaintext,
+		"token":      plaintext,
+	})
+}
+
+// APIListOrgInvites lists pending org-membership invites. Owner/admin only.
+func (h *OrgHandler) APIListOrgInvites(w http.ResponseWriter, r *http.Request) {
+	user, ok := getUserFromRequest(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+
+	slug := chi.URLParam(r, "slug")
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	org, err := h.orgService.GetOrganizationBySlug(ctx, slug)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Organization not found")
+		return
+	}
+	if _, role, _ := h.orgService.IsMember(ctx, org.ID, user.ID); role != "admin" && role != "owner" {
+		respondError(w, http.StatusForbidden, "Only owners and admins may view invites")
+		return
+	}
+
+	invites, err := h.inviteService.ListInvitesByKind(ctx, service.InviteKindOrgMembership, org.ID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load invites")
+		return
+	}
+
+	list := make([]map[string]any, 0, len(invites))
+	for _, inv := range invites {
+		list = append(list, map[string]any{
+			"id":         inv.ID,
+			"email":      inv.Email,
+			"role":       inv.Role,
+			"created_at": inv.CreatedAt.Unix(),
+			"expires_at": inv.ExpiresAt.Unix(),
+			"use_count":  inv.UseCount,
+			"max_uses":   inv.MaxUses,
+		})
+	}
+	respondJSON(w, http.StatusOK, list)
+}
+
+// APIRevokeOrgInvite revokes a pending org-membership invite. Owner/admin only.
+func (h *OrgHandler) APIRevokeOrgInvite(w http.ResponseWriter, r *http.Request) {
+	user, ok := getUserFromRequest(r)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "Authentication required")
+		return
+	}
+
+	slug := chi.URLParam(r, "slug")
+	inviteID, err := strconv.ParseInt(chi.URLParam(r, "inviteID"), 10, 64)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid invite id")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	org, err := h.orgService.GetOrganizationBySlug(ctx, slug)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "Organization not found")
+		return
+	}
+	if _, role, _ := h.orgService.IsMember(ctx, org.ID, user.ID); role != "admin" && role != "owner" {
+		respondError(w, http.StatusForbidden, "Only owners and admins may revoke invites")
+		return
+	}
+
+	// Confirm the invite belongs to this org before revoking (avoid cross-org
+	// revocation by id).
+	invites, err := h.inviteService.ListInvitesByKind(ctx, service.InviteKindOrgMembership, org.ID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load invites")
+		return
+	}
+	found := false
+	for _, inv := range invites {
+		if inv.ID == inviteID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		respondError(w, http.StatusNotFound, "Invite not found")
+		return
+	}
+
+	if err := h.inviteService.RevokeInvite(ctx, inviteID); err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to revoke invite")
+		return
+	}
+	respondJSON(w, http.StatusOK, map[string]any{"id": inviteID, "revoked": true})
 }
 
 // APIListOrgs returns the user's organizations as JSON.

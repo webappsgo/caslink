@@ -321,6 +321,7 @@ func (s *Server) setupRoutes() {
 	qrService := service.NewQRService(s.store)
 	qrService.SetMetrics(s.metrics)
 	orgService := service.NewOrgService(s.store)
+	inviteService := service.NewInviteService(s.store)
 	domainService := service.NewDomainService(s.store, s.config.Server.Features.CustomDomains)
 	analyticsService := service.NewAnalyticsService(s.store)
 	bulkService := service.NewBulkService(s.store, urlService)
@@ -365,7 +366,7 @@ func (s *Server) setupRoutes() {
 	twoFactorHandler := handler.NewTwoFactorHandler(authService, totpService)
 	passwordHandler := handler.NewPasswordHandler(authService, emailService, s.renderer, s.config)
 	userHandler := handler.NewUserHandler(authService, tokenService, urlService, s.renderer, s.config)
-	orgHandler := handler.NewOrgHandler(orgService, authService, s.renderer, s.config)
+	orgHandler := handler.NewOrgHandler(orgService, authService, inviteService, s.renderer, s.config)
 	domainHandler := handler.NewDomainHandler(domainService, authService, orgService)
 	pagesHandler := handler.NewPagesHandler(s.config, s.renderer, s.Version, s.BuildDate, func() *apktor.TorManager { return s.torManager })
 
@@ -546,6 +547,10 @@ func (s *Server) setupRoutes() {
 		r.Get("/", orgHandler.ListOrgs)
 		r.Get("/new", orgHandler.CreateOrgPage)
 		r.Post("/", orgHandler.CreateOrg)
+
+		// Invite acceptance — authenticated but NOT membership-gated (the
+		// acceptor is not yet a member). Static path wins over /{slug}.
+		r.Get("/invite/accept", orgHandler.OrgAcceptInvite)
 
 		// Organization-specific routes (requires org membership)
 		r.Route("/{slug}", func(sr chi.Router) {
@@ -814,6 +819,11 @@ func (s *Server) setupRoutes() {
 			ar.Patch("/{slug}", orgHandler.APIUpdateOrg)
 			ar.Delete("/{slug}", orgHandler.APIDeleteOrg)
 			ar.Get("/{slug}/members", orgHandler.APIGetMembers)
+
+			// Org-membership invites (owner/admin only) per PART 35.
+			ar.Get("/{slug}/invites", orgHandler.APIListOrgInvites)
+			ar.Post("/{slug}/invites", orgHandler.APICreateOrgInvite)
+			ar.Delete("/{slug}/invites/{inviteID}", orgHandler.APIRevokeOrgInvite)
 			// Org-scoped API tokens (PART 35)
 			ar.Get("/{slug}/tokens", orgHandler.APIListOrgTokens)
 			ar.Post("/{slug}/tokens", orgHandler.APICreateOrgToken)

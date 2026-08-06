@@ -13,6 +13,10 @@ import (
 	"github.com/webappsgo/caslink/src/server/validate"
 )
 
+// ErrAlreadyMember is returned when adding a user who already belongs to the
+// organization. The invite-acceptance flow treats this as a benign outcome.
+var ErrAlreadyMember = errors.New("user is already a member of this organization")
+
 // OrgService handles organization operations
 type OrgService struct {
 	store *store.Store
@@ -205,6 +209,30 @@ func (s *OrgService) GetOrganizationBySlug(ctx context.Context, slug string) (*O
 
 	var org Organization
 	err := s.store.UsersDB.QueryRowContext(ctx, query, slug).Scan(
+		&org.ID, &org.Name, &org.Slug, &org.OwnerID,
+		&org.Description, &org.Website, &org.Location, &org.Visibility,
+		&org.CreatedAt, &org.UpdatedAt,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("organization not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query organization: %w", err)
+	}
+
+	return &org, nil
+}
+
+// GetOrganizationByID loads an organization by its numeric id. Used by the
+// invite-acceptance flow, which only knows the org id stored on the invite.
+func (s *OrgService) GetOrganizationByID(ctx context.Context, orgID int64) (*Organization, error) {
+	query := `SELECT id, name, slug, owner_id, description, website, location, visibility, created_at, updated_at
+	          FROM organizations
+	          WHERE id = ?`
+
+	var org Organization
+	err := s.store.UsersDB.QueryRowContext(ctx, query, orgID).Scan(
 		&org.ID, &org.Name, &org.Slug, &org.OwnerID,
 		&org.Description, &org.Website, &org.Location, &org.Visibility,
 		&org.CreatedAt, &org.UpdatedAt,
@@ -669,6 +697,54 @@ func (s *OrgService) AddMemberByEmail(ctx context.Context, orgID int64, email, r
 		return fmt.Errorf("failed to add member: %w", err)
 	}
 
+	return nil
+}
+
+// EmailHasAccount reports whether a user account exists for the given email.
+// Used to decide between adding a member directly and issuing an invite.
+func (s *OrgService) EmailHasAccount(ctx context.Context, email string) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	var id int64
+	err := s.store.UsersDB.QueryRowContext(ctx,
+		`SELECT id FROM users WHERE email = ?`, strings.ToLower(strings.TrimSpace(email)),
+	).Scan(&id)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("failed to look up user: %w", err)
+	}
+	return true, nil
+}
+
+// AddMemberByUserID adds an existing user to an organization by user id, used
+// by the invite-acceptance flow once the invitee is authenticated. An invalid
+// role falls back to "member"; an already-a-member user is reported as an error.
+func (s *OrgService) AddMemberByUserID(ctx context.Context, orgID, userID int64, role string) error {
+	if role != "member" && role != "admin" {
+		role = "member"
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	var existingRole string
+	err := s.store.UsersDB.QueryRowContext(ctx,
+		`SELECT role FROM org_members WHERE org_id = ? AND user_id = ?`, orgID, userID,
+	).Scan(&existingRole)
+	if err == nil {
+		return ErrAlreadyMember
+	} else if err != sql.ErrNoRows {
+		return fmt.Errorf("failed to check existing membership: %w", err)
+	}
+
+	if _, err := s.store.UsersDB.ExecContext(ctx,
+		`INSERT INTO org_members (org_id, user_id, role, joined_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
+		orgID, userID, role,
+	); err != nil {
+		return fmt.Errorf("failed to add member: %w", err)
+	}
 	return nil
 }
 

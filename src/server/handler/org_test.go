@@ -26,13 +26,14 @@ func newOrgTestHandler(t *testing.T) (*OrgHandler, *service.OrgService, *service
 	st := newSchemaTestStore(t)
 	orgService := service.NewOrgService(st)
 	authService := service.NewAuthService(st)
+	inviteService := service.NewInviteService(st)
 	cfg := config.DefaultConfig()
 	renderer, err := tmpl.New()
 	if err != nil {
 		t.Fatalf("tmpl.New failed: %v", err)
 	}
 
-	return NewOrgHandler(orgService, authService, renderer, cfg), orgService, authService, st
+	return NewOrgHandler(orgService, authService, inviteService, renderer, cfg), orgService, authService, st
 }
 
 // registerTestUser registers a real user via AuthService and returns it,
@@ -554,7 +555,7 @@ func TestOrgMembersActionInviteSuccess(t *testing.T) {
 }
 
 func TestOrgMembersActionInviteNoAccount(t *testing.T) {
-	h, orgService, authService, _ := newOrgTestHandler(t)
+	h, orgService, authService, st := newOrgTestHandler(t)
 	owner := registerTestUser(t, authService, "yuki", "yuki@example.com")
 
 	org, err := orgService.CreateOrganization(context.Background(), owner.ID, "Yuki Org", "yuki-org")
@@ -573,8 +574,207 @@ func TestOrgMembersActionInviteNoAccount(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
-	if !bytes.Contains(w.Body.Bytes(), []byte("no account found")) {
-		t.Errorf("expected no-account error flash in body, got: %s", w.Body.String())
+	// No account exists, so a shareable single-use invite link is issued.
+	if !bytes.Contains(w.Body.Bytes(), []byte("/orgs/invite/accept?token=")) {
+		t.Errorf("expected shareable invite link in body, got: %s", w.Body.String())
+	}
+
+	inviteSvc := service.NewInviteService(st)
+	invites, err := inviteSvc.ListInvitesByKind(context.Background(), service.InviteKindOrgMembership, org.ID)
+	if err != nil {
+		t.Fatalf("ListInvitesByKind failed: %v", err)
+	}
+	if len(invites) != 1 {
+		t.Fatalf("expected 1 pending invite, got %d", len(invites))
+	}
+	if invites[0].Email != "nobody@example.com" || invites[0].Role != "member" {
+		t.Errorf("unexpected invite: email=%q role=%q", invites[0].Email, invites[0].Role)
+	}
+}
+
+// TestOrgAcceptInviteJoinsOrg exercises the end-to-end org-membership invite
+// flow: a non-existent invitee later registers, then consumes the invite link
+// and joins the org with the invite's role.
+func TestOrgAcceptInviteJoinsOrg(t *testing.T) {
+	h, orgService, authService, st := newOrgTestHandler(t)
+	owner := registerTestUser(t, authService, "amy", "amy@example.com")
+
+	org, err := orgService.CreateOrganization(context.Background(), owner.ID, "Amy Org", "amy-org")
+	if err != nil {
+		t.Fatalf("seed CreateOrganization failed: %v", err)
+	}
+
+	inviteSvc := service.NewInviteService(st)
+	plaintext, _, err := inviteSvc.CreateInvite(context.Background(), service.CreateInviteParams{
+		Kind:      service.InviteKindOrgMembership,
+		Email:     "bob@example.com",
+		OrgID:     org.ID,
+		Role:      "admin",
+		CreatedBy: owner.ID,
+	})
+	if err != nil {
+		t.Fatalf("CreateInvite failed: %v", err)
+	}
+
+	// The invitee registers an account, then accepts.
+	invitee := registerTestUser(t, authService, "bob", "bob@example.com")
+
+	r := httptest.NewRequest(http.MethodGet, "/orgs/invite/accept?token="+plaintext, nil)
+	r = withUser(r, invitee)
+	w := httptest.NewRecorder()
+	h.OrgAcceptInvite(w, r)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 redirect, got %d: %s", w.Code, w.Body.String())
+	}
+	if loc := w.Header().Get("Location"); loc != "/orgs/"+org.Slug+"/" {
+		t.Errorf("expected redirect to org dashboard, got %q", loc)
+	}
+
+	isMember, role, err := orgService.IsMember(context.Background(), org.ID, invitee.ID)
+	if err != nil || !isMember || role != "admin" {
+		t.Errorf("expected invitee to be an admin member, got isMember=%v role=%q err=%v", isMember, role, err)
+	}
+
+	// The single-use invite is now consumed and cannot be reused.
+	if _, err := inviteSvc.ValidateInvite(context.Background(), plaintext, service.InviteKindOrgMembership); err == nil {
+		t.Error("expected consumed invite to be unusable")
+	}
+}
+
+// TestOrgAcceptInviteBadToken rejects a missing/invalid invite token.
+func TestOrgAcceptInviteBadToken(t *testing.T) {
+	h, _, authService, _ := newOrgTestHandler(t)
+	user := registerTestUser(t, authService, "cara", "cara@example.com")
+
+	r := httptest.NewRequest(http.MethodGet, "/orgs/invite/accept?token=nope", nil)
+	r = withUser(r, user)
+	w := httptest.NewRecorder()
+	h.OrgAcceptInvite(w, r)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid token, got %d", w.Code)
+	}
+}
+
+// TestAPICreateOrgInviteSuccess issues an org-membership invite via the API.
+func TestAPICreateOrgInviteSuccess(t *testing.T) {
+	h, orgService, authService, _ := newOrgTestHandler(t)
+	owner := registerTestUser(t, authService, "dan", "dan@example.com")
+
+	org, err := orgService.CreateOrganization(context.Background(), owner.ID, "Dan Org", "dan-org")
+	if err != nil {
+		t.Fatalf("seed CreateOrganization failed: %v", err)
+	}
+
+	body := `{"email":"newbie@example.com","role":"admin"}`
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/orgs/"+org.Slug+"/invites", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	r = withChiURLParam(r, "slug", org.Slug)
+	r = withUser(r, owner)
+	w := httptest.NewRecorder()
+	h.APICreateOrgInvite(w, r)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		OK   bool `json:"ok"`
+		Data struct {
+			Email     string `json:"email"`
+			Role      string `json:"role"`
+			AcceptURL string `json:"accept_url"`
+			Token     string `json:"token"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.OK || resp.Data.Email != "newbie@example.com" || resp.Data.Role != "admin" {
+		t.Errorf("unexpected response: %+v", resp)
+	}
+	if resp.Data.Token == "" || !strings.Contains(resp.Data.AcceptURL, resp.Data.Token) {
+		t.Errorf("expected accept_url to embed token, got %q", resp.Data.AcceptURL)
+	}
+}
+
+// TestAPICreateOrgInviteForbiddenMember blocks a plain member from inviting.
+func TestAPICreateOrgInviteForbiddenMember(t *testing.T) {
+	h, orgService, authService, _ := newOrgTestHandler(t)
+	owner := registerTestUser(t, authService, "erin", "erin@example.com")
+	member := registerTestUser(t, authService, "finn", "finn@example.com")
+
+	org, err := orgService.CreateOrganization(context.Background(), owner.ID, "Erin Org", "erin-org")
+	if err != nil {
+		t.Fatalf("seed CreateOrganization failed: %v", err)
+	}
+	if err := orgService.AddMemberByEmail(context.Background(), org.ID, "finn@example.com", "member"); err != nil {
+		t.Fatalf("seed AddMemberByEmail failed: %v", err)
+	}
+
+	body := `{"email":"x@example.com","role":"member"}`
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/orgs/"+org.Slug+"/invites", strings.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	r = withChiURLParam(r, "slug", org.Slug)
+	r = withUser(r, member)
+	w := httptest.NewRecorder()
+	h.APICreateOrgInvite(w, r)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for plain member, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestAPIListAndRevokeOrgInvite lists then revokes a pending invite via the API.
+func TestAPIListAndRevokeOrgInvite(t *testing.T) {
+	h, orgService, authService, st := newOrgTestHandler(t)
+	owner := registerTestUser(t, authService, "gwen", "gwen@example.com")
+
+	org, err := orgService.CreateOrganization(context.Background(), owner.ID, "Gwen Org", "gwen-org")
+	if err != nil {
+		t.Fatalf("seed CreateOrganization failed: %v", err)
+	}
+	inviteSvc := service.NewInviteService(st)
+	_, inv, err := inviteSvc.CreateInvite(context.Background(), service.CreateInviteParams{
+		Kind:  service.InviteKindOrgMembership,
+		Email: "pending@example.com",
+		OrgID: org.ID,
+		Role:  "member",
+	})
+	if err != nil {
+		t.Fatalf("CreateInvite failed: %v", err)
+	}
+
+	// List.
+	lr := httptest.NewRequest(http.MethodGet, "/api/v1/orgs/"+org.Slug+"/invites", nil)
+	lr = withChiURLParam(lr, "slug", org.Slug)
+	lr = withUser(lr, owner)
+	lw := httptest.NewRecorder()
+	h.APIListOrgInvites(lw, lr)
+	if lw.Code != http.StatusOK {
+		t.Fatalf("list: expected 200, got %d: %s", lw.Code, lw.Body.String())
+	}
+	if !bytes.Contains(lw.Body.Bytes(), []byte("pending@example.com")) {
+		t.Errorf("expected pending invite in list, got: %s", lw.Body.String())
+	}
+
+	// Revoke.
+	dr := httptest.NewRequest(http.MethodDelete, "/api/v1/orgs/"+org.Slug+"/invites/"+strconv.FormatInt(inv.ID, 10), nil)
+	dr = withChiURLParam(dr, "slug", org.Slug)
+	dr = withChiURLParam(dr, "inviteID", strconv.FormatInt(inv.ID, 10))
+	dr = withUser(dr, owner)
+	dw := httptest.NewRecorder()
+	h.APIRevokeOrgInvite(dw, dr)
+	if dw.Code != http.StatusOK {
+		t.Fatalf("revoke: expected 200, got %d: %s", dw.Code, dw.Body.String())
+	}
+
+	invites, err := inviteSvc.ListInvitesByKind(context.Background(), service.InviteKindOrgMembership, org.ID)
+	if err != nil {
+		t.Fatalf("ListInvitesByKind failed: %v", err)
+	}
+	if len(invites) != 0 {
+		t.Errorf("expected no active invites after revoke, got %d", len(invites))
 	}
 }
 
