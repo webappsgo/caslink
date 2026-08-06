@@ -548,6 +548,50 @@ func TestBearerAuthMiddlewareInvalidTokenUnauthorized(t *testing.T) {
 	}
 }
 
+// TestRequireBearerAdmin verifies the admin-scope gate: only a token whose
+// OwnerType is "admin" (an adm_ token) passes; usr_/org_ tokens and a missing
+// token record are rejected 403 (PART 24: usr_ tokens must be rejected on
+// admin endpoints).
+func TestRequireBearerAdmin(t *testing.T) {
+	cases := []struct {
+		name     string
+		rec      *service.TokenRecord
+		wantCode int
+	}{
+		{"admin token passes", &service.TokenRecord{OwnerType: "admin"}, http.StatusOK},
+		{"admin token case-insensitive", &service.TokenRecord{OwnerType: "Admin"}, http.StatusOK},
+		{"user token rejected", &service.TokenRecord{OwnerType: "user"}, http.StatusForbidden},
+		{"org token rejected", &service.TokenRecord{OwnerType: "org"}, http.StatusForbidden},
+		{"nil record rejected", nil, http.StatusForbidden},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/server/admin/config/users", nil)
+			if tc.rec != nil {
+				ctx := context.WithValue(req.Context(), bearerContextKey, tc.rec)
+				req = req.WithContext(ctx)
+			}
+			w := httptest.NewRecorder()
+			RequireBearerAdmin(okHandler()).ServeHTTP(w, req)
+			if w.Code != tc.wantCode {
+				t.Fatalf("status = %d, want %d", w.Code, tc.wantCode)
+			}
+		})
+	}
+}
+
+// TestRequireBearerAdminNoContextValue verifies a request with no bearer
+// record in context at all (middleware misordered / never ran) is rejected 403
+// rather than panicking.
+func TestRequireBearerAdminNoContextValue(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/server/admin/config/users", nil)
+	w := httptest.NewRecorder()
+	RequireBearerAdmin(okHandler()).ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", w.Code)
+	}
+}
+
 // TestGetUserFromContext covers both the present and absent cases.
 func TestGetUserFromContext(t *testing.T) {
 	user := &service.User{ID: 42}
