@@ -334,7 +334,8 @@ func TestAddOrgDomainForbiddenForMemberRole(t *testing.T) {
 }
 
 // TestAddOrgDomainSuccessForOwner verifies the org owner can add a domain,
-// and the response uses the canonical ok:true envelope with a "domain" key.
+// and the response uses the canonical {ok:true,data:{...}} envelope with the
+// "domain" key living directly inside data (no double-wrapped inner "ok").
 func TestAddOrgDomainSuccessForOwner(t *testing.T) {
 	h, orgService, _, user := newDomainTestHandler(t)
 
@@ -366,6 +367,9 @@ func TestAddOrgDomainSuccessForOwner(t *testing.T) {
 	}
 	if _, hasDomain := env.Data["domain"]; !hasDomain {
 		t.Errorf("expected a domain field in the response, got %v", env.Data)
+	}
+	if _, doubleWrapped := env.Data["ok"]; doubleWrapped {
+		t.Errorf("data must not carry a nested ok key (double-wrapped envelope): %v", env.Data)
 	}
 }
 

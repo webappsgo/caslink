@@ -43,7 +43,6 @@ func (h *DomainHandler) ListUserDomains(w http.ResponseWriter, r *http.Request) 
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"ok":      true,
 		"domains": domains,
 	})
 }
@@ -75,7 +74,6 @@ func (h *DomainHandler) AddUserDomain(w http.ResponseWriter, r *http.Request) {
 
 	// Return created domain with the DNS records the owner must configure.
 	respondJSON(w, http.StatusCreated, map[string]interface{}{
-		"success":          true,
 		"domain":           domain,
 		"dns_instructions": h.domainService.BuildDNSInstructions(ctx, domain),
 	})
@@ -117,7 +115,6 @@ func (h *DomainHandler) VerifyUserDomain(w http.ResponseWriter, r *http.Request)
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
 		"message": fmt.Sprintf("verification triggered for %s", domainName),
 	})
 }
@@ -152,7 +149,6 @@ func (h *DomainHandler) ListOrgDomains(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"ok":      true,
 		"domains": domains,
 	})
 }
@@ -193,7 +189,6 @@ func (h *DomainHandler) AddOrgDomain(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusCreated, map[string]interface{}{
-		"ok":               true,
 		"domain":           domain,
 		"dns_instructions": h.domainService.BuildDNSInstructions(ctx, domain),
 	})
