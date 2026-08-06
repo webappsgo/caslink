@@ -721,6 +721,8 @@ func (s *Server) setupRoutes() {
 			ar.Get("/config/orgs/invites", adminHandler.ConfigOrgsInvites)
 			ar.Post("/config/orgs/invites", adminHandler.ConfigOrgsInvitesAction)
 			ar.Post("/config/orgs/invites/{id}/revoke", adminHandler.ConfigOrgsInvitesRevoke)
+			ar.Get("/config/orgs/create", adminHandler.ConfigOrgsCreate)
+			ar.Post("/config/orgs/create", adminHandler.ConfigOrgsCreateAction)
 
 			// Moderation queue
 			ar.Get("/config/moderation/users", adminHandler.ConfigModerationUsers)

@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/webappsgo/caslink/src/server/service"
+	"github.com/webappsgo/caslink/src/server/validate"
 )
 
 // Parsed once at package init instead of per-request.
@@ -145,6 +146,7 @@ func (h *AdminHandler) adminNav(activePath string) []adminNavItem {
 		{Label: "Users", URL: base + "/config/users", Icon: "👥"},
 		{Label: "Invites", URL: base + "/config/users/invites", Icon: "✉️"},
 		{Label: "Org Invites", URL: base + "/config/orgs/invites", Icon: "🏢"},
+		{Label: "Create Org", URL: base + "/config/orgs/create", Icon: "🏢"},
 		{Label: "Moderation", URL: base + "/config/moderation/users", Icon: "🛂"},
 		{Label: "Cluster Nodes", URL: base + "/config/cluster/nodes", Icon: "🔗"},
 		{Label: "Add Node", URL: base + "/config/cluster/add", Icon: "➕"},
@@ -1999,6 +2001,137 @@ func (h *AdminHandler) ConfigOrgsInvitesRevoke(w http.ResponseWriter, r *http.Re
 	}
 	h.recordAudit(r, &actorID, "org_invite_revoke", fmt.Sprintf("invite:%d", id), "")
 	http.Redirect(w, r, h.basePath()+"/config/orgs/invites", http.StatusFound)
+}
+
+// --------------------------------------------------------------------------
+// Admin-initiated Org Creation (PART 35 admin_only mode)
+// --------------------------------------------------------------------------
+
+// ConfigOrgsCreate handles GET /server/{adminPath}/config/orgs/create
+func (h *AdminHandler) ConfigOrgsCreate(w http.ResponseWriter, r *http.Request) {
+	h.renderOrgsCreate(w, r, "", "", "", "", nil)
+}
+
+// createdOrgResult carries the just-created org's identity so renderOrgsCreate
+// can show a success card with a link to it (rendered inside the trusted content
+// HTML; the layout's Flash field is plain-text-escaped and cannot carry a link).
+type createdOrgResult struct {
+	Name  string
+	Slug  string
+	Owner string
+}
+
+// renderOrgsCreate renders the admin org-creation form. name/slug/owner are
+// echoed back to preserve input on validation failure; errMsg carries an error;
+// created (when non-nil) renders a success card (PART 35 admin_only: an
+// administrator provisions an organization and assigns an existing user as its
+// initial owner).
+func (h *AdminHandler) renderOrgsCreate(w http.ResponseWriter, r *http.Request, name, slug, owner, errMsg string, created *createdOrgResult) {
+	success := ""
+	if created != nil {
+		success = fmt.Sprintf(`
+<div class="card" style="border-color:#238636">
+  <h2>Organization Created</h2>
+  <p style="color:#8b949e;font-size:14px">
+    "%s" was created and assigned to %s. <a href="/orgs/%s/">View organization</a>.
+  </p>
+</div>`,
+			template.HTMLEscapeString(created.Name),
+			template.HTMLEscapeString(created.Owner),
+			template.HTMLEscapeString(created.Slug))
+	}
+
+	content := fmt.Sprintf(`
+<h1>Create Organization</h1>%s
+<div class="card">
+  <p style="color:#8b949e;font-size:14px;margin-bottom:12px">
+    Provision an organization and assign an existing user as its initial owner.
+    The owner may be given by username or email.
+  </p>
+  <form method="POST" action="%s/config/orgs/create">
+    <div class="form-group">
+      <label>Organization Name</label>
+      <input type="text" name="name" value="%s" required minlength="3" maxlength="40">
+    </div>
+    <div class="form-group">
+      <label>Slug (optional — generated from the name when blank)</label>
+      <input type="text" name="slug" value="%s" placeholder="e.g. acme-corp">
+    </div>
+    <div class="form-group">
+      <label>Initial Owner (username or email)</label>
+      <input type="text" name="owner" value="%s" required placeholder="e.g. jane or jane@example.com">
+    </div>
+    <button type="submit" class="btn btn-primary">Create Organization</button>
+  </form>
+</div>`,
+		success,
+		h.basePath(),
+		template.HTMLEscapeString(name),
+		template.HTMLEscapeString(slug),
+		template.HTMLEscapeString(owner))
+	h.adminLayout(w, r, "Create Org", "/config/orgs/create", template.HTML(content), "", errMsg)
+}
+
+// ConfigOrgsCreateAction handles POST /server/{adminPath}/config/orgs/create
+func (h *AdminHandler) ConfigOrgsCreateAction(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		h.renderOrgsCreate(w, r, "", "", "", "Invalid form data.", nil)
+		return
+	}
+
+	name := strings.TrimSpace(r.PostFormValue("name"))
+	slug := strings.TrimSpace(r.PostFormValue("slug"))
+	owner := strings.TrimSpace(r.PostFormValue("owner"))
+
+	ownerUser, err := h.authService.GetUserByIdentifier(r.Context(), owner)
+	if err != nil {
+		h.renderOrgsCreate(w, r, name, slug, owner, "No user found for that username or email.", nil)
+		return
+	}
+
+	if len(name) < 3 || len(name) > 40 {
+		h.renderOrgsCreate(w, r, name, slug, owner, "Organization name must be between 3 and 40 characters.", nil)
+		return
+	}
+
+	if err := validate.ValidateOrgSlug(slug); err != nil {
+		h.renderOrgsCreate(w, r, name, slug, owner, err.Error(), nil)
+		return
+	}
+
+	orgService := service.NewOrgService(h.store)
+
+	// Enforce the target owner's per-user ownership limit (max_per_user, 0 =
+	// unlimited). The admin bypasses the creation-mode gate, never the limit.
+	if max := h.cfg.Server.Features.Organizations.MaxPerUser; max > 0 {
+		count, cerr := orgService.CountOwnedOrgs(r.Context(), ownerUser.ID)
+		if cerr != nil {
+			h.renderOrgsCreate(w, r, name, slug, owner, "Unable to verify the owner's organization limit. Please try again.", nil)
+			return
+		}
+		if count >= max {
+			h.renderOrgsCreate(w, r, name, slug, owner, fmt.Sprintf("That user already owns the maximum of %d organizations.", max), nil)
+			return
+		}
+	}
+
+	org, err := orgService.CreateOrganization(r.Context(), ownerUser.ID, name, slug)
+	if err != nil {
+		h.renderOrgsCreate(w, r, name, slug, owner, err.Error(), nil)
+		return
+	}
+
+	var actorID int64
+	if admin := h.getAdminFromSession(r); admin != nil {
+		actorID = admin.ID
+	}
+	h.recordAudit(r, &actorID, "org_admin_create", fmt.Sprintf("org:%d", org.ID), fmt.Sprintf("owner=%d", ownerUser.ID))
+
+	h.renderOrgsCreate(w, r, "", "", "", "", &createdOrgResult{
+		Name:  org.Name,
+		Slug:  org.Slug,
+		Owner: ownerUser.Username,
+	})
 }
 
 // --------------------------------------------------------------------------

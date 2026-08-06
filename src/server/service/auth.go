@@ -375,6 +375,31 @@ func (s *AuthService) GetUserByID(ctx context.Context, userID int64) (*User, err
 	return &user, nil
 }
 
+// GetUserByIdentifier loads a regular user by username or email without
+// verifying a password. The identifier is normalized case-insensitively, matching
+// AuthenticateUser's lookup. Used by admin-side flows that must resolve an
+// existing user by handle (PART 35 admin_only org creation).
+func (s *AuthService) GetUserByIdentifier(ctx context.Context, identifier string) (*User, error) {
+	identifier = strings.ToLower(strings.TrimSpace(identifier))
+	if identifier == "" {
+		return nil, fmt.Errorf("user not found")
+	}
+	query := `SELECT id, username, email, email_verified, display_name, bio, totp_enabled, created_at, last_login
+	          FROM users WHERE (username = ? OR email = ?)`
+	var user User
+	err := s.store.UsersDB.QueryRowContext(ctx, query, identifier, identifier).Scan(
+		&user.ID, &user.Username, &user.Email, &user.EmailVerified, &user.DisplayName, &user.Bio,
+		&user.TOTPEnabled, &user.CreatedAt, &user.LastLogin,
+	)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("user not found")
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to load user: %w", err)
+	}
+	return &user, nil
+}
+
 // CreatePasswordResetToken creates a password reset token for a user
 // Per PART 23: expires in 1 hour (actually 24 hours per PART 26 line 22750)
 func (s *AuthService) CreatePasswordResetToken(ctx context.Context, email string, userType string) (string, error) {

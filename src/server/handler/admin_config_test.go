@@ -43,6 +43,7 @@ func adminConfigGETCases() []configGETCase {
 		{"ConfigNetworkBlocklists", "/server/admin/config/network/blocklists", func(h *AdminHandler) http.HandlerFunc { return h.ConfigNetworkBlocklists }},
 		{"ConfigUsersInvites", "/server/admin/config/users/invites", func(h *AdminHandler) http.HandlerFunc { return h.ConfigUsersInvites }},
 		{"ConfigOrgsInvites", "/server/admin/config/orgs/invites", func(h *AdminHandler) http.HandlerFunc { return h.ConfigOrgsInvites }},
+		{"ConfigOrgsCreate", "/server/admin/config/orgs/create", func(h *AdminHandler) http.HandlerFunc { return h.ConfigOrgsCreate }},
 		{"ConfigModerationUsers", "/server/admin/config/moderation/users", func(h *AdminHandler) http.HandlerFunc { return h.ConfigModerationUsers }},
 		{"ConfigClusterNodes", "/server/admin/config/cluster/nodes", func(h *AdminHandler) http.HandlerFunc { return h.ConfigClusterNodes }},
 		{"ConfigClusterAdd", "/server/admin/config/cluster/add", func(h *AdminHandler) http.HandlerFunc { return h.ConfigClusterAdd }},
@@ -586,5 +587,54 @@ func TestConfigOrgsInvitesCreateListRevoke(t *testing.T) {
 	}
 	if len(invites) != 0 {
 		t.Fatalf("expected 0 active invites after revoke, got %d", len(invites))
+	}
+}
+
+// TestConfigOrgsAdminCreate covers PART 35 admin_only org creation: a Server
+// Admin provisions an organization and assigns an existing user as its initial
+// owner. Success creates an org owned by that user; an unknown owner creates
+// nothing and surfaces the not-found error.
+func TestConfigOrgsAdminCreate(t *testing.T) {
+	h, authService, st := newAdminTestHandler(t)
+	cookie := seedAdminSession(t, h, authService)
+	orgService := service.NewOrgService(st)
+
+	owner := registerTestUser(t, authService, "orgowner", "orgowner@example.com")
+
+	// Success: owner given by username.
+	form := url.Values{"name": {"Acme Corp"}, "slug": {"acme-corp"}, "owner": {"orgowner"}}
+	r := httptest.NewRequest(http.MethodPost, "/server/admin/config/orgs/create", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.ConfigOrgsCreateAction(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 on create, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "Organization Created") {
+		t.Fatalf("expected success card, got: %s", w.Body.String())
+	}
+	orgs, err := orgService.GetUserOrganizations(context.Background(), owner.ID)
+	if err != nil {
+		t.Fatalf("GetUserOrganizations failed: %v", err)
+	}
+	if len(orgs) != 1 || orgs[0].Slug != "acme-corp" {
+		t.Fatalf("expected owner to own acme-corp, got %+v", orgs)
+	}
+
+	// Negative: unknown owner creates nothing.
+	form = url.Values{"name": {"Ghost Org"}, "slug": {"ghost-org"}, "owner": {"nobody-xyz"}}
+	r = httptest.NewRequest(http.MethodPost, "/server/admin/config/orgs/create", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.AddCookie(cookie)
+	w = httptest.NewRecorder()
+	h.ConfigOrgsCreateAction(w, r)
+
+	if !strings.Contains(w.Body.String(), "No user found for that username or email.") {
+		t.Fatalf("expected not-found error, got: %s", w.Body.String())
+	}
+	if _, err := orgService.GetOrganizationBySlug(context.Background(), "ghost-org"); err == nil {
+		t.Fatalf("expected ghost-org to not exist, but it was created")
 	}
 }

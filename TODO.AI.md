@@ -177,6 +177,20 @@ fixed inline and committed separately.
   slug), each returning a generic error to avoid enumeration. Both directions
   are covered by namespace_test.go (TestCreateOrganizationRejectsUsernameCollision
   and TestRegisterUserRejectsOrgSlugCollision). Shared-namespace work complete.
+  The invite-mode creation flow is now implemented (`InviteKindOrgCreation`,
+  `OrganizationsConfig.OrgCreationInviteAllowed`, `hasValidCreationInvite`,
+  invite token threaded through the web/API create paths and consumed single-use
+  on success bound to the new owner) and the admin panel can issue/list/revoke
+  org-creation invites (`ConfigOrgsInvites`/`ConfigOrgsInvitesAction`/
+  `ConfigOrgsInvitesRevoke`, "Org Invites" nav, one-time `/orgs/new?invite=`
+  link). admin_only admin-initiated creation is now implemented too:
+  `ConfigOrgsCreate`/`ConfigOrgsCreateAction` (admin route `/config/orgs/create`,
+  "Create Org" nav) resolve a chosen user by username/email via
+  `AuthService.GetUserByIdentifier` and provision an org owned by that user,
+  enforcing the owner's `max_per_user` limit but bypassing the creation-mode
+  gate (admin always provisions). All four PART 35 creation modes
+  (open/invite/admin_only/disabled) are now fully implemented and enforced.
+  Organization creation-modes work complete.
 
 - Admin panel WebUI completeness + cookie-consent banner (PART 16/17): the
   full set of admin config templates and the always-on GDPR cookie-consent
