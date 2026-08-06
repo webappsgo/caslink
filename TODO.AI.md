@@ -173,9 +173,7 @@ fixed inline and committed separately.
   setting already existed (`NormalizeOrgVisibility`, `UpdateOrganization`,
   settings form, `APIUpdateOrg`); this closed the enforcement gap. No public
   org listing/search exists (`ListUserOrganizations` is membership-scoped), so
-  "won't appear in public listings" is already satisfied. Still remaining: the
-  invite-code creation flow and admin_only admin-initiated creation (both
-  depend on the shared invite subsystem). Org slug
+  "won't appear in public listings" is already satisfied. Org slug
   validation is now spec-aligned (PART 35: 2-39 chars, no consecutive
   hyphens, reserved-name blocklist) via the shared
   `validate.ValidateOrgSlug`, used by both the handler and the service. The
