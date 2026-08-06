@@ -67,13 +67,13 @@ func TestServerBaseURL(t *testing.T) {
 	s := newTestServer(t, nil)
 
 	tests := []struct {
-		name    string
-		setup   func(r *http.Request)
-		host    string
-		want    string
+		name  string
+		setup func(r *http.Request)
+		host  string
+		want  string
 	}{
 		{
-			name: "plain http, no forwarding",
+			name:  "plain http, no forwarding",
 			setup: func(r *http.Request) {},
 			host:  "example.com",
 			want:  "http://example.com",

@@ -103,12 +103,12 @@ func TestSplitFormList(t *testing.T) {
 // cap 250) and page defaulting to 1 on <=0.
 func TestNewPaginationClamping(t *testing.T) {
 	tests := []struct {
-		name             string
-		page, limit      int
-		total            int
-		wantPage         int
-		wantLimit        int
-		wantPages        int
+		name        string
+		page, limit int
+		total       int
+		wantPage    int
+		wantLimit   int
+		wantPages   int
 	}{
 		{"defaults", 0, 0, 100, 1, 250, 1},
 		{"limit too high", 1, 1000, 10, 1, 250, 1},

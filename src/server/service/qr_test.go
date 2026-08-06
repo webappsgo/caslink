@@ -323,4 +323,3 @@ func TestGenerateQRCodeForTextEmptyErrors(t *testing.T) {
 		t.Error("GenerateQRCodeForText(\"\", 200): got nil error, want an error for empty text")
 	}
 }
-
