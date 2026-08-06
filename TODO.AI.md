@@ -125,12 +125,21 @@ fixed inline and committed separately.
   SSL_CREDENTIALS_INVALID/SSL_CHALLENGE_FAILED/SSL_ISSUANCE_FAILED. Unit
   tests cover encryption-at-rest, owner isolation, wildcard SAN, and each
   error path (domain_ssl.go + domain_ssl_test.go).
-  Still remaining (Slice C): handler routes POST /{domain}/ssl and
-  POST /{domain}/ssl/renew (user+org, web+API) + tests, and wiring a
-  DB-stored-cert GetCertificate into the server TLS config with the
-  onCertChange autocert-cache purge hook so DNS-01 certs are served.
-  End-to-end issuance against a live CA still needs a real DNS provider
-  account/credential (INFRA-BLOCKED) but the full code path is mock-tested.
+  Slice C is now done: POST /{domain}/ssl and POST /{domain}/ssl/renew are
+  registered (rate-limited) on all four domain route blocks (user, org,
+  admin-user, admin-org). configureDomainSSL issues synchronously for dns-01
+  (validate+encrypt+store provider creds, then IssueDNS01Cert) and reports
+  status only for auto/http-01/tls-alpn-01 (autocert mints those on the first
+  handshake); renewDomainSSL forces a dns-01 re-issue. SSLProviderRequest
+  defaults Challenge to dns-01 when a Provider is given, else auto.
+  CertificateFor is wired into the server TLS config's GetCertificate: it
+  serves the DB-stored (decrypted, memoised) DNS-01 cert for matching SNI and
+  returns nil to fall through to autocert; purgeCachedCert evicts the memo on
+  every (re)issue. Handler + service tests cover all four endpoints, auth/role
+  gating, and the handshake cert path (real self-signed cert, cache reuse,
+  case/port normalisation, purge). End-to-end issuance against a live CA still
+  needs a real DNS provider account/credential (INFRA-BLOCKED — e.g. a
+  Cloudflare api_token) but the full code path is mock-tested.
   (Scheduled SSL renewal and HTTP-01/TLS-ALPN-01 issuance are already
   handled automatically by autocert.Manager — the ssl_renewal scheduler
   task is an intentional no-op.)
