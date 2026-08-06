@@ -164,32 +164,35 @@ func (h *PagesHandler) Help(w http.ResponseWriter, r *http.Request) {
 		TorEnabled: torEnabled,
 		TorAddress: torAddress,
 		APIBase:    apiBase,
-		Sections:   buildHelpSections(apiBase),
+		Sections:   buildHelpSections(apiBase, h.cfg.Server.APIBasePath()),
 	}
 	h.renderer.Render(w, "template/page/server/help.html", data)
 }
 
 // buildHelpSections returns the structured help content using the real API base.
-func buildHelpSections(apiBase string) []helpSection {
+// apiBase is scheme+host (e.g. https://example.com); apiPath is the config-driven
+// versioned API mount prefix (e.g. "/api/v1", PART 14).
+func buildHelpSections(apiBase, apiPath string) []helpSection {
+	base := apiBase + apiPath
 	return []helpSection{
 		{
 			Title: "Getting Started",
 			Items: []helpItem{
-				{Label: "Create a short link", Content: `curl -s -X POST ` + apiBase + `/api/v1/urls \
+				{Label: "Create a short link", Content: `curl -s -X POST ` + base + `/urls \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{"long_url":"https://example.com/very/long/path"}'`, IsCode: true},
-				{Label: "Create with a custom code", Content: `curl -s -X POST ` + apiBase + `/api/v1/urls \
+				{Label: "Create with a custom code", Content: `curl -s -X POST ` + base + `/urls \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{"long_url":"https://example.com","custom_code":"mylink"}'`, IsCode: true},
-				{Label: "Look up a short link", Content: `curl -s ` + apiBase + `/api/v1/urls/mylink`, IsCode: true},
+				{Label: "Look up a short link", Content: `curl -s ` + base + `/urls/mylink`, IsCode: true},
 			},
 		},
 		{
 			Title: "Authentication",
 			Items: []helpItem{
-				{Label: "Log in and get a session token", Content: `curl -s -X POST ` + apiBase + `/api/v1/server/auth/login \
+				{Label: "Log in and get a session token", Content: `curl -s -X POST ` + base + `/server/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"alice","password":"secret"}'`, IsCode: true},
 				{Label: "Generate an API token", Content: "Visit " + apiBase + "/users/tokens to create long-lived API tokens. Pass them as `Authorization: Bearer <token>` on every API request.", IsCode: false},
@@ -198,24 +201,24 @@ func buildHelpSections(apiBase string) []helpSection {
 		{
 			Title: "Analytics",
 			Items: []helpItem{
-				{Label: "Get click stats for a link", Content: `curl -s ` + apiBase + `/api/v1/urls/mylink/stats`, IsCode: true},
+				{Label: "Get click stats for a link", Content: `curl -s ` + base + `/urls/mylink/stats`, IsCode: true},
 				{Label: "What is tracked?", Content: "Each redirect records the timestamp, country (GeoIP), browser family, OS, device type, referrer domain, and a salted IP hash for unique-visitor counting. Raw IPs are never stored when anonymize_ips is enabled.", IsCode: false},
 			},
 		},
 		{
 			Title: "QR Codes",
 			Items: []helpItem{
-				{Label: "Download a QR code (PNG)", Content: `curl -s ` + apiBase + `/api/v1/qr/mylink -o qr.png`, IsCode: true},
-				{Label: "Request SVG format", Content: `curl -s "` + apiBase + `/api/v1/qr/mylink?format=svg" -o qr.svg`, IsCode: true},
+				{Label: "Download a QR code (PNG)", Content: `curl -s ` + base + `/qr/mylink -o qr.png`, IsCode: true},
+				{Label: "Request SVG format", Content: `curl -s "` + base + `/qr/mylink?format=svg" -o qr.svg`, IsCode: true},
 			},
 		},
 		{
 			Title: "Bulk Operations",
 			Items: []helpItem{
-				{Label: "Import URLs from CSV", Content: `curl -s -X POST ` + apiBase + `/api/v1/users/urls/import \
+				{Label: "Import URLs from CSV", Content: `curl -s -X POST ` + base + `/users/urls/import \
   -H "Authorization: Bearer <token>" \
   -F "file=@links.csv"`, IsCode: true},
-				{Label: "Export all your URLs", Content: `curl -s ` + apiBase + `/api/v1/users/urls/export \
+				{Label: "Export all your URLs", Content: `curl -s ` + base + `/users/urls/export \
   -H "Authorization: Bearer <token>" -o export.json`, IsCode: true},
 			},
 		},
@@ -223,7 +226,7 @@ func buildHelpSections(apiBase string) []helpSection {
 			Title: "API Documentation",
 			Items: []helpItem{
 				{Label: "Interactive Swagger UI", Content: apiBase + "/server/docs/swagger", IsCode: false},
-				{Label: "OpenAPI JSON spec", Content: apiBase + "/api/v1/server/swagger", IsCode: false},
+				{Label: "OpenAPI JSON spec", Content: base + "/server/swagger", IsCode: false},
 				{Label: "GraphiQL explorer", Content: apiBase + "/server/docs/graphql", IsCode: false},
 			},
 		},
@@ -357,7 +360,7 @@ func (h *PagesHandler) APIHelp(w http.ResponseWriter, r *http.Request) {
 		"swagger_ui":  apiBase + "/server/docs/swagger",
 		"graphiql":    apiBase + "/server/docs/graphql",
 		"healthz":     apiBase + "/server/healthz",
-		"sections":    buildHelpSections(apiBase),
+		"sections":    buildHelpSections(apiBase, h.cfg.Server.APIBasePath()),
 		"tor_enabled": torEnabled,
 		"tor_address": torAddress,
 	})

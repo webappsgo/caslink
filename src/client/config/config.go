@@ -20,6 +20,9 @@ type CLIConfig struct {
 	// ClusterRefreshedAt is the Unix timestamp of the last /api/autodiscover
 	// call. The CLI re-refreshes when this is >30 minutes old.
 	ClusterRefreshedAt int64 `yaml:"cluster_refreshed_at,omitempty"`
+	// APIVersion is the API URL version segment (e.g. "v1") learned from
+	// /api/autodiscover (AI.md PART 14). Empty falls back to "v1".
+	APIVersion string `yaml:"api_version,omitempty"`
 	// Token is the API bearer token stored for reuse between invocations.
 	// Stored as plain text in a 0600 file — keep the file mode enforced.
 	Token string `yaml:"token,omitempty"`

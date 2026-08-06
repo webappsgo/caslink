@@ -109,7 +109,7 @@ func TestWriteJSONError(t *testing.T) {
 // TestSecurityHeadersMiddlewareProductionTLS verifies HSTS and the strict
 // (blocking) CSP header are set when TLS is enabled and dev mode is off.
 func TestSecurityHeadersMiddlewareProductionTLS(t *testing.T) {
-	mw := SecurityHeadersMiddleware(true, false)
+	mw := SecurityHeadersMiddleware(true, false, "/api/v1")
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
 	mw(okHandler()).ServeHTTP(w, req)
@@ -136,7 +136,7 @@ func TestSecurityHeadersMiddlewareProductionTLS(t *testing.T) {
 // and CSP is sent as report-only in dev mode, and that an existing
 // X-Request-Id is echoed back rather than regenerated.
 func TestSecurityHeadersMiddlewareDevNoTLS(t *testing.T) {
-	mw := SecurityHeadersMiddleware(false, true)
+	mw := SecurityHeadersMiddleware(false, true, "/api/v1")
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("X-Request-Id", "existing-id")
 	w := httptest.NewRecorder()
@@ -374,7 +374,7 @@ func TestRealIP(t *testing.T) {
 // TestCSRFMiddlewareExemptPaths verifies /.well-known/* and healthz routes
 // bypass CSRF validation entirely, even on unsafe methods with no token.
 func TestCSRFMiddlewareExemptPaths(t *testing.T) {
-	mw := CSRFMiddleware()
+	mw := CSRFMiddleware("/api/v1")
 	paths := []string{"/.well-known/security.txt", "/server/healthz", "/api/v1/server/healthz"}
 	for _, p := range paths {
 		req := httptest.NewRequest(http.MethodPost, p, nil)
@@ -389,7 +389,7 @@ func TestCSRFMiddlewareExemptPaths(t *testing.T) {
 // TestCSRFMiddlewareSafeMethodSetsCookie verifies a GET request passes
 // through and receives a csrf_token cookie when none was present.
 func TestCSRFMiddlewareSafeMethodSetsCookie(t *testing.T) {
-	mw := CSRFMiddleware()
+	mw := CSRFMiddleware("/api/v1")
 	req := httptest.NewRequest(http.MethodGet, "/users/settings", nil)
 	w := httptest.NewRecorder()
 	mw(okHandler()).ServeHTTP(w, req)
@@ -411,7 +411,7 @@ func TestCSRFMiddlewareSafeMethodSetsCookie(t *testing.T) {
 // TestCSRFMiddlewareBearerExempt verifies a POST with a Bearer Authorization
 // header bypasses cookie CSRF validation.
 func TestCSRFMiddlewareBearerExempt(t *testing.T) {
-	mw := CSRFMiddleware()
+	mw := CSRFMiddleware("/api/v1")
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/urls", nil)
 	req.Header.Set("Authorization", "Bearer sometoken")
 	w := httptest.NewRecorder()
@@ -425,7 +425,7 @@ func TestCSRFMiddlewareBearerExempt(t *testing.T) {
 // TestCSRFMiddlewareMissingCookieRejected verifies an unsafe-method request
 // with no csrf_token cookie at all is rejected with 403.
 func TestCSRFMiddlewareMissingCookieRejected(t *testing.T) {
-	mw := CSRFMiddleware()
+	mw := CSRFMiddleware("/api/v1")
 	req := httptest.NewRequest(http.MethodPost, "/users/settings", nil)
 	w := httptest.NewRecorder()
 	mw(okHandler()).ServeHTTP(w, req)
@@ -441,7 +441,7 @@ func TestCSRFMiddlewareMissingCookieRejected(t *testing.T) {
 // TestCSRFMiddlewareMismatchedTokenRejected verifies a cookie present but a
 // mismatched (or missing) submitted token is rejected.
 func TestCSRFMiddlewareMismatchedTokenRejected(t *testing.T) {
-	mw := CSRFMiddleware()
+	mw := CSRFMiddleware("/api/v1")
 	req := httptest.NewRequest(http.MethodPost, "/users/settings", nil)
 	req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "cookie-value"})
 	req.Header.Set(csrfHeaderName, "different-value")
@@ -456,7 +456,7 @@ func TestCSRFMiddlewareMismatchedTokenRejected(t *testing.T) {
 // TestCSRFMiddlewareMatchingHeaderTokenAccepted verifies a matching cookie +
 // X-CSRF-Token header pair is accepted.
 func TestCSRFMiddlewareMatchingHeaderTokenAccepted(t *testing.T) {
-	mw := CSRFMiddleware()
+	mw := CSRFMiddleware("/api/v1")
 	req := httptest.NewRequest(http.MethodPost, "/users/settings", nil)
 	req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "matching-value"})
 	req.Header.Set(csrfHeaderName, "matching-value")
@@ -471,7 +471,7 @@ func TestCSRFMiddlewareMatchingHeaderTokenAccepted(t *testing.T) {
 // TestCSRFMiddlewareMatchingFormFieldAccepted verifies the form-field
 // fallback (_csrf) is used when no X-CSRF-Token header is present.
 func TestCSRFMiddlewareMatchingFormFieldAccepted(t *testing.T) {
-	mw := CSRFMiddleware()
+	mw := CSRFMiddleware("/api/v1")
 	req := httptest.NewRequest(http.MethodPost, "/users/settings?"+csrfFormField+"=matching-value", nil)
 	req.AddCookie(&http.Cookie{Name: csrfCookieName, Value: "matching-value"})
 	w := httptest.NewRecorder()

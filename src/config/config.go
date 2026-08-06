@@ -20,12 +20,13 @@ type Config struct {
 
 // ServerConfig holds server-specific settings
 type ServerConfig struct {
-	Port      int    `yaml:"port"`
-	Address   string `yaml:"address"`
-	Mode      string `yaml:"mode"`
-	FQDN      string `yaml:"fqdn"`
-	Daemonize bool   `yaml:"daemonize"`
-	PIDFile   bool   `yaml:"pidfile"`
+	Port       int    `yaml:"port"`
+	Address    string `yaml:"address"`
+	Mode       string `yaml:"mode"`
+	FQDN       string `yaml:"fqdn"`
+	APIVersion string `yaml:"api_version"`
+	Daemonize  bool   `yaml:"daemonize"`
+	PIDFile    bool   `yaml:"pidfile"`
 
 	Healthz        HealthzConfig        `yaml:"healthz"`
 	Branding       BrandingConfig       `yaml:"branding"`
@@ -50,6 +51,38 @@ type ServerConfig struct {
 	Tor            TorConfig            `yaml:"tor"`
 	Backup         BackupConfig         `yaml:"backup"`
 	Compliance     ComplianceConfig     `yaml:"compliance"`
+}
+
+// ResolvedAPIVersion returns the configured API version URL segment (PART 14),
+// falling back to "v1" when unset or invalid. A valid segment is lowercase
+// alphanumeric (e.g. "v1", "v2beta"). Per the config rule, an invalid value is
+// substituted with the default rather than causing a crash.
+func (s ServerConfig) ResolvedAPIVersion() string {
+	v := strings.ToLower(strings.TrimSpace(s.APIVersion))
+	if v == "" || !isValidAPIVersion(v) {
+		return "v1"
+	}
+	return v
+}
+
+// APIBasePath returns the mount prefix for all versioned API routes, e.g.
+// "/api/v1" (PART 13/14). Never hardcode "/api/v1" — always use this.
+func (s ServerConfig) APIBasePath() string {
+	return "/api/" + s.ResolvedAPIVersion()
+}
+
+// isValidAPIVersion reports whether v is a valid API version URL segment:
+// non-empty and composed only of lowercase letters and digits.
+func isValidAPIVersion(v string) bool {
+	if v == "" {
+		return false
+	}
+	for _, r := range v {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') {
+			return false
+		}
+	}
+	return true
 }
 
 // HealthzConfig controls the health endpoints per AI.md PART 13. The
@@ -965,12 +998,13 @@ func DefaultConfig() *Config {
 
 	return &Config{
 		Server: ServerConfig{
-			Port:      0, // 0 = auto-select from 64xxx range
-			Address:   "[::]",
-			Mode:      "production",
-			FQDN:      hostname,
-			Daemonize: false,
-			PIDFile:   true,
+			Port:       0, // 0 = auto-select from 64xxx range
+			Address:    "[::]",
+			Mode:       "production",
+			FQDN:       hostname,
+			APIVersion: "v1",
+			Daemonize:  false,
+			PIDFile:    true,
 			Healthz: HealthzConfig{
 				Root: HealthzRootConfig{Enabled: false},
 			},

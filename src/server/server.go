@@ -54,13 +54,13 @@ type Server struct {
 	metrics        *appmetrics.Metrics
 	metricsHandler http.Handler
 	log            *logger.Logger
-	pidFile        string             // path to PID file; empty = no PID file
-	acmeManager    *autocert.Manager  // non-nil when LE HTTP-01 is active
+	pidFile        string                 // path to PID file; empty = no PID file
+	acmeManager    *autocert.Manager      // non-nil when LE HTTP-01 is active
 	domainService  *service.DomainService // custom-domain resolver; serves DNS-01 certs at handshake
-	geoip          *geoip.Service     // non-nil when GeoIP is enabled
-	torManager     *apktor.TorManager // non-nil when Tor binary was found at startup
-	configDir      string             // kept for TorManager (port not known until Start)
-	dataDir        string             // kept for TorManager
+	geoip          *geoip.Service         // non-nil when GeoIP is enabled
+	torManager     *apktor.TorManager     // non-nil when Tor binary was found at startup
+	configDir      string                 // kept for TorManager (port not known until Start)
+	dataDir        string                 // kept for TorManager
 
 	trustedProxies   *config.TrustedProxyResolver // X-Forwarded-* trust gate, hostname-aware
 	stopProxyRefresh context.CancelFunc           // cancels the trusted-proxy refresh loop
@@ -463,9 +463,9 @@ func (s *Server) setupRoutes() {
 	// Swagger/OpenAPI documentation per spec PART 14 + IDEA.md:
 	// web UI at /server/docs/swagger; JSON spec at canonical + alias paths.
 	// Vendor assets (swagger-ui-bundle.js, swagger-ui.css) are embedded in the binary.
-	s.router.Get("/server/docs/swagger", swagger.Handler(s.Version))
+	s.router.Get("/server/docs/swagger", swagger.Handler(s.Version, s.config.Server.APIBasePath()))
 	s.router.Handle("/server/docs/swagger/static/*", swagger.StaticHandler())
-	s.router.Get("/api/swagger", swagger.SpecHandler(s.Version))
+	s.router.Get("/api/swagger", swagger.SpecHandler(s.Version, s.config.Server.APIBasePath()))
 
 	// Prometheus metrics endpoint per AI.md PART 21.
 	// INTERNAL ONLY — operators must firewall or proxy-restrict this path.
@@ -510,14 +510,14 @@ func (s *Server) setupRoutes() {
 	// The setup token provides primary protection; CSRF adds a second layer
 	// against same-LAN network attackers.
 	s.router.Route("/setup", func(r chi.Router) {
-		r.Use(CSRFMiddleware())
+		r.Use(CSRFMiddleware(s.config.Server.APIBasePath()))
 		r.Get("/", setupHandler.SetupPage)
 		r.Post("/", setupHandler.Setup)
 	})
 
 	// Auth routes — /server/auth/* per spec PART 17
 	s.router.Route("/server/auth", func(r chi.Router) {
-		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled, s.mode.IsDevelopment()))
+		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled, s.mode.IsDevelopment(), s.config.Server.APIBasePath()))
 		r.Use(RateLimitMiddleware(rateLimiter))
 
 		r.Get("/login", authUserHandler.LoginPage)
@@ -542,9 +542,9 @@ func (s *Server) setupRoutes() {
 
 	// User routes — /users/* per spec PART 17 (requires auth)
 	s.router.Route("/users", func(r chi.Router) {
-		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled, s.mode.IsDevelopment()))
+		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled, s.mode.IsDevelopment(), s.config.Server.APIBasePath()))
 		r.Use(UserAuthMiddleware(authService))
-		r.Use(CSRFMiddleware())
+		r.Use(CSRFMiddleware(s.config.Server.APIBasePath()))
 
 		r.Get("/dashboard", userHandler.Dashboard)
 
@@ -593,9 +593,9 @@ func (s *Server) setupRoutes() {
 
 	// Organization routes — /orgs/* per spec PART 17 (requires auth)
 	s.router.Route("/orgs", func(r chi.Router) {
-		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled, s.mode.IsDevelopment()))
+		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled, s.mode.IsDevelopment(), s.config.Server.APIBasePath()))
 		r.Use(UserAuthMiddleware(authService))
-		r.Use(CSRFMiddleware())
+		r.Use(CSRFMiddleware(s.config.Server.APIBasePath()))
 
 		r.Get("/", orgHandler.ListOrgs)
 		r.Get("/new", orgHandler.CreateOrgPage)
@@ -639,14 +639,14 @@ func (s *Server) setupRoutes() {
 	s.router.Get("/server/privacy", pagesHandler.Privacy)
 	s.router.Get("/server/terms", pagesHandler.Terms)
 	s.router.Route("/server/contact", func(r chi.Router) {
-		r.Use(CSRFMiddleware())
+		r.Use(CSRFMiddleware(s.config.Server.APIBasePath()))
 		r.Get("/", pagesHandler.Contact)
 		r.Post("/", pagesHandler.ContactSubmit)
 	})
 
 	// Admin panel routes — /server/{adminPath}/* per spec PART 17
 	s.router.Route("/server/"+adminPath, func(r chi.Router) {
-		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled, s.mode.IsDevelopment()))
+		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled, s.mode.IsDevelopment(), s.config.Server.APIBasePath()))
 
 		// Login/logout (no auth required)
 		r.Get("/", adminHandler.LoginPage)
@@ -656,7 +656,7 @@ func (s *Server) setupRoutes() {
 		// Authenticated admin routes (require admin_session cookie per spec PART 23)
 		r.Group(func(ar chi.Router) {
 			ar.Use(AdminAuthMiddleware(authService, adminPath))
-			ar.Use(CSRFMiddleware())
+			ar.Use(CSRFMiddleware(s.config.Server.APIBasePath()))
 			ar.Get("/dashboard", adminHandler.Dashboard)
 
 			// Server settings
@@ -787,9 +787,9 @@ func (s *Server) setupRoutes() {
 		return
 	}))
 
-	// API v1
-	s.router.Route("/api/v1", func(r chi.Router) {
-		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled, s.mode.IsDevelopment()))
+	// Versioned API — mount prefix comes from config (PART 13/14), never hardcoded.
+	s.router.Route(s.config.Server.APIBasePath(), func(r chi.Router) {
+		r.Use(SecurityHeadersMiddleware(s.config.Server.SSL.Enabled, s.mode.IsDevelopment(), s.config.Server.APIBasePath()))
 
 		// Public endpoints (no auth)
 		r.Get("/server/healthz", handler.APIHealthHandler(s.Version, s.CommitID, s.BuildDate, s.mode.String(), s.store, func() *apktor.TorManager { return s.torManager }, func() (reqTotal, reqs24h, activeConn int64) {
@@ -802,7 +802,7 @@ func (s *Server) setupRoutes() {
 		}))
 		r.Get("/version", handler.VersionHandler(s.Version, s.CommitID, s.BuildDate))
 		// OpenAPI JSON spec — canonical per spec PART 14 + IDEA.md
-		r.Get("/server/swagger", swagger.SpecHandler(s.Version))
+		r.Get("/server/swagger", swagger.SpecHandler(s.Version, s.config.Server.APIBasePath()))
 		// GraphQL — canonical versioned route per spec PART 14; same handler
 		// as the unversioned /api/graphql alias above.
 		r.Post("/server/graphql", graphql.QueryHandler(graphqlResolver))

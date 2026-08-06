@@ -341,7 +341,7 @@ func main() {
 	fmt.Printf("Endpoints:\n")
 	fmt.Printf("  - http://localhost:%d/\n", cfg.Server.Port)
 	fmt.Printf("  - http://localhost:%d/healthz\n", cfg.Server.Port)
-	fmt.Printf("  - http://localhost:%d/api/v1/healthz\n", cfg.Server.Port)
+	fmt.Printf("  - http://localhost:%d%s/server/healthz\n", cfg.Server.Port, cfg.Server.APIBasePath())
 	fmt.Printf("\n")
 
 	// Start server (blocks until shutdown). Privileged ports (< 1024) must be

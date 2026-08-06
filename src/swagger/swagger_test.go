@@ -40,7 +40,7 @@ func TestGetTheme(t *testing.T) {
 // TestGenerateOpenAPISpec_VersionSubstitution verifies the version parameter
 // flows through into info.version rather than being hardcoded or dropped.
 func TestGenerateOpenAPISpec_VersionSubstitution(t *testing.T) {
-	spec := generateOpenAPISpec("1.2.3")
+	spec := generateOpenAPISpec("1.2.3", "/api/v1")
 
 	info, ok := spec["info"].(map[string]interface{})
 	if !ok {
@@ -58,7 +58,7 @@ func TestGenerateOpenAPISpec_VersionSubstitution(t *testing.T) {
 // (PART 14 route scopes) is present with the correct HTTP methods, since a
 // swagger spec that silently drops an endpoint is worse than no spec at all.
 func TestGenerateOpenAPISpec_RequiredPaths(t *testing.T) {
-	spec := generateOpenAPISpec("dev")
+	spec := generateOpenAPISpec("dev", "/api/v1")
 	paths, ok := spec["paths"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("spec[\"paths\"] is not a map: %T", spec["paths"])
@@ -91,7 +91,7 @@ func TestSpecHandler_ServesValidJSON(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/server/swagger", nil)
 	rec := httptest.NewRecorder()
 
-	SpecHandler("9.9.9")(rec, req)
+	SpecHandler("9.9.9", "/api/v1")(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -136,7 +136,7 @@ func TestHandler_ThemeSelection(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/server/docs/swagger"+tt.query, nil)
 			rec := httptest.NewRecorder()
 
-			Handler("1.0.0")(rec, req)
+			Handler("1.0.0", "/api/v1")(rec, req)
 
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)

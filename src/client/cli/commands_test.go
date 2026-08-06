@@ -19,12 +19,12 @@ import (
 // produce a double slash.
 func TestNewClient(t *testing.T) {
 	tests := []struct {
-		name       string
-		cfg        *config.CLIConfig
-		gf         GlobalFlags
-		wantBase   string
-		wantToken  string
-		wantDebug  bool
+		name      string
+		cfg       *config.CLIConfig
+		gf        GlobalFlags
+		wantBase  string
+		wantToken string
+		wantDebug bool
 	}{
 		{
 			name:      "config values used when flags empty",

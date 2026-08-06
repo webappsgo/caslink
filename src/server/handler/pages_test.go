@@ -105,7 +105,7 @@ func TestHelpFallsBackToDefaultFQDN(t *testing.T) {
 // ---- buildHelpSections ----
 
 func TestBuildHelpSectionsIncludesAPIBase(t *testing.T) {
-	sections := buildHelpSections("https://example.test")
+	sections := buildHelpSections("https://example.test", "/api/v1")
 	if len(sections) == 0 {
 		t.Fatal("expected at least one help section")
 	}

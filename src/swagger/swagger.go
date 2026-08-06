@@ -20,8 +20,10 @@ func StaticHandler() http.Handler {
 	return http.StripPrefix("/server/docs/swagger/static/", http.FileServer(http.FS(sub)))
 }
 
-// Handler serves the Swagger UI
-func Handler(version string) http.HandlerFunc {
+// Handler serves the Swagger UI. version is the app version (shown as the spec
+// info.version); apiBasePath is the config-driven API mount prefix (e.g.
+// "/api/v1", PART 14) used to locate the OpenAPI spec JSON.
+func Handler(version, apiBasePath string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Detect theme from query param or default to dark
 		theme := r.URL.Query().Get("theme")
@@ -36,15 +38,17 @@ func Handler(version string) http.HandlerFunc {
 		data := map[string]interface{}{
 			"Version": version,
 			"Theme":   theme,
+			"SpecURL": apiBasePath + "/server/swagger",
 		}
 		_ = tmpl.Execute(w, data)
 	}
 }
 
-// SpecHandler serves the OpenAPI specification JSON
-func SpecHandler(version string) http.HandlerFunc {
+// SpecHandler serves the OpenAPI specification JSON. apiBasePath is the
+// config-driven API mount prefix used as the OpenAPI servers URL (PART 14).
+func SpecHandler(version, apiBasePath string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		spec := generateOpenAPISpec(version)
+		spec := generateOpenAPISpec(version, apiBasePath)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(spec)
@@ -52,7 +56,7 @@ func SpecHandler(version string) http.HandlerFunc {
 }
 
 // generateOpenAPISpec generates the OpenAPI 3.0 specification
-func generateOpenAPISpec(version string) map[string]interface{} {
+func generateOpenAPISpec(version, apiBasePath string) map[string]interface{} {
 	return map[string]interface{}{
 		"openapi": "3.0.0",
 		"info": map[string]interface{}{
@@ -70,8 +74,8 @@ func generateOpenAPISpec(version string) map[string]interface{} {
 		},
 		"servers": []map[string]interface{}{
 			{
-				"url":         "/api/v1",
-				"description": "API v1",
+				"url":         apiBasePath,
+				"description": "Versioned API",
 			},
 		},
 		"paths": map[string]interface{}{
@@ -271,7 +275,7 @@ const swaggerUITemplate = `<!DOCTYPE html>
     <script>
         window.onload = function() {
             SwaggerUIBundle({
-                url: "/api/v1/server/swagger",
+                url: "{{.SpecURL}}",
                 dom_id: '#swagger-ui',
                 deepLinking: true,
                 presets: [

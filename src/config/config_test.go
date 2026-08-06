@@ -844,3 +844,62 @@ func TestOrgCreationInviteAllowed(t *testing.T) {
 		})
 	}
 }
+
+// TestResolvedAPIVersion covers the API version normalization and fallback
+// rules (PART 14): empty or invalid values fall back to "v1", valid lowercase
+// alphanumeric segments pass through, and whitespace/case are normalized.
+func TestResolvedAPIVersion(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"", "v1"},
+		{"v1", "v1"},
+		{"v2", "v2"},
+		{"v2beta", "v2beta"},
+		{"  v3  ", "v3"},
+		{"V1", "v1"},
+		{"v-1", "v1"}, // hyphen invalid → fallback
+		{"v/1", "v1"}, // slash invalid → fallback
+		{"v 1", "v1"}, // internal space invalid → fallback
+		{"v1!", "v1"}, // punctuation invalid → fallback
+	}
+	for _, tc := range cases {
+		s := ServerConfig{APIVersion: tc.in}
+		if got := s.ResolvedAPIVersion(); got != tc.want {
+			t.Errorf("ResolvedAPIVersion(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestAPIBasePath confirms the mount prefix is always "/api/" + the resolved
+// version (PART 13/14).
+func TestAPIBasePath(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"", "/api/v1"},
+		{"v1", "/api/v1"},
+		{"v2", "/api/v2"},
+		{"bogus!", "/api/v1"}, // invalid char → fallback to v1
+	}
+	for _, tc := range cases {
+		s := ServerConfig{APIVersion: tc.in}
+		if got := s.APIBasePath(); got != tc.want {
+			t.Errorf("APIBasePath(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestDefaultConfigAPIVersion ensures the default config ships a valid API
+// version so a fresh install serves routes under /api/v1.
+func TestDefaultConfigAPIVersion(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Server.APIVersion != "v1" {
+		t.Errorf("DefaultConfig APIVersion = %q, want v1", cfg.Server.APIVersion)
+	}
+	if got := cfg.Server.APIBasePath(); got != "/api/v1" {
+		t.Errorf("DefaultConfig APIBasePath = %q, want /api/v1", got)
+	}
+}

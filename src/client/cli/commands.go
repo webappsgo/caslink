@@ -75,13 +75,24 @@ type referrerCount struct {
 // client wraps an http.Client with auth, base URL, and cluster failover
 // per AI.md PART 33.
 type client struct {
-	base    string
-	cluster []string // additional URLs to try on primary failure
-	token   string
-	http    *http.Client
-	output  string
-	debug   bool
-	cfg     *config.CLIConfig // kept for cluster persistence
+	base       string
+	cluster    []string // additional URLs to try on primary failure
+	token      string
+	apiVersion string // API URL version segment (e.g. "v1"), from /api/autodiscover
+	http       *http.Client
+	output     string
+	debug      bool
+	cfg        *config.CLIConfig // kept for cluster persistence
+}
+
+// apiBasePath returns the versioned API mount prefix (e.g. "/api/v1"),
+// falling back to "v1" when the discovered version is empty (PART 14).
+func (c *client) apiBasePath() string {
+	v := c.apiVersion
+	if v == "" {
+		v = "v1"
+	}
+	return "/api/" + v
 }
 
 func newClient(cfg *config.CLIConfig, gf GlobalFlags) *client {
@@ -98,14 +109,19 @@ func newClient(cfg *config.CLIConfig, gf GlobalFlags) *client {
 		out = gf.Output
 	}
 	_ = out
+	ver := cfg.APIVersion
+	if ver == "" {
+		ver = "v1"
+	}
 	return &client{
-		base:    strings.TrimRight(base, "/"),
-		cluster: cfg.Cluster,
-		token:   tok,
-		http:    &http.Client{Timeout: 30 * time.Second},
-		output:  gf.Output,
-		debug:   gf.Debug,
-		cfg:     cfg,
+		base:       strings.TrimRight(base, "/"),
+		cluster:    cfg.Cluster,
+		token:      tok,
+		apiVersion: ver,
+		http:       &http.Client{Timeout: 30 * time.Second},
+		output:     gf.Output,
+		debug:      gf.Debug,
+		cfg:        cfg,
 	}
 }
 
@@ -133,6 +149,10 @@ func (c *client) refreshCluster() {
 	if len(disc.Cluster) > 0 {
 		c.cluster = disc.Cluster
 		c.cfg.Cluster = disc.Cluster
+	}
+	if disc.APIVersion != "" {
+		c.apiVersion = disc.APIVersion
+		c.cfg.APIVersion = disc.APIVersion
 	}
 	c.cfg.ClusterRefreshedAt = time.Now().Unix()
 	_ = config.SaveCLIConfig(c.cfg) // non-fatal if save fails
@@ -198,7 +218,7 @@ func (c *client) doWithFailover(method, path string, body io.Reader) (*apiRespon
 }
 
 func (c *client) do(method, path string, body io.Reader) (*apiResponse, error) {
-	url := c.base + "/api/v1" + path
+	url := c.base + c.apiBasePath() + path
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)

@@ -37,7 +37,7 @@ func AutodiscoverHandler(version string, cfg *config.Config, getTorManager func(
 		resp := map[string]any{
 			"primary":     primary,
 			"cluster":     []string{},
-			"api_version": "v1",
+			"api_version": cfg.Server.ResolvedAPIVersion(),
 			"timeout":     30,
 			"retry":       3,
 			"retry_delay": 1,

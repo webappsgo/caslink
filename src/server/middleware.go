@@ -123,8 +123,11 @@ const defaultCSP = "default-src 'self'; " +
 	"frame-ancestors 'self'; " +
 	"base-uri 'self'; " +
 	"form-action 'self'; " +
-	"object-src 'none'; " +
-	"report-uri /api/v1/server/reports/csp"
+	"object-src 'none'"
+
+// cspReportPath is the CSP report-uri path suffix, appended to the config-driven
+// API base path (PART 14) so the report endpoint always matches its mount.
+const cspReportPath = "/server/reports/csp"
 
 // defaultPermissionsPolicy is the spec-canonical Permissions-Policy header
 // (AI.md PART 11 "Permissions-Policy Configuration"). Features required by
@@ -153,8 +156,8 @@ const defaultPermissionsPolicy = "" +
 // header and the CSP upgrade-insecure-requests directive are also emitted.
 // In dev mode CSP is sent as Content-Security-Policy-Report-Only so that
 // violations are logged without blocking the app.
-func SecurityHeadersMiddleware(tlsEnabled, devMode bool) func(http.Handler) http.Handler {
-	csp := defaultCSP
+func SecurityHeadersMiddleware(tlsEnabled, devMode bool, apiBasePath string) func(http.Handler) http.Handler {
+	csp := defaultCSP + "; report-uri " + apiBasePath + cspReportPath
 	if tlsEnabled {
 		csp += "; upgrade-insecure-requests"
 	}
@@ -407,8 +410,10 @@ const csrfFormField = "_csrf"
 // CSRFMiddleware implements the double-submit cookie pattern.
 // Safe methods (GET, HEAD, OPTIONS, TRACE) are always allowed.
 // Requests with Authorization: Bearer are exempt (API token auth).
-// /.well-known/* and /server/healthz are exempt.
-func CSRFMiddleware() func(http.Handler) http.Handler {
+// /.well-known/* and the versioned/unversioned healthz endpoints are exempt.
+// apiBasePath is the config-driven API mount prefix (e.g. "/api/v1", PART 14).
+func CSRFMiddleware(apiBasePath string) func(http.Handler) http.Handler {
+	healthzPrefix := apiBasePath + "/server/healthz"
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			path := r.URL.Path
@@ -416,7 +421,7 @@ func CSRFMiddleware() func(http.Handler) http.Handler {
 			// Exempt paths
 			if strings.HasPrefix(path, "/.well-known/") ||
 				path == "/server/healthz" ||
-				strings.HasPrefix(path, "/api/v1/server/healthz") {
+				strings.HasPrefix(path, healthzPrefix) {
 				next.ServeHTTP(w, r)
 				return
 			}

@@ -108,7 +108,11 @@ type fetchLinksMsg struct {
 // fetchLinksCmd fires an HTTP request to list links.
 func fetchLinksCmd(cfg *config.CLIConfig) tea.Cmd {
 	return func() tea.Msg {
-		url := strings.TrimRight(cfg.Server, "/") + "/api/v1/links"
+		apiVersion := cfg.APIVersion
+		if apiVersion == "" {
+			apiVersion = "v1"
+		}
+		url := strings.TrimRight(cfg.Server, "/") + "/api/" + apiVersion + "/links"
 		req, err := http.NewRequest(http.MethodGet, url, nil)
 		if err != nil {
 			return fetchLinksMsg{err: err}
