@@ -568,6 +568,23 @@ func (o OrganizationsConfig) AuthenticatedCreationAllowed() bool {
 	return o.Enabled && o.AllowCreation && o.NormalizedCreationMode() == "open"
 }
 
+// OrgCreationInviteAllowed reports whether a valid organization-creation invite
+// may be consumed to create an organization under the current mode. Creation
+// invites apply to the invite mode (the open mode already allows unconditional
+// creation); admin_only routes creation through an administrator and disabled
+// forbids it entirely (PART 35).
+func (o OrganizationsConfig) OrgCreationInviteAllowed() bool {
+	if !o.Enabled {
+		return false
+	}
+	switch o.NormalizedCreationMode() {
+	case "open", "invite":
+		return true
+	default:
+		return false
+	}
+}
+
 // CustomDomainsConfig holds custom domain settings
 type CustomDomainsConfig struct {
 	Enabled           bool     `yaml:"enabled"`

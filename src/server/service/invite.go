@@ -12,13 +12,14 @@ import (
 )
 
 // Invite kinds. A single shared invite subsystem backs admin-registration
-// invites (PART 17), user-registration invites (PART 34), and org-membership
-// invites (PART 35). The kind discriminates which acceptance flow may consume
-// a given invite.
+// invites (PART 17), user-registration invites (PART 34), org-membership
+// invites (PART 35), and org-creation invites (PART 35 invite mode). The kind
+// discriminates which acceptance flow may consume a given invite.
 const (
 	InviteKindAdminRegistration = "admin_registration"
 	InviteKindUserRegistration  = "user_registration"
 	InviteKindOrgMembership     = "org_membership"
+	InviteKindOrgCreation       = "org_creation"
 )
 
 // InviteDefaultTTL is the default lifetime of a new invite (PART 17/34/35: 7 days).
@@ -86,7 +87,7 @@ type CreateInviteParams struct {
 // SHA-256 hash is stored.
 func (s *InviteService) CreateInvite(ctx context.Context, p CreateInviteParams) (string, *Invite, error) {
 	switch p.Kind {
-	case InviteKindAdminRegistration, InviteKindUserRegistration, InviteKindOrgMembership:
+	case InviteKindAdminRegistration, InviteKindUserRegistration, InviteKindOrgMembership, InviteKindOrgCreation:
 	default:
 		return "", nil, ErrInviteBadKind
 	}

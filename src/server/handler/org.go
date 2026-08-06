@@ -131,20 +131,39 @@ func (h *OrgHandler) CreateOrgPage(w http.ResponseWriter, r *http.Request) {
 		OrgName        string
 		OrgSlug        string
 		OrgDescription string
+		Invite         string
 	}{
-		Data: newPageData(h.config, r, "Create Organization", user),
+		Data:   newPageData(h.config, r, "Create Organization", user),
+		Invite: strings.TrimSpace(r.URL.Query().Get("invite")),
 	}
 	h.renderer.Render(w, "template/page/orgs/new.html", data)
 }
 
+// hasValidCreationInvite reports whether the supplied plaintext token is a
+// currently-consumable organization-creation invite (PART 35 invite mode). An
+// empty token, an unconfigured invite service, or a mode that does not honor
+// creation invites (admin_only, disabled) all return false.
+func (h *OrgHandler) hasValidCreationInvite(r *http.Request, token string) bool {
+	if token == "" || h.inviteService == nil {
+		return false
+	}
+	if !h.config.Server.Features.Organizations.OrgCreationInviteAllowed() {
+		return false
+	}
+	_, err := h.inviteService.ValidateInvite(r.Context(), token, service.InviteKindOrgCreation)
+	return err == nil
+}
+
 // creationBlockedReason applies the server-level org creation policy (PART 35):
-// the creation mode gate (only "open" allows self-service creation) and the
-// per-user ownership limit (max_per_user, 0 = unlimited). It returns a
-// human-readable reason and HTTP status when creation must be refused, or an
-// empty reason and 0 when the user may proceed.
-func (h *OrgHandler) creationBlockedReason(ctx context.Context, userID int64) (string, int) {
+// the creation mode gate (only "open" allows self-service creation, though a
+// valid creation invite bypasses the mode gate under invite mode) and the
+// per-user ownership limit (max_per_user, 0 = unlimited). The per-user limit is
+// never bypassed by an invite. It returns a human-readable reason and HTTP
+// status when creation must be refused, or an empty reason and 0 when the user
+// may proceed.
+func (h *OrgHandler) creationBlockedReason(ctx context.Context, userID int64, hasCreationInvite bool) (string, int) {
 	orgCfg := h.config.Server.Features.Organizations
-	if !orgCfg.AuthenticatedCreationAllowed() {
+	if !orgCfg.AuthenticatedCreationAllowed() && !hasCreationInvite {
 		switch orgCfg.NormalizedCreationMode() {
 		case "invite":
 			return "Organization creation is invite-only. Use the creation invite issued by an administrator.", http.StatusForbidden
@@ -181,20 +200,22 @@ func (h *OrgHandler) CreateOrg(w http.ResponseWriter, r *http.Request) {
 
 	name := r.FormValue("name")
 	slug := r.FormValue("slug")
+	inviteToken := strings.TrimSpace(r.FormValue("invite"))
+	hasInvite := h.hasValidCreationInvite(r, inviteToken)
 
-	if reason, status := h.creationBlockedReason(r.Context(), user.ID); reason != "" {
+	if reason, status := h.creationBlockedReason(r.Context(), user.ID, hasInvite); reason != "" {
 		w.WriteHeader(status)
-		h.renderNewOrgWithError(w, r, user, name, slug, reason)
+		h.renderNewOrgWithError(w, r, user, name, slug, inviteToken, reason)
 		return
 	}
 
 	if len(name) < 3 || len(name) > 40 {
-		h.renderNewOrgWithError(w, r, user, name, slug, "Organization name must be between 3 and 40 characters")
+		h.renderNewOrgWithError(w, r, user, name, slug, inviteToken, "Organization name must be between 3 and 40 characters")
 		return
 	}
 
 	if err := validate.ValidateOrgSlug(slug); err != nil {
-		h.renderNewOrgWithError(w, r, user, name, slug, err.Error())
+		h.renderNewOrgWithError(w, r, user, name, slug, inviteToken, err.Error())
 		return
 	}
 
@@ -203,23 +224,31 @@ func (h *OrgHandler) CreateOrg(w http.ResponseWriter, r *http.Request) {
 
 	org, err := h.orgService.CreateOrganization(ctx, user.ID, name, slug)
 	if err != nil {
-		h.renderNewOrgWithError(w, r, user, name, slug, err.Error())
+		h.renderNewOrgWithError(w, r, user, name, slug, inviteToken, err.Error())
 		return
+	}
+
+	// Consume the single-use creation invite only after the org exists, binding
+	// it to the new owner (PART 35 invite mode).
+	if hasInvite {
+		_, _ = h.inviteService.ConsumeInvite(ctx, inviteToken, service.InviteKindOrgCreation, org.OwnerID)
 	}
 
 	http.Redirect(w, r, "/orgs/"+org.Slug+"/", http.StatusSeeOther)
 }
 
-func (h *OrgHandler) renderNewOrgWithError(w http.ResponseWriter, r *http.Request, user *service.User, name, slug, errMsg string) {
+func (h *OrgHandler) renderNewOrgWithError(w http.ResponseWriter, r *http.Request, user *service.User, name, slug, invite, errMsg string) {
 	data := struct {
 		tmpl.Data
 		OrgName        string
 		OrgSlug        string
 		OrgDescription string
+		Invite         string
 	}{
 		Data:    newPageData(h.config, r, "Create Organization", user),
 		OrgName: name,
 		OrgSlug: slug,
+		Invite:  invite,
 	}
 	data.Data.Flash = &tmpl.Flash{Type: "danger", Message: errMsg}
 	h.renderer.Render(w, "template/page/orgs/new.html", data)
@@ -843,7 +872,13 @@ func (h *OrgHandler) APICreateOrg(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	if reason, status := h.creationBlockedReason(ctx, user.ID); reason != "" {
+	inviteToken := strings.TrimSpace(req.Invite)
+	if inviteToken == "" {
+		inviteToken = strings.TrimSpace(r.URL.Query().Get("invite"))
+	}
+	hasInvite := h.hasValidCreationInvite(r, inviteToken)
+
+	if reason, status := h.creationBlockedReason(ctx, user.ID, hasInvite); reason != "" {
 		respondError(w, status, reason)
 		return
 	}
@@ -852,6 +887,12 @@ func (h *OrgHandler) APICreateOrg(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+
+	// Consume the single-use creation invite only after the org exists, binding
+	// it to the new owner (PART 35 invite mode).
+	if hasInvite {
+		_, _ = h.inviteService.ConsumeInvite(ctx, inviteToken, service.InviteKindOrgCreation, org.OwnerID)
 	}
 
 	respondJSON(w, http.StatusCreated, map[string]interface{}{"success": true, "organization": org})

@@ -818,3 +818,29 @@ func TestOrgCreationModeGating(t *testing.T) {
 		})
 	}
 }
+
+func TestOrgCreationInviteAllowed(t *testing.T) {
+	cases := []struct {
+		name    string
+		enabled bool
+		mode    string
+		want    bool
+	}{
+		{"open honors creation invites", true, "open", true},
+		{"invite honors creation invites", true, "invite", true},
+		{"admin_only forbids creation invites", true, "admin_only", false},
+		{"disabled forbids creation invites", true, "disabled", false},
+		{"feature disabled forbids creation invites", false, "invite", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			o := OrganizationsConfig{
+				Enabled:  tc.enabled,
+				Creation: OrgCreationConfig{Mode: tc.mode},
+			}
+			if got := o.OrgCreationInviteAllowed(); got != tc.want {
+				t.Errorf("OrgCreationInviteAllowed() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

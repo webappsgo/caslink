@@ -11,6 +11,7 @@
     {{end}}
     <form method="POST" action="/orgs/new" id="org-form">
       <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+      {{if .Invite}}<input type="hidden" name="invite" value="{{.Invite}}">{{end}}
       <div class="form-group">
         <label for="name">Organization Name <span class="text-danger">*</span></label>
         <input class="form-control" type="text" id="name" name="name"

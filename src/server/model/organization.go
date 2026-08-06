@@ -26,8 +26,9 @@ type OrgMember struct {
 
 // CreateOrgRequest represents a request to create an organization
 type CreateOrgRequest struct {
-	Name string `json:"name" validate:"required,min=3,max=100"`
-	Slug string `json:"slug,omitempty" validate:"omitempty,min=3,max=50"`
+	Name   string `json:"name" validate:"required,min=3,max=100"`
+	Slug   string `json:"slug,omitempty" validate:"omitempty,min=3,max=50"`
+	Invite string `json:"invite,omitempty"`
 }
 
 // UpdateOrgRequest represents a request to update an organization

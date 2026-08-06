@@ -241,6 +241,65 @@ func TestCreateOrgFormDuplicateSlug(t *testing.T) {
 	}
 }
 
+// setOrgCreationMode flips the handler's live org creation mode (PART 35),
+// leaving Enabled/AllowCreation at their DefaultConfig values.
+func setOrgCreationMode(h *OrgHandler, mode string) {
+	h.config.Server.Features.Organizations.Creation.Mode = mode
+}
+
+func TestCreateOrgInviteModeBlockedWithoutInvite(t *testing.T) {
+	h, _, authService, _ := newOrgTestHandler(t)
+	setOrgCreationMode(h, "invite")
+	user := registerTestUser(t, authService, "ingrid", "ingrid@example.com")
+
+	form := url.Values{"name": {"Ingrid Org"}, "slug": {"ingrid-org"}}
+	r := httptest.NewRequest(http.MethodPost, "/orgs/new", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r = withUser(r, user)
+	w := httptest.NewRecorder()
+	h.CreateOrg(w, r)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 under invite mode without an invite, got %d: %s", w.Code, w.Body.String())
+	}
+	if _, err := h.orgService.GetOrganizationBySlug(context.Background(), "ingrid-org"); err == nil {
+		t.Fatal("org must not have been created without a valid invite")
+	}
+}
+
+func TestCreateOrgInviteModeAllowedWithInvite(t *testing.T) {
+	h, _, authService, st := newOrgTestHandler(t)
+	setOrgCreationMode(h, "invite")
+	user := registerTestUser(t, authService, "isaac", "isaac@example.com")
+
+	inviteSvc := service.NewInviteService(st)
+	plaintext, _, err := inviteSvc.CreateInvite(context.Background(), service.CreateInviteParams{
+		Kind:      service.InviteKindOrgCreation,
+		CreatedBy: user.ID,
+	})
+	if err != nil {
+		t.Fatalf("CreateInvite failed: %v", err)
+	}
+
+	form := url.Values{"name": {"Isaac Org"}, "slug": {"isaac-org"}, "invite": {plaintext}}
+	r := httptest.NewRequest(http.MethodPost, "/orgs/new", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r = withUser(r, user)
+	w := httptest.NewRecorder()
+	h.CreateOrg(w, r)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 redirect with a valid creation invite, got %d: %s", w.Code, w.Body.String())
+	}
+	if _, err := h.orgService.GetOrganizationBySlug(context.Background(), "isaac-org"); err != nil {
+		t.Fatalf("org should exist after invite-mode creation: %v", err)
+	}
+	// The single-use invite must be consumed by a successful creation.
+	if _, err := inviteSvc.ValidateInvite(context.Background(), plaintext, service.InviteKindOrgCreation); err == nil {
+		t.Fatal("creation invite should be consumed and no longer valid")
+	}
+}
+
 // ---------------------------------------------------------------------
 // OrgDashboard / OrgSettings / OrgMembers (HTML)
 // ---------------------------------------------------------------------
