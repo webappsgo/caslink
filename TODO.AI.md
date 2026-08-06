@@ -12,15 +12,6 @@ deleted). Each is feature-sized or needs verification unavailable in this
 environment; all bounded security/logic/config findings from that pass were
 fixed inline and committed separately.
 
-- SSL certificate lookup order (PART 15): startup should probe
-  `/etc/letsencrypt/live/{domain}/` → `/etc/letsencrypt/live/{fqdn}/` →
-  `{config_dir}/ssl/letsencrypt/{fqdn}/` → `{config_dir}/ssl/local/{fqdn}/`
-  before requesting a new cert, and only auto-renew the app-managed
-  `{config_dir}/ssl/letsencrypt/` path. The current server uses autocert
-  directly without the 4-step discovery of pre-existing certbot/local certs.
-  Feature gap — needs the discovery layer plus renewal-ownership gating and a
-  real cert/host to verify. Deferred.
-
 - Service user UID/GID safe-range allocation (PART 24): `ensureServiceUser()`
   delegates to `useradd --system`, so it does not enforce the spec's
   UID==GID, 200-899 safe range, or reserved-ID skip. Correct enforcement means
