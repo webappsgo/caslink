@@ -26,11 +26,6 @@ fixed inline and committed separately.
   `form[data-confirm]` with a custom `<dialog>` modal per frontend-rules
   ("NEVER use alert()/confirm()/prompt()"). Needs browser verification.
 
-- Orphaned dead code: `src/server/static/js/app.js` is a stale, non-embedded
-  duplicate of the live `src/server/tmpl/static/js/app.js` (only the tmpl copy
-  is served via `//go:embed static`). Remove the orphan or confirm it is
-  unused, then delete. Logged during the CSP externalization work.
-
 - Pre-existing gofmt drift: `src/backup/crypto_test.go`, `src/paths/paths.go`,
   and `src/updater/update_test.go` are flagged by `gofmt -l` but were not
   touched by recent feature work. Reformat in an isolated commit (formatting
