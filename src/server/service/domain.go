@@ -2,6 +2,9 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -93,6 +96,7 @@ type CustomDomain struct {
 	IsApex             bool
 	IsWildcard         bool
 	VerificationStatus string
+	VerificationToken  string
 	VerifiedAt         *time.Time
 	VerifiedIP         *string
 	LastCheckAt        *time.Time
@@ -103,6 +107,61 @@ type CustomDomain struct {
 	Status             string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
+}
+
+// generateVerificationToken returns a random ownership-proof token of the form
+// "verify_" + 24 hex chars, published by the owner at _verify.{domain} as a TXT
+// record (PART 36 Verification Flow).
+func generateVerificationToken() (string, error) {
+	b := make([]byte, 12)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate verification token: %w", err)
+	}
+	return "verify_" + hex.EncodeToString(b), nil
+}
+
+// DNSRecord describes a single DNS record the owner must configure.
+type DNSRecord struct {
+	Type  string `json:"type"`
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+// DNSRouting describes the routing options (CNAME/A/AAAA) that direct traffic
+// to this server. Routing is not the ownership proof (see PART 36).
+type DNSRouting struct {
+	Target       string   `json:"target"`
+	TargetIPs    []string `json:"target_ips"`
+	Instructions string   `json:"instructions"`
+}
+
+// DNSInstructions is the full set of DNS records returned to the owner after a
+// domain is added: the required ownership TXT record plus routing options.
+type DNSInstructions struct {
+	Verification DNSRecord  `json:"verification"`
+	Routing      DNSRouting `json:"routing"`
+}
+
+// BuildDNSInstructions assembles the DNS setup instructions for a domain: the
+// ownership verification TXT record (_verify.{domain} = token) and the routing
+// targets (this server's public IPs). Routing IP discovery failing is
+// non-fatal — the verification record is always returned.
+func (s *DomainService) BuildDNSInstructions(ctx context.Context, cd *CustomDomain) DNSInstructions {
+	var ipStrs []string
+	for _, ip := range serverPublicIPs(ctx) {
+		ipStrs = append(ipStrs, ip.String())
+	}
+	return DNSInstructions{
+		Verification: DNSRecord{
+			Type:  "TXT",
+			Name:  "_verify." + cd.Domain,
+			Value: cd.VerificationToken,
+		},
+		Routing: DNSRouting{
+			TargetIPs:    ipStrs,
+			Instructions: "Point this domain at the server: add A/AAAA records for the IPs above (required for apex domains), or a CNAME to the server's hostname (subdomains).",
+		},
+	}
 }
 
 // AddDomain adds a new custom domain for a user or organization
@@ -149,14 +208,20 @@ func (s *DomainService) AddDomain(ctx context.Context, ownerType string, ownerID
 	// strings like "localhost" and treated every real domain as non-apex.
 	isApex := strings.Count(domain, ".") == 1
 
+	// Generate the ownership-proof token published at _verify.{domain}.
+	token, err := generateVerificationToken()
+	if err != nil {
+		return nil, err
+	}
+
 	// Insert domain
 	query := `INSERT INTO custom_domains (
 		owner_type, owner_id, domain, is_apex, is_wildcard,
-		verification_status, ssl_status, status, created_at, updated_at
-	) VALUES (?, ?, ?, ?, 0, 'pending', 'none', 'pending', ?, ?)`
+		verification_status, verification_token, ssl_status, status, created_at, updated_at
+	) VALUES (?, ?, ?, ?, 0, 'pending', ?, 'none', 'pending', ?, ?)`
 
 	result, err := s.store.UsersDB.ExecContext(ctx, query,
-		ownerType, ownerID, domain, isApex, time.Now(), time.Now())
+		ownerType, ownerID, domain, isApex, token, time.Now(), time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("failed to add domain: %w", err)
 	}
@@ -175,6 +240,7 @@ func (s *DomainService) AddDomain(ctx context.Context, ownerType string, ownerID
 		IsApex:             isApex,
 		IsWildcard:         false,
 		VerificationStatus: "pending",
+		VerificationToken:  token,
 		SSLEnabled:         false,
 		SSLStatus:          "none",
 		Status:             "pending",
@@ -340,23 +406,30 @@ func serverPublicIPs(ctx context.Context) []net.IP {
 	return ips
 }
 
-// VerifyDomain verifies that a custom domain resolves to this server's public
-// IP. On success the domain is marked verified and activated. On DNS failure
-// an error is returned describing the mismatch.
+// VerifyDomain proves domain ownership via a DNS TXT record. The owner must
+// publish the domain's verification_token at _verify.{domain}; this method
+// looks it up and constant-time compares against the stored token. TXT
+// verification proves control of the domain and works behind CDNs/proxies
+// (PART 36 Verification Flow). Routing records (A/AAAA/CNAME) are NOT the
+// ownership proof and are never used here. On success the domain is marked
+// verified and activated; on any failure the check metadata is updated and a
+// coded error is returned.
 func (s *DomainService) VerifyDomain(ctx context.Context, domainID int64) error {
 	domain, err := s.getDomainByID(ctx, domainID)
 	if err != nil {
 		return err
 	}
 
-	// Discover what IPs this server is reachable on.
-	srvIPs := serverPublicIPs(ctx)
+	// Load the stored ownership token for this domain.
+	var token string
+	if err := s.store.UsersDB.QueryRowContext(ctx,
+		"SELECT verification_token FROM custom_domains WHERE id = ?", domainID,
+	).Scan(&token); err != nil {
+		return fmt.Errorf("failed to load verification token: %w", err)
+	}
 
-	// Resolve the custom domain.
-	resolved, err := net.DefaultResolver.LookupIPAddr(ctx, domain.Domain)
-	if err != nil {
-		// Update check metadata even on failure.
-		now := time.Now()
+	now := time.Now()
+	markFailed := func() {
 		_, _ = s.store.UsersDB.ExecContext(ctx,
 			`UPDATE custom_domains
 			 SET verification_status = 'failed',
@@ -366,40 +439,28 @@ func (s *DomainService) VerifyDomain(ctx context.Context, domainID int64) error 
 			 WHERE id = ?`,
 			now, now, domainID,
 		)
-		return fmt.Errorf("DNS_LOOKUP_FAILED: could not resolve %s: %w", domain.Domain, err)
 	}
 
-	// Check if any resolved IP matches a server IP.
-	var resolvedStrs []string
+	// Look up the ownership TXT record at _verify.{domain}.
+	record := "_verify." + domain.Domain
+	values, err := net.DefaultResolver.LookupTXT(ctx, record)
+	if err != nil {
+		markFailed()
+		return fmt.Errorf("DNS_LOOKUP_FAILED: TXT lookup for %s failed: %w", record, err)
+	}
+
+	// Constant-time compare each TXT value against the verification token.
 	matched := false
-	var matchedIP string
-	for _, addr := range resolved {
-		resolvedStrs = append(resolvedStrs, addr.IP.String())
-		for _, srv := range srvIPs {
-			if addr.IP.Equal(srv) {
-				matched = true
-				matchedIP = addr.IP.String()
-				break
-			}
-		}
-		if matched {
+	for _, v := range values {
+		if subtle.ConstantTimeCompare([]byte(strings.TrimSpace(v)), []byte(token)) == 1 {
+			matched = true
 			break
 		}
 	}
 
-	now := time.Now()
 	if !matched {
-		_, _ = s.store.UsersDB.ExecContext(ctx,
-			`UPDATE custom_domains
-			 SET verification_status = 'failed',
-			     last_check_at = ?,
-			     check_count = check_count + 1,
-			     updated_at = ?
-			 WHERE id = ?`,
-			now, now, domainID,
-		)
-		return fmt.Errorf("DNS_MISMATCH: %s resolves to %v, not this server",
-			domain.Domain, resolvedStrs)
+		markFailed()
+		return fmt.Errorf("TXT_RECORD_MISSING: TXT record %s not found or does not match the verification token. DNS propagation can take up to 48 hours", record)
 	}
 
 	// Mark domain as verified and active. Non-wildcard domains become
@@ -421,7 +482,6 @@ func (s *DomainService) VerifyDomain(ctx context.Context, domainID int64) error 
 		`UPDATE custom_domains
 		 SET verification_status = 'verified',
 		     verified_at = ?,
-		     verified_ip = ?,
 		     last_check_at = ?,
 		     check_count = check_count + 1,
 		     status = 'active',
@@ -429,7 +489,7 @@ func (s *DomainService) VerifyDomain(ctx context.Context, domainID int64) error 
 		     ssl_status = ?,
 		     updated_at = ?
 		 WHERE id = ?`,
-		now, matchedIP, now, sslEnabled, sslStatus, now, domainID,
+		now, now, sslEnabled, sslStatus, now, domainID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update domain: %w", err)

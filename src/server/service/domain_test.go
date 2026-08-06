@@ -34,6 +34,7 @@ func newTestDomainStore(t *testing.T) *store.Store {
 		is_apex BOOLEAN DEFAULT 0,
 		is_wildcard BOOLEAN DEFAULT 0,
 		verification_status TEXT NOT NULL DEFAULT 'pending',
+		verification_token TEXT NOT NULL DEFAULT '',
 		verified_at DATETIME,
 		verified_ip TEXT,
 		last_check_at DATETIME,

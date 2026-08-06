@@ -65,11 +65,13 @@ fixed inline and committed separately.
   needs browser verification of every interactive page. Deferred.
 
 - PART 36 full custom-domains build: AddDomain now enforces limits, reserved,
-  and blocked_patterns (fixed inline), but the complete feature — TXT
-  ownership-token verification, resolver middleware, user+org+admin
-  web/API routes, DNS-01 ACME issuance, scheduled verify-retry/SSL-renewal/
-  cleanup tasks, domain caching, and rate limiting — is a multi-part feature
-  build. Deferred.
+  and blocked_patterns; VerifyDomain now performs real TXT ownership-token
+  verification (net.LookupTXT of _verify.{domain} + constant-time compare),
+  AddDomain issues the token and returns dns_instructions, and the schema
+  carries verification_token plus the status/ssl_expires indexes. Still
+  remaining: resolver middleware, user+org+admin web/API routes, DNS-01 ACME
+  issuance and cert persistence, scheduled verify-retry/SSL-renewal/cleanup
+  tasks, domain caching, and rate limiting. Deferred.
 
 - PART 34 registration modes: implement open/invite/admin_only/disabled
   gating and the Server-Admin invite/activation-link flow (single-use, 7-day

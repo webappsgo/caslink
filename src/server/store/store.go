@@ -406,7 +406,7 @@ func (s *Store) initUsersSchema() error {
 			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 		)`,
 
-		// Custom domains (updated per PART 35 spec)
+		// Custom domains (PART 36)
 		`CREATE TABLE IF NOT EXISTS custom_domains (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			owner_type TEXT NOT NULL,
@@ -415,6 +415,7 @@ func (s *Store) initUsersSchema() error {
 			is_apex BOOLEAN DEFAULT 0,
 			is_wildcard BOOLEAN DEFAULT 0,
 			verification_status TEXT NOT NULL DEFAULT 'pending',
+			verification_token TEXT NOT NULL DEFAULT '',
 			verified_at DATETIME,
 			verified_ip TEXT,
 			last_check_at DATETIME,
@@ -560,6 +561,8 @@ func (s *Store) initUsersSchema() error {
 		`CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_custom_domains_domain ON custom_domains(domain)`,
 		`CREATE INDEX IF NOT EXISTS idx_custom_domains_owner ON custom_domains(owner_type, owner_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_custom_domains_status ON custom_domains(status)`,
+		`CREATE INDEX IF NOT EXISTS idx_custom_domains_ssl_expires ON custom_domains(ssl_expires_at)`,
 		// Org-scoped API tokens (PART 35)
 		`CREATE TABLE IF NOT EXISTS org_tokens (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -640,6 +643,7 @@ func (s *Store) initUsersSchema() error {
 		`ALTER TABLE totp_secrets ADD COLUMN key_version INTEGER NOT NULL DEFAULT 0`,
 		`ALTER TABLE users ADD COLUMN display_name TEXT`,
 		`ALTER TABLE users ADD COLUMN bio TEXT`,
+		`ALTER TABLE custom_domains ADD COLUMN verification_token TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, q := range addColumnQueries {
 		ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)

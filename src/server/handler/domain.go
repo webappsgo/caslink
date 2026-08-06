@@ -73,10 +73,11 @@ func (h *DomainHandler) AddUserDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return created domain
+	// Return created domain with the DNS records the owner must configure.
 	respondJSON(w, http.StatusCreated, map[string]interface{}{
-		"success": true,
-		"domain":  domain,
+		"success":          true,
+		"domain":           domain,
+		"dns_instructions": h.domainService.BuildDNSInstructions(ctx, domain),
 	})
 }
 
@@ -192,7 +193,8 @@ func (h *DomainHandler) AddOrgDomain(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusCreated, map[string]interface{}{
-		"ok":     true,
-		"domain": domain,
+		"ok":               true,
+		"domain":           domain,
+		"dns_instructions": h.domainService.BuildDNSInstructions(ctx, domain),
 	})
 }

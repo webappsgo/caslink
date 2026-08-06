@@ -14,6 +14,7 @@ type CustomDomain struct {
 	IsApex             bool       `json:"is_apex"`
 	IsWildcard         bool       `json:"is_wildcard"`
 	VerificationStatus string     `json:"verification_status"` // pending, verified, failed
+	VerificationToken  string     `json:"verification_token,omitempty"`
 	VerifiedAt         *time.Time `json:"verified_at,omitempty"`
 	VerifiedIP         *string    `json:"verified_ip,omitempty"`
 	LastCheckAt        *time.Time `json:"last_check_at,omitempty"`
