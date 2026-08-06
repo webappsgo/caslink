@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 
@@ -14,17 +15,19 @@ import (
 
 // AuthUserHandler handles user authentication and registration
 type AuthUserHandler struct {
-	authService *service.AuthService
-	renderer    *tmpl.Renderer
-	cfg         *config.Config
+	authService   *service.AuthService
+	inviteService *service.InviteService
+	renderer      *tmpl.Renderer
+	cfg           *config.Config
 }
 
 // NewAuthUserHandler creates a new user auth handler
-func NewAuthUserHandler(authService *service.AuthService, renderer *tmpl.Renderer, cfg *config.Config) *AuthUserHandler {
+func NewAuthUserHandler(authService *service.AuthService, inviteService *service.InviteService, renderer *tmpl.Renderer, cfg *config.Config) *AuthUserHandler {
 	return &AuthUserHandler{
-		authService: authService,
-		renderer:    renderer,
-		cfg:         cfg,
+		authService:   authService,
+		inviteService: inviteService,
+		renderer:      renderer,
+		cfg:           cfg,
 	}
 }
 
@@ -43,12 +46,16 @@ func (h *AuthUserHandler) registrationClosedMessage() string {
 
 // RegisterPage renders the registration page
 func (h *AuthUserHandler) RegisterPage(w http.ResponseWriter, r *http.Request) {
-	if !h.cfg.Server.Features.Users.Registration.PublicSelfRegistrationAllowed() {
+	inviteToken := strings.TrimSpace(r.URL.Query().Get("invite"))
+	// A valid user-registration invite permits account creation even when public
+	// self-registration is closed (invite / admin_only modes, PART 34).
+	if !h.cfg.Server.Features.Users.Registration.PublicSelfRegistrationAllowed() && !h.hasValidRegistrationInvite(r, inviteToken) {
 		data := struct {
 			tmpl.Data
 			Error    string
 			Username string
 			Email    string
+			Invite   string
 		}{
 			Data:  newPageData(h.cfg, r, "Create Account", nil),
 			Error: h.registrationClosedMessage(),
@@ -63,10 +70,23 @@ func (h *AuthUserHandler) RegisterPage(w http.ResponseWriter, r *http.Request) {
 		Error    string
 		Username string
 		Email    string
+		Invite   string
 	}{
-		Data: newPageData(h.cfg, r, "Create Account", nil),
+		Data:   newPageData(h.cfg, r, "Create Account", nil),
+		Invite: inviteToken,
 	}
 	h.renderer.Render(w, "template/page/auth/register.html", data)
+}
+
+// hasValidRegistrationInvite reports whether the supplied plaintext token is a
+// currently-consumable user-registration invite (PART 34). An empty token or an
+// unconfigured invite service returns false.
+func (h *AuthUserHandler) hasValidRegistrationInvite(r *http.Request, token string) bool {
+	if token == "" || h.inviteService == nil {
+		return false
+	}
+	_, err := h.inviteService.ValidateInvite(r.Context(), token, service.InviteKindUserRegistration)
+	return err == nil
 }
 
 // Register handles user registration (JSON and form)
@@ -74,15 +94,41 @@ func (h *AuthUserHandler) Register(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	isForm := strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded")
 
-	// Public self-registration is only permitted in "open" mode (PART 34).
-	// invite / admin_only / disabled reject the public endpoint outright.
-	if !h.cfg.Server.Features.Users.Registration.PublicSelfRegistrationAllowed() {
+	var username, email, password, inviteToken string
+
+	if isForm {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Invalid form", http.StatusBadRequest)
+			return
+		}
+		username = r.PostFormValue("username")
+		email = r.PostFormValue("email")
+		password = r.PostFormValue("password")
+		inviteToken = strings.TrimSpace(r.PostFormValue("invite"))
+	} else {
+		var req model.RegisterUserRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+		username = req.Username
+		email = req.Email
+		password = req.Password
+		inviteToken = strings.TrimSpace(req.Invite)
+	}
+
+	// Registration is permitted when public self-registration is open, OR the
+	// caller presents a valid user-registration invite (invite / admin_only
+	// modes, PART 34). The invite is only consumed after the account is created.
+	hasInvite := h.hasValidRegistrationInvite(r, inviteToken)
+	if !h.cfg.Server.Features.Users.Registration.PublicSelfRegistrationAllowed() && !hasInvite {
 		if isForm {
 			data := struct {
 				tmpl.Data
 				Error    string
 				Username string
 				Email    string
+				Invite   string
 			}{
 				Data:  newPageData(h.cfg, r, "Create Account", nil),
 				Error: h.registrationClosedMessage(),
@@ -95,38 +141,19 @@ func (h *AuthUserHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var username, email, password string
-
-	if isForm {
-		if err := r.ParseForm(); err != nil {
-			http.Error(w, "Invalid form", http.StatusBadRequest)
-			return
-		}
-		username = r.PostFormValue("username")
-		email = r.PostFormValue("email")
-		password = r.PostFormValue("password")
-	} else {
-		var req model.RegisterUserRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "Invalid request body", http.StatusBadRequest)
-			return
-		}
-		username = req.Username
-		email = req.Email
-		password = req.Password
-	}
-
 	renderErr := func(msg, savedUser, savedEmail string) {
 		data := struct {
 			tmpl.Data
 			Error    string
 			Username string
 			Email    string
+			Invite   string
 		}{
 			Data:     newPageData(h.cfg, r, "Create Account", nil),
 			Error:    msg,
 			Username: savedUser,
 			Email:    savedEmail,
+			Invite:   inviteToken,
 		}
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		h.renderer.Render(w, "template/page/auth/register.html", data)
@@ -165,6 +192,15 @@ func (h *AuthUserHandler) Register(w http.ResponseWriter, r *http.Request) {
 		}
 		respondError(w, http.StatusBadRequest, "Unable to complete registration")
 		return
+	}
+
+	// Consume the invite now that the account exists. A consumption failure here
+	// (e.g. the invite was used concurrently) must not orphan the created
+	// account, so it is logged best-effort rather than surfaced to the user.
+	if hasInvite && h.inviteService != nil {
+		if _, cerr := h.inviteService.ConsumeInvite(ctx, inviteToken, service.InviteKindUserRegistration, user.ID); cerr != nil {
+			log.Printf("[register] failed to consume invite for user %d: %v", user.ID, cerr)
+		}
 	}
 
 	sessionID, err := h.authService.CreateUserSession(ctx, user.ID, false)

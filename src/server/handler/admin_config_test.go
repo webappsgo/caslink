@@ -1,12 +1,16 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/webappsgo/caslink/src/server/service"
 )
 
 // configGETCase describes one Config*/AdminHelp GET handler under test.
@@ -269,10 +273,11 @@ func TestConfigBackupActionRedirect(t *testing.T) {
 }
 
 func TestConfigStubActionHandlersRedirectWithoutPersisting(t *testing.T) {
-	// ConfigSecurityTokensAction, ConfigUsersInvitesAction, and
-	// ConfigClusterAddAction are documented stubs: they parse the form and
-	// redirect, but do not yet implement real token/invite/join-token
-	// creation. This test locks in the observed (non-crashing) behavior.
+	// ConfigSecurityTokensAction and ConfigClusterAddAction are documented
+	// stubs: they parse the form and redirect, but do not yet implement real
+	// token/join-token creation. This test locks in the observed
+	// (non-crashing) behavior. (ConfigUsersInvitesAction is now fully
+	// implemented and covered by TestConfigUsersInvitesCreateListRevoke.)
 	h, authService, _ := newAdminTestHandler(t)
 	cookie := seedAdminSession(t, h, authService)
 
@@ -282,12 +287,10 @@ func TestConfigStubActionHandlersRedirectWithoutPersisting(t *testing.T) {
 		handler http.HandlerFunc
 	}{
 		{"ConfigSecurityTokensAction", "/server/admin/config/security/tokens", nil},
-		{"ConfigUsersInvitesAction", "/server/admin/config/users/invites", nil},
 		{"ConfigClusterAddAction", "/server/admin/config/cluster/add", nil},
 	}
 	cases[0].handler = h.ConfigSecurityTokensAction
-	cases[1].handler = h.ConfigUsersInvitesAction
-	cases[2].handler = h.ConfigClusterAddAction
+	cases[1].handler = h.ConfigClusterAddAction
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -477,5 +480,57 @@ func TestConfigLogsAuditRendersSeededEvents(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "test.event") {
 		t.Fatalf("expected seeded audit event in body, got %q", w.Body.String())
+	}
+}
+
+// TestConfigUsersInvitesCreateListRevoke exercises the full user-registration
+// invite management flow (PART 34): create an invite (one-time link shown once),
+// list it, then revoke it and confirm it is gone.
+func TestConfigUsersInvitesCreateListRevoke(t *testing.T) {
+	h, authService, st := newAdminTestHandler(t)
+	cookie := seedAdminSession(t, h, authService)
+	inviteSvc := service.NewInviteService(st)
+
+	// Create.
+	form := url.Values{"email": {"newuser@example.com"}, "expires_in": {"24h"}, "max_uses": {"1"}}
+	r := httptest.NewRequest(http.MethodPost, "/server/admin/config/users/invites", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.AddCookie(cookie)
+	w := httptest.NewRecorder()
+	h.ConfigUsersInvitesAction(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("create invite: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "/register?invite=") {
+		t.Fatal("create invite: expected the one-time acceptance link in the response")
+	}
+
+	// It should now appear in the active list.
+	invites, err := inviteSvc.ListInvitesByKind(context.Background(), service.InviteKindUserRegistration, 0)
+	if err != nil {
+		t.Fatalf("ListInvitesByKind failed: %v", err)
+	}
+	if len(invites) != 1 {
+		t.Fatalf("expected exactly 1 active invite, got %d", len(invites))
+	}
+	inviteID := invites[0].ID
+
+	// Revoke.
+	rr := httptest.NewRequest(http.MethodPost, "/server/admin/config/users/invites/"+strconv.FormatInt(inviteID, 10)+"/revoke", nil)
+	rr = withChiParam(rr, "id", strconv.FormatInt(inviteID, 10))
+	rr.AddCookie(cookie)
+	wr := httptest.NewRecorder()
+	h.ConfigUsersInvitesRevoke(wr, rr)
+	if wr.Code != http.StatusFound {
+		t.Fatalf("revoke invite: expected 302, got %d: %s", wr.Code, wr.Body.String())
+	}
+
+	// After revocation the active list is empty.
+	invites, err = inviteSvc.ListInvitesByKind(context.Background(), service.InviteKindUserRegistration, 0)
+	if err != nil {
+		t.Fatalf("ListInvitesByKind (post-revoke) failed: %v", err)
+	}
+	if len(invites) != 0 {
+		t.Fatalf("expected 0 active invites after revoke, got %d", len(invites))
 	}
 }

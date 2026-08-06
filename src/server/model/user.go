@@ -24,6 +24,9 @@ type RegisterUserRequest struct {
 	Username string `json:"username" validate:"required,min=3,max=32"`
 	Email    string `json:"email" validate:"required,email,max=255"`
 	Password string `json:"password" validate:"required,min=8"`
+	// Invite optionally carries a user-registration invite token, permitting
+	// account creation when public self-registration is closed (PART 34).
+	Invite string `json:"invite,omitempty"`
 }
 
 // LoginRequest represents a login request

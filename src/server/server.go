@@ -362,7 +362,7 @@ func (s *Server) setupRoutes() {
 	bulkHandler := handler.NewBulkHandler(bulkService)
 	adminHandler := handler.NewAdminHandler(authService, userAdminService, auditService, s.Version, s.mode.String(), adminPath, s.config, s.store, func() *apktor.TorManager { return s.torManager })
 	setupHandler := handler.NewSetupHandler(authService, s.config, s.Version)
-	authUserHandler := handler.NewAuthUserHandler(authService, s.renderer, s.config)
+	authUserHandler := handler.NewAuthUserHandler(authService, inviteService, s.renderer, s.config)
 	twoFactorHandler := handler.NewTwoFactorHandler(authService, totpService)
 	passwordHandler := handler.NewPasswordHandler(authService, emailService, s.renderer, s.config)
 	userHandler := handler.NewUserHandler(authService, tokenService, urlService, s.renderer, s.config)
@@ -679,6 +679,7 @@ func (s *Server) setupRoutes() {
 			// User invites
 			ar.Get("/config/users/invites", adminHandler.ConfigUsersInvites)
 			ar.Post("/config/users/invites", adminHandler.ConfigUsersInvitesAction)
+			ar.Post("/config/users/invites/{id}/revoke", adminHandler.ConfigUsersInvitesRevoke)
 
 			// Moderation queue
 			ar.Get("/config/moderation/users", adminHandler.ConfigModerationUsers)

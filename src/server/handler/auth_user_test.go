@@ -30,7 +30,8 @@ func newAuthUserTestHandler(t *testing.T) (*AuthUserHandler, *service.AuthServic
 		t.Fatalf("tmpl.New failed: %v", err)
 	}
 
-	return NewAuthUserHandler(authService, renderer, cfg), authService, st
+	inviteService := service.NewInviteService(st)
+	return NewAuthUserHandler(authService, inviteService, renderer, cfg), authService, st
 }
 
 // TestRegisterPageRenders verifies the registration page always renders.
@@ -429,5 +430,102 @@ func TestLogoutJSONAccept(t *testing.T) {
 	}
 	if env.Data["success"] != true {
 		t.Errorf("expected success=true, got %v", env.Data["success"])
+	}
+}
+
+// TestRegisterFormClosedWithoutInviteForbidden verifies that when public
+// self-registration is closed (invite mode), a form POST with no invite token
+// is rejected with 403 and no account is created (PART 34).
+func TestRegisterFormClosedWithoutInviteForbidden(t *testing.T) {
+	h, _, _ := newAuthUserTestHandler(t)
+	h.cfg.Server.Features.Users.Registration.Mode = "invite"
+
+	form := url.Values{"username": {"frank"}, "email": {"frank@example.com"}, "password": {"longenoughpw"}}
+	r := httptest.NewRequest(http.MethodPost, "/server/auth/register", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.Register(w, r)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 when registration is closed, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+// TestRegisterFormInviteAllowsClosedRegistration verifies that a valid
+// user-registration invite permits account creation even when public
+// self-registration is closed, and that the invite is consumed on success
+// (PART 34).
+func TestRegisterFormInviteAllowsClosedRegistration(t *testing.T) {
+	h, _, st := newAuthUserTestHandler(t)
+	h.cfg.Server.Features.Users.Registration.Mode = "invite"
+
+	inviteSvc := service.NewInviteService(st)
+	plaintext, _, err := inviteSvc.CreateInvite(context.Background(), service.CreateInviteParams{
+		Kind: service.InviteKindUserRegistration,
+	})
+	if err != nil {
+		t.Fatalf("CreateInvite failed: %v", err)
+	}
+
+	form := url.Values{
+		"username": {"grace"},
+		"email":    {"grace@example.com"},
+		"password": {"longenoughpw"},
+		"invite":   {plaintext},
+	}
+	r := httptest.NewRequest(http.MethodPost, "/server/auth/register", strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.Register(w, r)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 redirect after invited registration, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// The single-use invite must now be consumed.
+	if _, verr := inviteSvc.ValidateInvite(context.Background(), plaintext, service.InviteKindUserRegistration); verr == nil {
+		t.Fatal("expected invite to be consumed after registration, but it is still valid")
+	}
+}
+
+// TestRegisterPageInviteRendersWhenClosed verifies the registration page renders
+// (200) with a valid invite token even when public registration is closed, and
+// carries the token forward in a hidden field (PART 34).
+func TestRegisterPageInviteRendersWhenClosed(t *testing.T) {
+	h, _, st := newAuthUserTestHandler(t)
+	h.cfg.Server.Features.Users.Registration.Mode = "invite"
+
+	inviteSvc := service.NewInviteService(st)
+	plaintext, _, err := inviteSvc.CreateInvite(context.Background(), service.CreateInviteParams{
+		Kind: service.InviteKindUserRegistration,
+	})
+	if err != nil {
+		t.Fatalf("CreateInvite failed: %v", err)
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/server/auth/register?invite="+url.QueryEscape(plaintext), nil)
+	w := httptest.NewRecorder()
+	h.RegisterPage(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 with valid invite, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), plaintext) {
+		t.Error("expected the invite token to be carried in the register form")
+	}
+}
+
+// TestRegisterPageClosedWithoutInviteForbidden verifies the registration page is
+// served with 403 when registration is closed and no invite is present.
+func TestRegisterPageClosedWithoutInviteForbidden(t *testing.T) {
+	h, _, _ := newAuthUserTestHandler(t)
+	h.cfg.Server.Features.Users.Registration.Mode = "admin_only"
+
+	r := httptest.NewRequest(http.MethodGet, "/server/auth/register", nil)
+	w := httptest.NewRecorder()
+	h.RegisterPage(w, r)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 when registration is closed, got %d", w.Code)
 	}
 }

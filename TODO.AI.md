@@ -76,10 +76,17 @@ fixed inline and committed separately.
 - PART 34 registration modes: the open/invite/admin_only/disabled gate is
   implemented — `RegistrationConfig.Mode` (default open),
   `NormalizedMode()`/`PublicSelfRegistrationAllowed()`, and the public
-  `/register` GET+POST reject with 403 under any non-open mode. Still
-  remaining: the Server-Admin invite/activation-link flow (single-use, 7-day
-  expiry) and explicit rejection of unused links when mode flips to disabled.
-  Feature build. Deferred.
+  `/register` GET+POST reject with 403 under any non-open mode. The
+  Server-Admin invite/activation-link flow is now implemented end-to-end: the
+  admin invite-management page (`/server/{admin_path}/config/users/invites`)
+  creates single-use, 7-day-default invites via the shared InviteService
+  (one-time acceptance link shown once), lists active invites, and revokes
+  them (audit-logged); the public `/register` GET+POST accept a valid
+  `?invite=` / hidden-field user-registration token even under invite /
+  admin_only mode and consume it on successful account creation. Still
+  remaining: explicit rejection of unused links when mode flips to disabled
+  (RevokeUnusedByKind is wired in the service but not yet triggered on the
+  mode-change save path). Feature build.
 
 - PART 35 organization creation policy: the creation gate is implemented —
   `OrganizationsConfig.Creation.Mode` (default open) with

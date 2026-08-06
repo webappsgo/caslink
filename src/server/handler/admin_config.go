@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/webappsgo/caslink/src/server/service"
 )
 
@@ -1690,31 +1691,83 @@ func (h *AdminHandler) ConfigNetworkBlocklistsSave(w http.ResponseWriter, r *htt
 
 // ConfigUsersInvites handles GET /server/{adminPath}/config/users/invites
 func (h *AdminHandler) ConfigUsersInvites(w http.ResponseWriter, r *http.Request) {
-	flash := ""
-	if r.URL.Query().Get("created") == "1" {
-		flash = "Invite code created. Share it with the new user."
+	h.renderUsersInvites(w, r, "", "")
+}
+
+// renderUsersInvites renders the user-registration invite management page: a
+// create form, an optional one-time acceptance link for a just-created invite,
+// and the list of currently-active invites (PART 34). acceptURL is the single-
+// use link shown exactly once immediately after creation.
+func (h *AdminHandler) renderUsersInvites(w http.ResponseWriter, r *http.Request, flash, acceptURL string) {
+	invites, err := h.inviteService.ListInvitesByKind(r.Context(), service.InviteKindUserRegistration, 0)
+	if err != nil {
+		h.adminLayout(w, r, "Invites", "/config/users/invites", "", "", "Failed to load invites: "+err.Error())
+		return
 	}
+
+	created := ""
+	if acceptURL != "" {
+		esc := template.HTMLEscapeString(acceptURL)
+		created = fmt.Sprintf(`
+<div class="card" style="border-color:#238636">
+  <h2>Invite Created</h2>
+  <p style="color:#8b949e;font-size:14px;margin-bottom:12px">
+    Share this single-use link with the new user. It is shown only once.
+  </p>
+  <input type="text" readonly value="%s" onclick="this.select()"
+         style="width:100%%;padding:10px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;font-family:monospace;word-break:break-all">
+</div>`, esc)
+	}
+
+	var rows strings.Builder
+	if len(invites) == 0 {
+		rows.WriteString(`<tr><td colspan="4" style="color:#8b949e;text-align:center;padding:20px">No active invites.</td></tr>`)
+	} else {
+		for _, inv := range invites {
+			email := inv.Email
+			if email == "" {
+				email = "(any)"
+			}
+			uses := fmt.Sprintf("%d / %d", inv.UseCount, inv.MaxUses)
+			if inv.MaxUses == 0 {
+				uses = fmt.Sprintf("%d / ∞", inv.UseCount)
+			}
+			rows.WriteString(fmt.Sprintf(`<tr>
+      <td>%s</td>
+      <td>%s</td>
+      <td>%s</td>
+      <td><form method="POST" action="%s/config/users/invites/%d/revoke" style="display:inline">
+        <button type="submit" class="btn btn-danger">Revoke</button></form></td>
+    </tr>`,
+				template.HTMLEscapeString(email),
+				template.HTMLEscapeString(inv.ExpiresAt.Format("2006-01-02 15:04")),
+				template.HTMLEscapeString(uses),
+				h.basePath(), inv.ID))
+		}
+	}
+
 	content := fmt.Sprintf(`
-<h1>User Invites</h1>
+<h1>User Invites</h1>%s
 <div class="card">
   <h2>Create Invite</h2>
   <form method="POST" action="%s/config/users/invites">
     <div class="form-group">
-      <label>Invite Label (optional)</label>
-      <input type="text" name="label" placeholder="e.g. For team member Jane">
+      <label>Email (optional — binds the invite to this address)</label>
+      <input type="email" name="email" placeholder="e.g. jane@example.com">
     </div>
     <div class="form-group">
       <label>Expires In</label>
       <select name="expires_in">
+        <option value="1h">1 hour</option>
+        <option value="6h">6 hours</option>
         <option value="24h">24 hours</option>
-        <option value="168h">7 days</option>
-        <option value="720h">30 days</option>
-        <option value="">Never</option>
+        <option value="48h">48 hours</option>
+        <option value="168h" selected>7 days</option>
       </select>
     </div>
     <div class="form-group">
-      <label>Max Uses</label>
-      <input type="number" name="max_uses" value="1" min="1">
+      <label>Max Uses (0 = unlimited)</label>
+      <input type="number" name="max_uses" value="1" min="0">
     </div>
     <button type="submit" class="btn btn-primary">Generate Invite</button>
   </form>
@@ -1722,12 +1775,12 @@ func (h *AdminHandler) ConfigUsersInvites(w http.ResponseWriter, r *http.Request
 <div class="card">
   <h2>Active Invites</h2>
   <table>
-    <thead><tr><th>Code</th><th>Label</th><th>Expires</th><th>Uses</th><th>Actions</th></tr></thead>
+    <thead><tr><th>Email</th><th>Expires</th><th>Uses</th><th>Actions</th></tr></thead>
     <tbody>
-      <tr><td colspan="5" style="color:#8b949e;text-align:center;padding:20px">No active invites.</td></tr>
+      %s
     </tbody>
   </table>
-</div>`, h.basePath())
+</div>`, created, h.basePath(), rows.String())
 	h.adminLayout(w, r, "Invites", "/config/users/invites", template.HTML(content), flash, "")
 }
 
@@ -1737,8 +1790,56 @@ func (h *AdminHandler) ConfigUsersInvitesAction(w http.ResponseWriter, r *http.R
 		h.adminLayout(w, r, "Invites", "/config/users/invites", "", "", "Invalid form data.")
 		return
 	}
-	// Invite creation is handled by the auth service in the full implementation.
-	http.Redirect(w, r, h.basePath()+"/config/users/invites?created=1", http.StatusFound)
+
+	email := strings.TrimSpace(r.PostFormValue("email"))
+	ttl := time.Duration(0)
+	if d, perr := time.ParseDuration(strings.TrimSpace(r.PostFormValue("expires_in"))); perr == nil {
+		ttl = d
+	}
+	maxUses := 1
+	if v, perr := strconv.Atoi(strings.TrimSpace(r.PostFormValue("max_uses"))); perr == nil {
+		maxUses = v
+	}
+
+	var createdBy int64
+	if admin := h.getAdminFromSession(r); admin != nil {
+		createdBy = admin.ID
+	}
+
+	plaintext, inv, err := h.inviteService.CreateInvite(r.Context(), service.CreateInviteParams{
+		Kind:      service.InviteKindUserRegistration,
+		Email:     email,
+		CreatedBy: createdBy,
+		TTL:       ttl,
+		MaxUses:   maxUses,
+	})
+	if err != nil {
+		h.renderUsersInvites(w, r, "", "")
+		return
+	}
+
+	h.recordAudit(r, &createdBy, "user_invite_create", fmt.Sprintf("invite:%d", inv.ID), "kind=user_registration")
+	acceptURL := requestBaseURL(r) + "/register?invite=" + url.QueryEscape(plaintext)
+	h.renderUsersInvites(w, r, "Invite created.", acceptURL)
+}
+
+// ConfigUsersInvitesRevoke handles POST /server/{adminPath}/config/users/invites/{id}/revoke
+func (h *AdminHandler) ConfigUsersInvitesRevoke(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		h.adminLayout(w, r, "Invites", "/config/users/invites", "", "", "Invalid invite id.")
+		return
+	}
+	if err := h.inviteService.RevokeInvite(r.Context(), id); err != nil {
+		h.adminLayout(w, r, "Invites", "/config/users/invites", "", "", "Failed to revoke invite: "+err.Error())
+		return
+	}
+	var actorID int64
+	if admin := h.getAdminFromSession(r); admin != nil {
+		actorID = admin.ID
+	}
+	h.recordAudit(r, &actorID, "user_invite_revoke", fmt.Sprintf("invite:%d", id), "")
+	http.Redirect(w, r, h.basePath()+"/config/users/invites", http.StatusFound)
 }
 
 // --------------------------------------------------------------------------

@@ -352,6 +352,7 @@ type AdminHandler struct {
 	authService      *service.AuthService
 	userAdminService *service.UserAdminService
 	auditService     *service.AuditService
+	inviteService    *service.InviteService
 	version          string
 	mode             string
 	adminPath        string // configurable admin path segment, default "admin"
@@ -377,6 +378,7 @@ func NewAdminHandler(
 		authService:      authService,
 		userAdminService: userAdminService,
 		auditService:     auditService,
+		inviteService:    service.NewInviteService(st),
 		version:          version,
 		mode:             mode,
 		adminPath:        adminPath,

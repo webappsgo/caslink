@@ -11,6 +11,7 @@
     {{end}}
     <form method="POST" action="/server/auth/register">
       <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+      {{if .Invite}}<input type="hidden" name="invite" value="{{.Invite}}">{{end}}
       <div class="form-group">
         <label for="username">Username</label>
         <input class="form-control" type="text" id="username" name="username"
