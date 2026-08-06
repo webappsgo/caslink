@@ -76,10 +76,10 @@ func TestDecryptArchiveWrongPasswordFails(t *testing.T) {
 // data shorter than salt+nonce, and data shorter than salt+nonce+ciphertext.
 func TestDecryptArchiveTooShort(t *testing.T) {
 	cases := map[string][]byte{
-		"empty":                  {},
-		"shorter than salt":      make([]byte, saltLen-1),
-		"salt only, no nonce":    make([]byte, saltLen),
-		"salt+partial nonce":     make([]byte, saltLen+5),
+		"empty":               {},
+		"shorter than salt":   make([]byte, saltLen-1),
+		"salt only, no nonce": make([]byte, saltLen),
+		"salt+partial nonce":  make([]byte, saltLen+5),
 	}
 	for name, data := range cases {
 		t.Run(name, func(t *testing.T) {

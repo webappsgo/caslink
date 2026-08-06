@@ -316,9 +316,9 @@ func TestCheckForUpdate_NonStableMalformedJSONErrors(t *testing.T) {
 func TestCheckForUpdate_NonStableMatchesFirstQualifyingRelease(t *testing.T) {
 	withMockGitHubAPI(t, func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode([]Release{
-			{TagName: "v1.0.0"},                    // matches branch but equals current version
-			{TagName: "20260730060000-beta"},        // qualifies
-			{TagName: "20260601060000-beta"},        // would also qualify, but not first
+			{TagName: "v1.0.0"},              // matches branch but equals current version
+			{TagName: "20260730060000-beta"}, // qualifies
+			{TagName: "20260601060000-beta"}, // would also qualify, but not first
 		})
 	})
 	rel, err := CheckForUpdate(t.Context(), "1.0.0", "beta")

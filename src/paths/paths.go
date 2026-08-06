@@ -228,4 +228,3 @@ func ExpandPath(path string) string {
 	// Expand environment variables
 	return os.ExpandEnv(path)
 }
-

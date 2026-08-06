@@ -26,11 +26,6 @@ fixed inline and committed separately.
   `form[data-confirm]` with a custom `<dialog>` modal per frontend-rules
   ("NEVER use alert()/confirm()/prompt()"). Needs browser verification.
 
-- Pre-existing gofmt drift: `src/backup/crypto_test.go`, `src/paths/paths.go`,
-  and `src/updater/update_test.go` are flagged by `gofmt -l` but were not
-  touched by recent feature work. Reformat in an isolated commit (formatting
-  only, no logic change). Logged during the CSP externalization Docker verify.
-
 - PART 36 full custom-domains build: AddDomain now enforces limits, reserved,
   and blocked_patterns; VerifyDomain now performs real TXT ownership-token
   verification (net.LookupTXT of _verify.{domain} + constant-time compare),
