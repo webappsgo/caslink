@@ -275,6 +275,13 @@ func (s *DomainService) AddDomain(ctx context.Context, ownerType string, ownerID
 		UpdatedAt:          time.Now(),
 	}
 
+	// Record the domain-lifecycle "created" event (PART 36 audit trail). The
+	// owner is the actor; ownerID is loop-safe to address here. Action strings
+	// follow the spec's canonical vocabulary (created/verified/ssl_issued/
+	// suspended/deleted).
+	actor := ownerID
+	s.logDomainAudit(ctx, domainID, "created", ownerType, &actor, "")
+
 	return cd, nil
 }
 
@@ -467,7 +474,7 @@ func (s *DomainService) SuspendDomain(ctx context.Context, domainID int64, actor
 		return model.ErrDomainNotFound
 	}
 	s.invalidateResolveCache()
-	s.logDomainAudit(ctx, domainID, "suspend", "admin", actorID, "")
+	s.logDomainAudit(ctx, domainID, "suspended", "admin", actorID, "")
 	return nil
 }
 
@@ -493,7 +500,7 @@ func (s *DomainService) UnsuspendDomain(ctx context.Context, domainID int64, act
 		return fmt.Errorf("failed to unsuspend domain: %w", err)
 	}
 	s.invalidateResolveCache()
-	s.logDomainAudit(ctx, domainID, "unsuspend", "admin", actorID, "status="+newStatus)
+	s.logDomainAudit(ctx, domainID, "unsuspended", "admin", actorID, "status="+newStatus)
 	return nil
 }
 
@@ -674,6 +681,11 @@ func (s *DomainService) VerifyDomain(ctx context.Context, domainID int64) error 
 	if err != nil {
 		return fmt.Errorf("failed to update domain: %w", err)
 	}
+
+	// Record the domain-lifecycle "verified" event (PART 36 audit trail). The
+	// domain owner is the actor; domain.OwnerID is loop-safe to address here.
+	verifyActor := domain.OwnerID
+	s.logDomainAudit(ctx, domainID, "verified", domain.OwnerType, &verifyActor, "")
 
 	// The domain just became verified+active; drop any cached negative
 	// resolution so Resolve serves it immediately (PART 36 domain caching).

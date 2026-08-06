@@ -58,7 +58,41 @@ func newTestDomainStore(t *testing.T) *store.Store {
 		t.Fatalf("failed to create schema: %v", err)
 	}
 
+	auditSchema := `CREATE TABLE IF NOT EXISTS custom_domain_audit (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		domain_id INTEGER NOT NULL,
+		action TEXT NOT NULL,
+		actor_type TEXT NOT NULL,
+		actor_id INTEGER,
+		details TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`
+	if _, err := db.Exec(auditSchema); err != nil {
+		t.Fatalf("failed to create audit schema: %v", err)
+	}
+
 	return &store.Store{ServerDB: db, UsersDB: db}
+}
+
+// domainAuditActions returns the ordered action strings recorded in
+// custom_domain_audit for a given domain, for lifecycle-audit assertions.
+func domainAuditActions(t *testing.T, st *store.Store, domainID int64) []string {
+	t.Helper()
+	rows, err := st.UsersDB.Query(
+		`SELECT action FROM custom_domain_audit WHERE domain_id = ? ORDER BY id`, domainID)
+	if err != nil {
+		t.Fatalf("query custom_domain_audit: %v", err)
+	}
+	defer rows.Close()
+	var actions []string
+	for rows.Next() {
+		var a string
+		if err := rows.Scan(&a); err != nil {
+			t.Fatalf("scan audit action: %v", err)
+		}
+		actions = append(actions, a)
+	}
+	return actions
 }
 
 func TestAddDomainIsApexDetection(t *testing.T) {
@@ -406,5 +440,55 @@ func TestResolveCacheInvalidation(t *testing.T) {
 	cd, err := s.Resolve(ctx, "fresh.acme.com")
 	if err != nil || cd == nil || cd.Domain != "fresh.acme.com" {
 		t.Errorf("Resolve after invalidate = (%+v, %v), want fresh.acme.com", cd, err)
+	}
+}
+
+func TestDomainAuditTrail(t *testing.T) {
+	st := newTestDomainStore(t)
+	s := NewDomainService(st, config.CustomDomainsConfig{
+		MaxDomainsPerUser: 10,
+		MaxDomainsPerOrg:  20,
+	})
+	ctx := context.Background()
+
+	// AddDomain records a "created" lifecycle event owned by the caller.
+	cd, err := s.AddDomain(ctx, "user", 7, "audit.example.com")
+	if err != nil {
+		t.Fatalf("AddDomain: %v", err)
+	}
+	if got := domainAuditActions(t, st, cd.ID); len(got) != 1 || got[0] != "created" {
+		t.Fatalf("after AddDomain actions = %v, want [created]", got)
+	}
+
+	// Confirm the created row carries the owner as actor.
+	var actorType string
+	var actorID sql.NullInt64
+	if err := st.UsersDB.QueryRow(
+		`SELECT actor_type, actor_id FROM custom_domain_audit WHERE domain_id = ? AND action = 'created'`,
+		cd.ID).Scan(&actorType, &actorID); err != nil {
+		t.Fatalf("query created audit row: %v", err)
+	}
+	if actorType != "user" || !actorID.Valid || actorID.Int64 != 7 {
+		t.Errorf("created audit actor = (%q, %v/%d), want (user, valid/7)", actorType, actorID.Valid, actorID.Int64)
+	}
+
+	// SuspendDomain then UnsuspendDomain append the admin lifecycle events.
+	adminID := int64(1)
+	if err := s.SuspendDomain(ctx, cd.ID, &adminID); err != nil {
+		t.Fatalf("SuspendDomain: %v", err)
+	}
+	if err := s.UnsuspendDomain(ctx, cd.ID, &adminID); err != nil {
+		t.Fatalf("UnsuspendDomain: %v", err)
+	}
+
+	got := domainAuditActions(t, st, cd.ID)
+	want := []string{"created", "suspended", "unsuspended"}
+	if len(got) != len(want) {
+		t.Fatalf("full audit trail = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("audit[%d] = %q, want %q", i, got[i], want[i])
+		}
 	}
 }
