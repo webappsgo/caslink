@@ -2333,60 +2333,175 @@ func (h *AdminHandler) ConfigModerationUsers(w http.ResponseWriter, r *http.Requ
 
 // ConfigClusterNodes handles GET /server/{adminPath}/config/cluster/nodes
 func (h *AdminHandler) ConfigClusterNodes(w http.ResponseWriter, r *http.Request) {
+	pending := 0
+	if h.clusterService != nil {
+		if toks, err := h.clusterService.ListJoinTokens(r.Context(), 200); err == nil {
+			for _, t := range toks {
+				if t.Status() == "pending" {
+					pending++
+				}
+			}
+		}
+	}
 	content := fmt.Sprintf(`
 <h1>Cluster Nodes</h1>
 <div class="card">
   <h2>Current Node</h2>
   <div class="info-row"><span class="info-label">Node Role</span><span class="info-value">Primary (standalone)</span></div>
   <div class="info-row"><span class="info-label">Cluster Status</span><span class="info-value"><span class="badge badge-blue">Single Node</span></span></div>
+  <div class="info-row"><span class="info-label">Pending Join Tokens</span><span class="info-value">%d</span></div>
 </div>
 <div class="card">
   <h2>Cluster Nodes</h2>
   <p style="color:#8b949e;font-size:14px;margin-bottom:16px">
-    No cluster peers configured. Use <a href="%s/config/cluster/add" style="color:#58a6ff">Add Node</a>
-    to generate a join token for a new node.
+    No cluster peers connected yet. Use <a href="%s/config/cluster/add" style="color:#58a6ff">Add Node</a>
+    to generate a single-use join token for a new node.
   </p>
   <table>
     <thead><tr><th>Node</th><th>Address</th><th>Status</th><th>Joined</th></tr></thead>
     <tbody>
-      <tr><td colspan="4" style="color:#8b949e;text-align:center;padding:20px">No cluster nodes configured.</td></tr>
+      <tr><td colspan="4" style="color:#8b949e;text-align:center;padding:20px">No cluster nodes connected.</td></tr>
     </tbody>
   </table>
-</div>`, h.basePath())
+</div>`, pending, h.basePath())
 	h.adminLayout(w, r, "Cluster Nodes", "/config/cluster/nodes", template.HTML(content), "", "")
 }
 
-// ConfigClusterAdd handles GET /server/{adminPath}/config/cluster/add
-func (h *AdminHandler) ConfigClusterAdd(w http.ResponseWriter, r *http.Request) {
-	flash := ""
-	if r.URL.Query().Get("created") == "1" {
-		flash = "Join token created. Copy it to the new node."
+// renderClusterAddPage renders the join-token page. When newToken is non-empty
+// it is shown once in a reveal box; the plaintext is never persisted and never
+// returned again, so token creation renders this page directly rather than
+// redirecting — a join token must never travel in a URL or cookie.
+func (h *AdminHandler) renderClusterAddPage(w http.ResponseWriter, r *http.Request, newToken, flash, errMsg string) {
+	reveal := ""
+	if newToken != "" {
+		reveal = fmt.Sprintf(`
+<div class="card" style="border-color:#238636">
+  <h2>New Join Token</h2>
+  <p style="color:#8b949e;font-size:14px;margin-bottom:8px">
+    Copy this token now — it is shown only once, is single-use, and expires in 15 minutes.
+  </p>
+  <pre style="user-select:all;word-break:break-all;background:#161b22;padding:12px;border-radius:6px"><code>%s</code></pre>
+</div>`, template.HTMLEscapeString(newToken))
 	}
+
+	rows := ""
+	if h.clusterService != nil {
+		toks, _ := h.clusterService.ListJoinTokens(r.Context(), 50)
+		for _, t := range toks {
+			badge := "badge-blue"
+			switch t.Status() {
+			case "used":
+				badge = "badge-green"
+			case "expired":
+				badge = "badge-gray"
+			}
+			revokeCell := "<span style=\"color:#8b949e\">—</span>"
+			if t.Status() == "pending" {
+				revokeCell = fmt.Sprintf(`
+          <form method="POST" action="%s/config/cluster/add" onsubmit="return confirm('Revoke this join token? A node still holding it will be unable to join.')">
+            <input type="hidden" name="action" value="revoke">
+            <input type="hidden" name="token_id" value="%s">
+            <button type="submit" class="btn btn-danger btn-sm">Revoke</button>
+          </form>`, h.basePath(), template.HTMLEscapeString(t.ID))
+			}
+			label := t.Label
+			if label == "" {
+				label = "—"
+			}
+			rows += fmt.Sprintf(`
+      <tr>
+        <td>%s</td><td><code>%s…</code></td>
+        <td><span class="badge %s">%s</span></td>
+        <td>%s</td><td>%s</td><td>%s</td>
+      </tr>`,
+				template.HTMLEscapeString(label),
+				template.HTMLEscapeString(t.TokenPrefix),
+				badge, t.Status(),
+				formatTokenTime(&t.CreatedAt),
+				formatTokenTime(&t.ExpiresAt),
+				revokeCell,
+			)
+		}
+	}
+	if rows == "" {
+		rows = `<tr><td colspan="6" style="color:#8b949e;text-align:center;padding:20px">No join tokens generated yet.</td></tr>`
+	}
+
 	content := fmt.Sprintf(`
-<h1>Add Cluster Node</h1>
+<h1>Add Cluster Node</h1>%s
 <div class="card">
   <h2>Generate Join Token</h2>
   <p style="color:#8b949e;font-size:14px;margin-bottom:16px">
-    A join token allows a new node to join this cluster. Tokens are single-use and expire in 1 hour.
+    A join token authorizes a new node to join this cluster. Tokens are single-use,
+    expire in 15 minutes, and are locked out from reuse for 90 days once redeemed.
+    Only the token's SHA-256 hash is stored; the raw token is shown once on creation.
   </p>
   <form method="POST" action="%s/config/cluster/add">
     <div class="form-group">
       <label>Node Label (optional)</label>
       <input type="text" name="label" placeholder="e.g. eu-west-1">
     </div>
+    <input type="hidden" name="action" value="generate">
     <button type="submit" class="btn btn-primary">Generate Join Token</button>
   </form>
-</div>`, h.basePath())
-	h.adminLayout(w, r, "Add Cluster Node", "/config/cluster/add", template.HTML(content), flash, "")
+  <table style="margin-top:20px">
+    <thead><tr><th>Label</th><th>Prefix</th><th>Status</th><th>Created</th><th>Expires</th><th>Actions</th></tr></thead>
+    <tbody>%s</tbody>
+  </table>
+</div>`, reveal, h.basePath(), rows)
+	h.adminLayout(w, r, "Add Cluster Node", "/config/cluster/add", template.HTML(content), flash, errMsg)
+}
+
+// ConfigClusterAdd handles GET /server/{adminPath}/config/cluster/add
+func (h *AdminHandler) ConfigClusterAdd(w http.ResponseWriter, r *http.Request) {
+	flash := ""
+	switch r.URL.Query().Get("status") {
+	case "revoked":
+		flash = "Join token revoked."
+	}
+	h.renderClusterAddPage(w, r, "", flash, "")
 }
 
 // ConfigClusterAddAction handles POST /server/{adminPath}/config/cluster/add
 func (h *AdminHandler) ConfigClusterAddAction(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		h.adminLayout(w, r, "Add Cluster Node", "/config/cluster/add", "", "", "Invalid request.")
+	if h.clusterService == nil {
+		h.renderClusterAddPage(w, r, "", "", "Cluster service unavailable.")
 		return
 	}
-	http.Redirect(w, r, h.basePath()+"/config/cluster/add?created=1", http.StatusFound)
+	if err := r.ParseForm(); err != nil {
+		h.renderClusterAddPage(w, r, "", "", "Invalid request.")
+		return
+	}
+
+	var adminID *int64
+	if admin := h.getAdminFromSession(r); admin != nil {
+		id := admin.ID
+		adminID = &id
+	}
+
+	if r.FormValue("action") == "revoke" {
+		tokenID := strings.TrimSpace(r.FormValue("token_id"))
+		if err := h.clusterService.RevokeJoinToken(r.Context(), tokenID); err != nil {
+			h.renderClusterAddPage(w, r, "", "", "Token not found or already used.")
+			return
+		}
+		h.recordAudit(r, adminID, "cluster.token_revoked", "cluster join token", "join token revoked")
+		http.Redirect(w, r, h.basePath()+"/config/cluster/add?status=revoked", http.StatusFound)
+		return
+	}
+
+	label := strings.TrimSpace(r.FormValue("label"))
+	createdBy := "primary"
+	if admin := h.getAdminFromSession(r); admin != nil {
+		createdBy = admin.Username
+	}
+	plaintext, err := h.clusterService.GenerateJoinToken(r.Context(), label, createdBy)
+	if err != nil {
+		h.renderClusterAddPage(w, r, "", "", "Failed to generate join token.")
+		return
+	}
+	h.recordAudit(r, adminID, "cluster.token_generated", "cluster join token", "join token generated (label: "+label+")")
+	h.renderClusterAddPage(w, r, plaintext, "Join token created.", "")
 }
 
 // --------------------------------------------------------------------------

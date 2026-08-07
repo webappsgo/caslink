@@ -146,6 +146,24 @@ func (s *Store) initServerSchema() error {
 			data BLOB NOT NULL,
 			uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
+
+		// Cluster join tokens (AI.md PART 10 / PART 34 Join Cluster Flow).
+		// A join token authorizes a new node to join this cluster. Only the
+		// SHA-256 hash is persisted; the plaintext is shown once at generation
+		// and never stored, logged, or returned again. Single-use, 15-minute
+		// expiry, 90-day reuse lockout to defeat replay.
+		`CREATE TABLE IF NOT EXISTS srv_cluster_join_tokens (
+			id            TEXT PRIMARY KEY,
+			token_hash    TEXT NOT NULL UNIQUE,
+			token_prefix  TEXT NOT NULL,
+			label         TEXT,
+			created_by    TEXT,
+			created_at    DATETIME NOT NULL,
+			expires_at    DATETIME NOT NULL,
+			used_at       DATETIME,
+			used_by       TEXT,
+			lockout_until DATETIME
+		)`,
 	}
 
 	for _, query := range queries {

@@ -24,6 +24,15 @@ findings from that audit were fixed directly and are not listed here.
   — `src/config/trustedproxy.go` resolves hostname entries via `net.LookupIP`
   with a 5-minute background refresh and a resolved-IP cache checked under read
   lock in `IsTrusted`. No code change needed.
+- Cluster join-token subsystem (PART 34): DONE (issuance/consumption half).
+  Added `srv_cluster_join_tokens` (idempotent schema), a real `ClusterService`
+  (`node_`+32 CSPRNG token, SHA-256 hash-at-rest, 8-char display prefix, 15-min
+  TTL, single-use with atomic consume + 90-day reuse lockout, list, revoke),
+  and rewired the three `/config/cluster` admin handlers to issue a token shown
+  exactly once in a reveal box (never in a URL/redirect), list tokens, and
+  revoke pending ones. The remote-DB cluster-mode conversion + node bootstrap
+  handshake remains infra-blocked (needs a live remote PostgreSQL/MySQL and a
+  second running node) — tracked below.
 
 ## Deferred subsystem builds (each fronts an unbuilt/engine-less subsystem)
 
@@ -31,9 +40,10 @@ Confirmed by direct code search (2026-08). These are not stub-wires — each
 needs a real service, schema, and/or engine before its admin page is more than
 a facade, so each is a feature-sized build tracked here rather than faked:
 
-- Cluster join-token subsystem: `ConfigClusterAddAction` redirects `?created=1`
-  without issuing a token; there is no ClusterService, no `srv_cluster*`/nodes
-  schema, and no single-use join-token generator behind it.
+- Cluster node bootstrap/join handshake (PART 34, second half): the join-token
+  issuance/consumption layer now exists (see resolved list above), but the
+  remote-DB cluster-mode conversion, config migration, and peer join handshake
+  need a live remote PostgreSQL/MySQL and a second running node — infra-blocked.
 - `/config/agents` admin page: fully unbuilt — no AgentService, schema, handler,
   or route; depends on the agent (`caslink-agent`) enrollment subsystem.
 - OIDC/LDAP/SAML config sub-pages: `/config/security/auth` renders only password
