@@ -275,22 +275,54 @@ func TestConfigBackupActionRedirect(t *testing.T) {
 	}
 }
 
-func TestConfigStubActionHandlersRedirectWithoutPersisting(t *testing.T) {
-	// ConfigClusterAddAction is still a documented stub: it parses the form and
-	// redirects without implementing real join-token creation. This test locks
-	// in the observed (non-crashing) behavior. (ConfigSecurityTokensAction is
-	// now fully implemented and covered by TestConfigSecurityTokensLifecycle;
-	// ConfigUsersInvitesAction by TestConfigUsersInvitesCreateListRevoke.)
+func TestConfigClusterJoinTokenLifecycle(t *testing.T) {
+	// Generate → the plaintext node_ join token is shown exactly once in the
+	// reveal box (never in a redirect/URL) and appears in the list; Revoke → the
+	// pending token is removed. Exercises the real ClusterService wiring behind
+	// the /config/cluster admin pages (PART 34).
 	h, authService, _ := newAdminTestHandler(t)
 	cookie := seedAdminSession(t, h, authService)
 
-	r := httptest.NewRequest(http.MethodPost, "/server/admin/config/cluster/add", strings.NewReader(""))
+	// Generate a join token (empty action defaults to generate).
+	form := url.Values{"action": {"generate"}, "label": {"eu-west-1"}}
+	r := httptest.NewRequest(http.MethodPost, "/server/admin/config/cluster/add", strings.NewReader(form.Encode()))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	r.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	h.ConfigClusterAddAction(w, r)
-	if w.Code != http.StatusFound {
-		t.Fatalf("ConfigClusterAddAction: expected 302, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("generate: expected 200 (reveal box rendered directly), got %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "node_") {
+		t.Fatalf("generate: reveal box should contain the node_ join token")
+	}
+	if !strings.Contains(body, "eu-west-1") {
+		t.Fatalf("generate: token list should show the label")
+	}
+
+	// The list must show exactly one pending token.
+	toks, err := h.clusterService.ListJoinTokens(r.Context(), 50)
+	if err != nil {
+		t.Fatalf("ListJoinTokens failed: %v", err)
+	}
+	if len(toks) != 1 || toks[0].Status() != "pending" {
+		t.Fatalf("expected 1 pending token, got %+v", toks)
+	}
+
+	// Revoke the pending token.
+	revForm := url.Values{"action": {"revoke"}, "token_id": {toks[0].ID}}
+	r2 := httptest.NewRequest(http.MethodPost, "/server/admin/config/cluster/add", strings.NewReader(revForm.Encode()))
+	r2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r2.AddCookie(cookie)
+	w2 := httptest.NewRecorder()
+	h.ConfigClusterAddAction(w2, r2)
+	if w2.Code != http.StatusFound {
+		t.Fatalf("revoke: expected 302, got %d", w2.Code)
+	}
+	after, _ := h.clusterService.ListJoinTokens(r2.Context(), 50)
+	if len(after) != 0 {
+		t.Fatalf("expected 0 tokens after revoke, got %d", len(after))
 	}
 }
 
