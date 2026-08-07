@@ -57,9 +57,21 @@ a facade, so each is a feature-sized build tracked here rather than faked:
   need a live remote PostgreSQL/MySQL and a second running node — infra-blocked.
 - `/config/agents` admin page: fully unbuilt — no AgentService, schema, handler,
   or route; depends on the agent (`caslink-agent`) enrollment subsystem.
-- OIDC/LDAP/SAML config sub-pages: `/config/security/auth` renders only password
-  policy / session / MFA; there is no provider config struct or service and no
-  oidc/ldap/saml child routes.
+- OIDC/LDAP/SAML config sub-pages: DONE. Added `AuthConfig` (OIDC/LDAP/SAML
+  provider structs, Normalize/Validate, AES-256-GCM secret encryption at
+  rest, MaskedCopy for safe API/UI output) in `src/config/auth.go`; admin
+  web pages + JSON API CRUD and a "Test connection" action (backed by
+  mockable `extauth` boundaries) in `src/server/handler/admin_auth_providers.go`
+  and `src/server/service/extauth/extauth.go`, routed under
+  `/server/{admin_path}/config/security/auth/{oidc,ldap,saml}` (admin-session
+  + CSRF) and `/api/{api_version}/server/{admin_path}/config/security/auth/{type}/providers[/{provider}][/test]`
+  (Bearer admin token). `LDAPProvider.TLSVerify` is a tri-state `*bool`
+  defaulting to verification-on so an omitted config field or unchecked
+  admin-UI checkbox can never silently disable certificate verification.
+  Full test suite (`go build`/`go vet`/`go test ./...`) and CI both green;
+  committed as `834f0dee7481`. Full OIDC code exchange / LDAP bind / SAML
+  assertion validation for the actual login flow remains a separate,
+  not-yet-started feature.
 - Admin config POST forms missing `_csrf` (PART 11/16): pre-existing bug found
   while building the scheduler action layer. The string-built admin config POST
   forms in `admin_config.go` (e.g. email/ssl/backup/security save forms) omit a
