@@ -15,6 +15,7 @@ import (
 	"github.com/webappsgo/caslink/src/config"
 	"github.com/webappsgo/caslink/src/scheduler"
 	"github.com/webappsgo/caslink/src/server/service"
+	"github.com/webappsgo/caslink/src/server/service/extauth"
 	"github.com/webappsgo/caslink/src/server/store"
 	apktor "github.com/webappsgo/caslink/src/tor"
 )
@@ -362,8 +363,10 @@ type AdminHandler struct {
 	mode             string
 	adminPath        string // configurable admin path segment, default "admin"
 	cfg              *config.Config
+	configDir        string // directory holding server.yml, for config.Save persistence
 	store            *store.Store
 	getTorManager    func() *apktor.TorManager
+	authTesters      extauth.Testers // external-provider "test connection" boundaries (mockable in tests)
 }
 
 // NewAdminHandler creates a new admin handler
@@ -375,6 +378,7 @@ func NewAdminHandler(
 	sched *scheduler.Scheduler,
 	version, mode, adminPath string,
 	cfg *config.Config,
+	configDir string,
 	st *store.Store,
 	getTorManager func() *apktor.TorManager,
 ) *AdminHandler {
@@ -394,8 +398,10 @@ func NewAdminHandler(
 		mode:             mode,
 		adminPath:        adminPath,
 		cfg:              cfg,
+		configDir:        configDir,
 		store:            st,
 		getTorManager:    getTorManager,
+		authTesters:      extauth.Default(),
 	}
 }
 

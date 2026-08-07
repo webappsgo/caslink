@@ -44,6 +44,7 @@ type ServerConfig struct {
 	Tracking       TrackingConfig       `yaml:"tracking"`
 	Scheduler      SchedulerConfig      `yaml:"scheduler"`
 	Security       SecurityConfig       `yaml:"security"`
+	Auth           AuthConfig           `yaml:"auth"`
 	Features       FeaturesConfig       `yaml:"features"`
 	Notifications  NotificationsConfig  `yaml:"notifications"`
 	Metrics        MetricsConfig        `yaml:"metrics"`
@@ -1163,6 +1164,11 @@ func DefaultConfig() *Config {
 			Database: DatabaseConfig{
 				Driver: "file",
 				Path:   "{datadir}/db",
+			},
+			Auth: AuthConfig{
+				OIDC: OIDCAuthConfig{Enabled: false, Providers: nil},
+				LDAP: LDAPAuthConfig{Enabled: false, Providers: nil},
+				SAML: SAMLAuthConfig{Enabled: false, Providers: nil},
 			},
 			RateLimit: RateLimitConfig{
 				Enabled:                  true,

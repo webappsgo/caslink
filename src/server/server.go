@@ -444,7 +444,7 @@ func (s *Server) setupRoutes() {
 	})
 	qrHandler := handler.NewQRHandler(qrService, urlService)
 	bulkHandler := handler.NewBulkHandler(bulkService)
-	adminHandler := handler.NewAdminHandler(authService, userAdminService, auditService, domainService, s.scheduler, s.Version, s.mode.String(), adminPath, s.config, s.store, func() *apktor.TorManager { return s.torManager })
+	adminHandler := handler.NewAdminHandler(authService, userAdminService, auditService, domainService, s.scheduler, s.Version, s.mode.String(), adminPath, s.config, s.configDir, s.store, func() *apktor.TorManager { return s.torManager })
 	setupHandler := handler.NewSetupHandler(authService, s.config, s.Version)
 	authUserHandler := handler.NewAuthUserHandler(authService, inviteService, s.renderer, s.config)
 	twoFactorHandler := handler.NewTwoFactorHandler(authService, totpService)
@@ -755,6 +755,9 @@ func (s *Server) setupRoutes() {
 			ar.Get("/config/security/auth", adminHandler.ConfigSecurityAuth)
 			ar.Post("/config/security/auth", adminHandler.ConfigSecurityAuthSave)
 
+			ar.Get("/config/security/auth/{type}", adminHandler.ConfigAuthProviders)
+			ar.Post("/config/security/auth/{type}", adminHandler.ConfigAuthProvidersAction)
+
 			// Security — API tokens
 			ar.Get("/config/security/tokens", adminHandler.ConfigSecurityTokens)
 			ar.Post("/config/security/tokens", adminHandler.ConfigSecurityTokensAction)
@@ -922,6 +925,13 @@ func (s *Server) setupRoutes() {
 			ar.Delete("/config/domains/{domain}", domainHandler.APIAdminDeleteDomain)
 			ar.Post("/config/domains/{domain}/suspend", domainHandler.APIAdminSuspendDomain)
 			ar.Post("/config/domains/{domain}/unsuspend", domainHandler.APIAdminUnsuspendDomain)
+			// External identity provider (OIDC/LDAP/SAML) admin API (PART 34).
+			ar.Get("/config/security/auth/{type}/providers", adminHandler.APIAuthProvidersList)
+			ar.Post("/config/security/auth/{type}/providers", adminHandler.APIAuthProviderCreate)
+			ar.Get("/config/security/auth/{type}/providers/{provider}", adminHandler.APIAuthProviderGet)
+			ar.Patch("/config/security/auth/{type}/providers/{provider}", adminHandler.APIAuthProviderUpdate)
+			ar.Delete("/config/security/auth/{type}/providers/{provider}", adminHandler.APIAuthProviderDelete)
+			ar.Post("/config/security/auth/{type}/providers/{provider}/test", adminHandler.APIAuthProviderTest)
 		})
 
 		// URL management endpoints (require Bearer auth per spec)

@@ -696,6 +696,14 @@ func (s *Store) initUsersSchema() error {
 		`ALTER TABLE organizations ADD COLUMN website TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE organizations ADD COLUMN location TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE organizations ADD COLUMN visibility TEXT NOT NULL DEFAULT 'public'`,
+		// External identity provenance per AI.md PART 34: auth_source is
+		// 'local' | 'oidc:{provider}' | 'ldap:{provider}' | 'saml:{provider}'.
+		`ALTER TABLE admins ADD COLUMN external_id TEXT`,
+		`ALTER TABLE admins ADD COLUMN auth_source TEXT NOT NULL DEFAULT 'local'`,
+		`ALTER TABLE admins ADD COLUMN external_synced_at DATETIME`,
+		`ALTER TABLE users ADD COLUMN external_id TEXT`,
+		`ALTER TABLE users ADD COLUMN auth_source TEXT NOT NULL DEFAULT 'local'`,
+		`ALTER TABLE users ADD COLUMN external_synced_at DATETIME`,
 	}
 	for _, q := range addColumnQueries {
 		ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)

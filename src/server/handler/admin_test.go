@@ -41,7 +41,7 @@ func newAdminTestHandler(t *testing.T) (*AdminHandler, *service.AuthService, *st
 	sched.Start()
 	t.Cleanup(sched.Stop)
 
-	h := NewAdminHandler(authService, userAdminService, auditService, domainService, sched, "test-version", "development", "admin", cfg, st, noTor)
+	h := NewAdminHandler(authService, userAdminService, auditService, domainService, sched, "test-version", "development", "admin", cfg, t.TempDir(), st, noTor)
 	return h, authService, st
 }
 
