@@ -337,16 +337,24 @@ func TestLoadOrInitTaskStateOutsideWindowSkipsAndReschedules(t *testing.T) {
 }
 
 func TestLoadOrInitTaskStateSyncsConfigOnExistingRow(t *testing.T) {
-	// Re-running loadOrInitTaskState for an existing task must keep name/
-	// type/schedule/enabled in sync with the (possibly-changed) config,
-	// since the admin panel is the single source of truth per AI.md PART 19.
+	// On reload, name/type/schedule are synced from the (possibly-changed)
+	// config, but the enabled bit is authoritative from server.db so admin
+	// panel toggles (SetTaskEnabled) survive a restart per AI.md PART 19
+	// ("Persistent State"). Config's enabled value must NOT clobber a stored
+	// admin toggle on an existing row.
 	s := newTestScheduler(t)
 	tk := newRegisteredTask(t, s, "t6", "local", "@every 15m", func(context.Context) error { return nil })
 	now := time.Date(2026, 7, 30, 10, 0, 0, 0, time.UTC)
-	s.loadOrInitTaskState(tk, now)
+	s.loadOrInitTaskState(tk, now) // inserts row, enabled seeded from config (true)
 
+	// Simulate an admin disable persisted to server.db.
+	if _, err := s.store.ServerDB.Exec(`UPDATE scheduler_tasks SET enabled=0 WHERE id=?`, "t6"); err != nil {
+		t.Fatalf("seed admin disable: %v", err)
+	}
+
+	// Reload with a renamed task whose config-level enabled is true.
 	tk.name = "Renamed Task"
-	tk.enabled = false
+	tk.enabled = true
 	s.loadOrInitTaskState(tk, now)
 
 	var name string
@@ -355,8 +363,45 @@ func TestLoadOrInitTaskStateSyncsConfigOnExistingRow(t *testing.T) {
 	if err := row.Scan(&name, &enabled); err != nil {
 		t.Fatalf("query: %v", err)
 	}
-	if name != "Renamed Task" || enabled != 0 {
-		t.Errorf("name=%q enabled=%d, want %q/0 after config sync", name, enabled, "Renamed Task")
+	// name is synced from config...
+	if name != "Renamed Task" {
+		t.Errorf("name=%q, want %q (config sync)", name, "Renamed Task")
+	}
+	// ...but the admin-disabled bit is preserved (DB authoritative), not
+	// overwritten by the config's enabled=true.
+	if enabled != 0 {
+		t.Errorf("enabled=%d, want 0 (stored admin toggle must survive reload)", enabled)
+	}
+	// The in-memory flag reflects the stored value after reload.
+	if tk.enabled {
+		t.Error("in-memory enabled should be false after reload from a disabled row")
+	}
+}
+
+func TestLoadOrInitTaskStateForcesNonSkippableEnabled(t *testing.T) {
+	// A non-skippable critical task is always forced enabled on reload even if
+	// its row was somehow persisted disabled — these tasks cannot be turned off
+	// (AI.md PART 19). session_cleanup is one of them.
+	s := newTestScheduler(t)
+	tk := newRegisteredTask(t, s, "session_cleanup", "local", "@every 15m", func(context.Context) error { return nil })
+	now := time.Date(2026, 7, 30, 10, 0, 0, 0, time.UTC)
+	s.loadOrInitTaskState(tk, now)
+
+	if _, err := s.store.ServerDB.Exec(`UPDATE scheduler_tasks SET enabled=0 WHERE id=?`, "session_cleanup"); err != nil {
+		t.Fatalf("seed disable: %v", err)
+	}
+	tk.enabled = false
+	s.loadOrInitTaskState(tk, now)
+
+	if !tk.enabled {
+		t.Error("session_cleanup must be forced enabled on reload")
+	}
+	var enabled int
+	if err := s.store.ServerDB.QueryRow(`SELECT enabled FROM scheduler_tasks WHERE id=?`, "session_cleanup").Scan(&enabled); err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if enabled != 1 {
+		t.Errorf("persisted enabled=%d, want 1 (non-skippable forced on)", enabled)
 	}
 }
 

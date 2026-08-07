@@ -33,6 +33,17 @@ findings from that audit were fixed directly and are not listed here.
   revoke pending ones. The remote-DB cluster-mode conversion + node bootstrap
   handshake remains infra-blocked (needs a live remote PostgreSQL/MySQL and a
   second running node) — tracked below.
+- Scheduler save/enable/disable/run-now (PART 19): DONE. `/config/scheduler`
+  was a read-only task table; now has a running scheduler engine plus a full
+  admin-action layer. Web POST `ConfigSchedulerAction` (enable/disable/run,
+  PRG redirect with ?saved=/?err=) and API `APIConfigScheduler*` handlers
+  (list, GET {id}, PATCH {id} `{"enabled":*bool}`, POST {id}/run, {id}/history)
+  are wired. `enabled` is now server.db-authoritative so admin toggles survive
+  restart (loadOrInitTaskState preserves the stored bit, forces non-skippable
+  tasks on); SetTaskEnabled/RunNow refuse to disable the seven non-skippable
+  critical tasks and reject already-running/unknown tasks with typed sentinels.
+  Engine-level (scheduler/admin_test.go) and action-level
+  (handler/admin_scheduler_test.go) tests added; both packages green in Docker.
 
 ## Deferred subsystem builds (each fronts an unbuilt/engine-less subsystem)
 
@@ -49,9 +60,15 @@ a facade, so each is a feature-sized build tracked here rather than faked:
 - OIDC/LDAP/SAML config sub-pages: `/config/security/auth` renders only password
   policy / session / MFA; there is no provider config struct or service and no
   oidc/ldap/saml child routes.
-- Scheduler save/enable/disable/run-now: `/config/scheduler` is a read-only
-  task table with no action POSTs; there is no running scheduler engine to
-  enable/disable/trigger against (changes still require editing server.yml).
+- Admin config POST forms missing `_csrf` (PART 11/16): pre-existing bug found
+  while building the scheduler action layer. The string-built admin config POST
+  forms in `admin_config.go` (e.g. email/ssl/backup/security save forms) omit a
+  `_csrf` hidden field, so if/when CSRF validation is enforced on admin state-
+  changing requests they will be rejected. The new scheduler forms correctly
+  include `_csrf`. Needs a sweep of every admin config form + confirmation of
+  the CSRF middleware's enforcement posture on `/server/{admin_path}/config/*`
+  before deciding token wiring vs middleware exemption — feature-sized, logged
+  rather than fixed inline to avoid scope creep on the scheduler commit.
 
 ## Deferred from the 2026-08 extended PART 13-36 audit
 

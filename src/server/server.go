@@ -444,7 +444,7 @@ func (s *Server) setupRoutes() {
 	})
 	qrHandler := handler.NewQRHandler(qrService, urlService)
 	bulkHandler := handler.NewBulkHandler(bulkService)
-	adminHandler := handler.NewAdminHandler(authService, userAdminService, auditService, domainService, s.Version, s.mode.String(), adminPath, s.config, s.store, func() *apktor.TorManager { return s.torManager })
+	adminHandler := handler.NewAdminHandler(authService, userAdminService, auditService, domainService, s.scheduler, s.Version, s.mode.String(), adminPath, s.config, s.store, func() *apktor.TorManager { return s.torManager })
 	setupHandler := handler.NewSetupHandler(authService, s.config, s.Version)
 	authUserHandler := handler.NewAuthUserHandler(authService, inviteService, s.renderer, s.config)
 	twoFactorHandler := handler.NewTwoFactorHandler(authService, totpService)
@@ -722,6 +722,7 @@ func (s *Server) setupRoutes() {
 
 			// Scheduler
 			ar.Get("/config/scheduler", adminHandler.ConfigScheduler)
+			ar.Post("/config/scheduler", adminHandler.ConfigSchedulerAction)
 
 			// Email
 			ar.Get("/config/email", adminHandler.ConfigEmail)
@@ -900,8 +901,14 @@ func (s *Server) setupRoutes() {
 			ar.Patch("/config/branding", adminHandler.APIConfigBrandingSave)
 			// Info API
 			ar.Get("/config/info", adminHandler.APIConfigInfo)
-			// Scheduler API
+			// Scheduler API (PART 19)
 			ar.Get("/config/scheduler", adminHandler.APIConfigScheduler)
+			ar.Get("/config/scheduler/{id}", adminHandler.APIConfigSchedulerTask)
+			ar.Patch("/config/scheduler/{id}", adminHandler.APIConfigSchedulerUpdate)
+			ar.Post("/config/scheduler/{id}/run", adminHandler.APIConfigSchedulerRun)
+			ar.Post("/config/scheduler/{id}/enable", adminHandler.APIConfigSchedulerEnable)
+			ar.Post("/config/scheduler/{id}/disable", adminHandler.APIConfigSchedulerDisable)
+			ar.Get("/config/scheduler/{id}/history", adminHandler.APIConfigSchedulerHistory)
 			// Maintenance API
 			ar.Get("/config/maintenance", adminHandler.APIConfigMaintenance)
 			ar.Patch("/config/maintenance", adminHandler.APIConfigMaintenanceSave)

@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/webappsgo/caslink/src/config"
+	"github.com/webappsgo/caslink/src/scheduler"
 	"github.com/webappsgo/caslink/src/server/service"
 	"github.com/webappsgo/caslink/src/server/store"
 	apktor "github.com/webappsgo/caslink/src/tor"
@@ -32,7 +33,15 @@ func newAdminTestHandler(t *testing.T) (*AdminHandler, *service.AuthService, *st
 
 	noTor := func() *apktor.TorManager { return nil }
 
-	h := NewAdminHandler(authService, userAdminService, auditService, domainService, "test-version", "development", "admin", cfg, st, noTor)
+	// Wire a real scheduler with the full built-in task set registered so the
+	// admin scheduler pages exercise live data. Start() registers tasks and
+	// seeds scheduler_tasks; its 15s ticker never fires within a sub-second
+	// test, and Stop() (via cleanup) returns immediately when nothing is running.
+	sched := scheduler.New(st, "", "", "", "", "test-version", nil, cfg.Server.Security, false, config.BackupRetentionConfig{}, cfg.Server.Scheduler)
+	sched.Start()
+	t.Cleanup(sched.Stop)
+
+	h := NewAdminHandler(authService, userAdminService, auditService, domainService, sched, "test-version", "development", "admin", cfg, st, noTor)
 	return h, authService, st
 }
 

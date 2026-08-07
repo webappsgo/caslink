@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/webappsgo/caslink/src/scheduler"
 	"github.com/webappsgo/caslink/src/server/service"
 	"github.com/webappsgo/caslink/src/server/validate"
 )
@@ -502,38 +504,126 @@ func (h *AdminHandler) ConfigSSLSave(w http.ResponseWriter, r *http.Request) {
 // Scheduler
 // --------------------------------------------------------------------------
 
+// schedFlash maps a ?saved= query token to a human-readable flash message.
+func schedFlash(q url.Values) (flash, errMsg string) {
+	switch q.Get("saved") {
+	case "enabled":
+		return "Task enabled.", ""
+	case "disabled":
+		return "Task disabled.", ""
+	case "queued":
+		return "Task queued to run now.", ""
+	case "":
+		// no flash
+	}
+	if m := q.Get("err"); m != "" {
+		return "", m
+	}
+	return "", ""
+}
+
+// fmtSchedTime formats a scheduler timestamp for the admin table, showing a dash
+// for the zero time (task never ran / has no next run).
+func fmtSchedTime(t time.Time) string {
+	if t.IsZero() {
+		return "-"
+	}
+	return t.Format("2006-01-02 15:04:05")
+}
+
+// schedStatusBadge renders a coloured status badge for a task's last outcome and
+// live running state.
+func schedStatusBadge(v scheduler.TaskView) template.HTML {
+	if v.Running {
+		return `<span class="badge badge-blue">running</span>`
+	}
+	switch v.LastStatus {
+	case "success":
+		return `<span class="badge badge-green">success</span>`
+	case "failed":
+		return `<span class="badge badge-red">failed</span>`
+	case "skipped":
+		return `<span class="badge badge-yellow">skipped</span>`
+	default:
+		return `<span class="badge badge-blue">pending</span>`
+	}
+}
+
 // ConfigScheduler handles GET /server/{adminPath}/config/scheduler
 func (h *AdminHandler) ConfigScheduler(w http.ResponseWriter, r *http.Request) {
-	sch := h.cfg.Server.Scheduler
-	tasks := []struct {
-		Name     string
-		Schedule string
-		Enabled  bool
-	}{
-		{"session_cleanup", sch.SessionCleanupCron, sch.SessionCleanupEnabled},
-		{"token_cleanup", sch.TokenCleanupCron, sch.TokenCleanupEnabled},
-		{"expire_urls", sch.ExpireURLsCron, sch.ExpireURLsEnabled},
-		{"log_rotation", sch.LogRotationCron, sch.LogRotationEnabled},
-		{"backup_daily", sch.BackupCron, sch.BackupEnabled},
-		{"ssl_renewal", sch.SSLRenewalCron, sch.SSLRenewalEnabled},
-		{"geoip_update", sch.GeoIPUpdateCron, sch.GeoIPUpdateEnabled},
-		{"blocklist_update", sch.BlocklistUpdateCron, sch.BlocklistUpdateEnabled},
-		{"cve_update", sch.CVEUpdateCron, sch.CVEUpdateEnabled},
-		{"healthcheck_self", sch.HealthcheckCron, sch.HealthcheckEnabled},
-		{"tor_health", sch.TorHealthCron, sch.TorHealthEnabled},
+	flash, errMsg := schedFlash(r.URL.Query())
+
+	if h.scheduler == nil {
+		content := template.HTML(`
+<h1>Scheduler</h1>
+<div class="card">
+  <div class="warn">The scheduler engine is not available in this context.</div>
+</div>`)
+		h.adminLayout(w, r, "Scheduler", "/config/scheduler", content, flash, errMsg)
+		return
 	}
+
+	tasks := h.scheduler.ListTasks(r.Context())
+	csrf := template.HTMLEscapeString(csrfToken(r))
+	action := template.HTMLEscapeString(h.basePath() + "/config/scheduler")
 
 	var rows strings.Builder
 	for _, t := range tasks {
-		badge := `<span class="badge badge-green">enabled</span>`
+		enabledBadge := `<span class="badge badge-green">enabled</span>`
 		if !t.Enabled {
-			badge = `<span class="badge badge-red">disabled</span>`
+			enabledBadge = `<span class="badge badge-red">disabled</span>`
 		}
-		rows.WriteString(fmt.Sprintf(`<tr><td>%s</td><td style="font-family:monospace">%s</td><td>%s</td></tr>`,
+
+		// Enable/disable toggle — hidden for non-skippable critical tasks whose
+		// enabled state is locked on per AI.md PART 19.
+		var toggle string
+		if t.NonSkippable {
+			toggle = `<span class="badge badge-yellow" title="Critical task — cannot be disabled">locked</span>`
+		} else if t.Enabled {
+			toggle = fmt.Sprintf(`<form method="POST" action="%s" style="display:inline">`+
+				`<input type="hidden" name="_csrf" value="%s">`+
+				`<input type="hidden" name="action" value="disable">`+
+				`<input type="hidden" name="task" value="%s">`+
+				`<button type="submit" class="btn btn-secondary">Disable</button></form>`,
+				action, csrf, template.HTMLEscapeString(t.ID))
+		} else {
+			toggle = fmt.Sprintf(`<form method="POST" action="%s" style="display:inline">`+
+				`<input type="hidden" name="_csrf" value="%s">`+
+				`<input type="hidden" name="action" value="enable">`+
+				`<input type="hidden" name="task" value="%s">`+
+				`<button type="submit" class="btn btn-primary">Enable</button></form>`,
+				action, csrf, template.HTMLEscapeString(t.ID))
+		}
+
+		runBtn := fmt.Sprintf(`<form method="POST" action="%s" style="display:inline">`+
+			`<input type="hidden" name="_csrf" value="%s">`+
+			`<input type="hidden" name="action" value="run">`+
+			`<input type="hidden" name="task" value="%s">`+
+			`<button type="submit" class="btn btn-secondary"%s>Run Now</button></form>`,
+			action, csrf, template.HTMLEscapeString(t.ID), func() string {
+				if t.Running {
+					return " disabled"
+				}
+				return ""
+			}())
+
+		rows.WriteString(fmt.Sprintf(
+			`<tr><td>%s</td><td>%s</td><td style="font-family:monospace">%s</td>`+
+				`<td>%s</td><td>%s</td><td>%s</td><td>%s</td>`+
+				`<td style="white-space:nowrap">%s &nbsp; %s</td></tr>`,
 			template.HTMLEscapeString(t.Name),
+			template.HTMLEscapeString(t.Type),
 			template.HTMLEscapeString(t.Schedule),
-			badge,
+			fmtSchedTime(t.LastRun),
+			fmtSchedTime(t.NextRun),
+			enabledBadge,
+			schedStatusBadge(t),
+			toggle, runBtn,
 		))
+	}
+
+	if len(tasks) == 0 {
+		rows.WriteString(`<tr><td colspan="8" style="text-align:center;color:#8b949e">No scheduled tasks registered.</td></tr>`)
 	}
 
 	content := fmt.Sprintf(`
@@ -541,16 +631,82 @@ func (h *AdminHandler) ConfigScheduler(w http.ResponseWriter, r *http.Request) {
 <div class="card">
   <h2>Scheduled Tasks</h2>
   <p style="color:#8b949e;font-size:14px;margin-bottom:16px">
-    Built-in scheduler (no external cron dependency). Schedules use standard cron syntax.
-    Changes require editing <code>server.yml</code> and restarting.
+    Built-in scheduler (no external cron dependency). Enable/disable and run tasks
+    on demand below. Critical tasks are locked on and cannot be disabled.
+    Run counts and history are recorded in <code>server.db</code>.
   </p>
+  <div style="overflow-x:auto">
   <table>
-    <thead><tr><th>Task</th><th>Schedule</th><th>Status</th></tr></thead>
+    <thead><tr><th>Task</th><th>Type</th><th>Schedule</th><th>Last Run</th><th>Next Run</th><th>Enabled</th><th>Status</th><th>Actions</th></tr></thead>
     <tbody>%s</tbody>
   </table>
+  </div>
 </div>`, rows.String())
 
-	h.adminLayout(w, r, "Scheduler", "/config/scheduler", template.HTML(content), "", "")
+	h.adminLayout(w, r, "Scheduler", "/config/scheduler", template.HTML(content), flash, errMsg)
+}
+
+// ConfigSchedulerAction handles POST /server/{adminPath}/config/scheduler.
+// It dispatches the enable/disable/run action for a single task, audit-logs it,
+// then redirects (POST-redirect-GET) so a browser refresh does not re-submit.
+func (h *AdminHandler) ConfigSchedulerAction(w http.ResponseWriter, r *http.Request) {
+	dest := h.basePath() + "/config/scheduler"
+	if h.scheduler == nil {
+		http.Redirect(w, r, dest+"?err="+url.QueryEscape("Scheduler engine unavailable."), http.StatusSeeOther)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Redirect(w, r, dest+"?err="+url.QueryEscape("Invalid form data."), http.StatusSeeOther)
+		return
+	}
+
+	action := r.FormValue("action")
+	taskID := r.FormValue("task")
+	admin := h.getAdminFromSession(r)
+	var actorID *int64
+	if admin != nil {
+		actorID = &admin.ID
+	}
+
+	var err error
+	var savedTok string
+	switch action {
+	case "enable":
+		err = h.scheduler.SetTaskEnabled(r.Context(), taskID, true)
+		savedTok = "enabled"
+	case "disable":
+		err = h.scheduler.SetTaskEnabled(r.Context(), taskID, false)
+		savedTok = "disabled"
+	case "run":
+		err = h.scheduler.RunNow(taskID)
+		savedTok = "queued"
+	default:
+		http.Redirect(w, r, dest+"?err="+url.QueryEscape("Unknown action."), http.StatusSeeOther)
+		return
+	}
+
+	if err != nil {
+		h.recordAudit(r, actorID, "scheduler_"+action+"_failed", "scheduler:"+taskID, err.Error())
+		http.Redirect(w, r, dest+"?err="+url.QueryEscape(schedActionErr(err)), http.StatusSeeOther)
+		return
+	}
+
+	h.recordAudit(r, actorID, "scheduler_"+action, "scheduler:"+taskID, "")
+	http.Redirect(w, r, dest+"?saved="+savedTok, http.StatusSeeOther)
+}
+
+// schedActionErr maps engine sentinel errors to a user-facing message.
+func schedActionErr(err error) string {
+	switch {
+	case errors.Is(err, scheduler.ErrTaskNotFound):
+		return "Task not found."
+	case errors.Is(err, scheduler.ErrTaskRunning):
+		return "Task is already running."
+	case errors.Is(err, scheduler.ErrTaskNotSkippable):
+		return "This task is critical and cannot be disabled."
+	default:
+		return "Action failed: " + err.Error()
+	}
 }
 
 // --------------------------------------------------------------------------
@@ -2627,22 +2783,187 @@ func (h *AdminHandler) APIConfigInfo(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// taskViewJSON converts an engine TaskView into the API's JSON object.
+func taskViewJSON(v scheduler.TaskView) map[string]any {
+	m := map[string]any{
+		"id":            v.ID,
+		"name":          v.Name,
+		"type":          v.Type,
+		"schedule":      v.Schedule,
+		"enabled":       v.Enabled,
+		"running":       v.Running,
+		"non_skippable": v.NonSkippable,
+		"last_status":   v.LastStatus,
+		"last_error":    v.LastError,
+		"run_count":     v.RunCount,
+		"fail_count":    v.FailCount,
+	}
+	if !v.NextRun.IsZero() {
+		m["next_run"] = v.NextRun.UTC().Format(time.RFC3339)
+	}
+	if !v.LastRun.IsZero() {
+		m["last_run"] = v.LastRun.UTC().Format(time.RFC3339)
+	}
+	return m
+}
+
+// apiSchedulerErr maps engine sentinel errors to an HTTP status + API error code.
+func apiSchedulerErr(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, scheduler.ErrTaskNotFound):
+		jsonAdminErr(w, http.StatusNotFound, "NOT_FOUND", "Task not found.")
+	case errors.Is(err, scheduler.ErrTaskRunning):
+		jsonAdminErr(w, http.StatusConflict, "CONFLICT", "Task is already running.")
+	case errors.Is(err, scheduler.ErrTaskNotSkippable):
+		jsonAdminErr(w, http.StatusForbidden, "FORBIDDEN", "This task is critical and cannot be disabled.")
+	default:
+		jsonAdminErr(w, http.StatusInternalServerError, "SERVER_ERROR", err.Error())
+	}
+}
+
 // APIConfigScheduler handles GET /api/v1/server/{adminPath}/config/scheduler
 func (h *AdminHandler) APIConfigScheduler(w http.ResponseWriter, r *http.Request) {
-	sch := h.cfg.Server.Scheduler
-	jsonAdminOK(w, map[string]any{
-		"session_cleanup":  map[string]any{"cron": sch.SessionCleanupCron, "enabled": sch.SessionCleanupEnabled},
-		"token_cleanup":    map[string]any{"cron": sch.TokenCleanupCron, "enabled": sch.TokenCleanupEnabled},
-		"expire_urls":      map[string]any{"cron": sch.ExpireURLsCron, "enabled": sch.ExpireURLsEnabled},
-		"log_rotation":     map[string]any{"cron": sch.LogRotationCron, "enabled": sch.LogRotationEnabled},
-		"backup_daily":     map[string]any{"cron": sch.BackupCron, "enabled": sch.BackupEnabled},
-		"ssl_renewal":      map[string]any{"cron": sch.SSLRenewalCron, "enabled": sch.SSLRenewalEnabled},
-		"geoip_update":     map[string]any{"cron": sch.GeoIPUpdateCron, "enabled": sch.GeoIPUpdateEnabled},
-		"blocklist_update": map[string]any{"cron": sch.BlocklistUpdateCron, "enabled": sch.BlocklistUpdateEnabled},
-		"cve_update":       map[string]any{"cron": sch.CVEUpdateCron, "enabled": sch.CVEUpdateEnabled},
-		"healthcheck_self": map[string]any{"cron": sch.HealthcheckCron, "enabled": sch.HealthcheckEnabled},
-		"tor_health":       map[string]any{"cron": sch.TorHealthCron, "enabled": sch.TorHealthEnabled},
-	})
+	if h.scheduler == nil {
+		jsonAdminErr(w, http.StatusServiceUnavailable, "MAINTENANCE", "Scheduler engine unavailable.")
+		return
+	}
+	views := h.scheduler.ListTasks(r.Context())
+	tasks := make([]map[string]any, 0, len(views))
+	for _, v := range views {
+		tasks = append(tasks, taskViewJSON(v))
+	}
+	jsonAdminOK(w, map[string]any{"tasks": tasks})
+}
+
+// APIConfigSchedulerTask handles GET /api/v1/server/{adminPath}/config/scheduler/{id}
+func (h *AdminHandler) APIConfigSchedulerTask(w http.ResponseWriter, r *http.Request) {
+	if h.scheduler == nil {
+		jsonAdminErr(w, http.StatusServiceUnavailable, "MAINTENANCE", "Scheduler engine unavailable.")
+		return
+	}
+	v, err := h.scheduler.TaskByID(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		apiSchedulerErr(w, err)
+		return
+	}
+	jsonAdminOK(w, taskViewJSON(v))
+}
+
+// APIConfigSchedulerUpdate handles PATCH /api/v1/server/{adminPath}/config/scheduler/{id}.
+// Only the enabled flag is mutable at runtime; schedule changes go through server.yml.
+func (h *AdminHandler) APIConfigSchedulerUpdate(w http.ResponseWriter, r *http.Request) {
+	if h.scheduler == nil {
+		jsonAdminErr(w, http.StatusServiceUnavailable, "MAINTENANCE", "Scheduler engine unavailable.")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	var body struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		jsonAdminErr(w, http.StatusBadRequest, "INVALID_JSON", "Invalid JSON body.")
+		return
+	}
+	if body.Enabled == nil {
+		jsonAdminErr(w, http.StatusBadRequest, "BAD_REQUEST", "No mutable field supplied (expected 'enabled').")
+		return
+	}
+	if err := h.scheduler.SetTaskEnabled(r.Context(), id, *body.Enabled); err != nil {
+		apiSchedulerErr(w, err)
+		return
+	}
+	h.recordAudit(r, adminActorID(r), "scheduler_update", "scheduler:"+id, fmt.Sprintf("enabled=%t", *body.Enabled))
+	v, err := h.scheduler.TaskByID(r.Context(), id)
+	if err != nil {
+		apiSchedulerErr(w, err)
+		return
+	}
+	jsonAdminOK(w, taskViewJSON(v))
+}
+
+// APIConfigSchedulerRun handles POST /api/v1/server/{adminPath}/config/scheduler/{id}/run
+func (h *AdminHandler) APIConfigSchedulerRun(w http.ResponseWriter, r *http.Request) {
+	if h.scheduler == nil {
+		jsonAdminErr(w, http.StatusServiceUnavailable, "MAINTENANCE", "Scheduler engine unavailable.")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if err := h.scheduler.RunNow(id); err != nil {
+		apiSchedulerErr(w, err)
+		return
+	}
+	h.recordAudit(r, adminActorID(r), "scheduler_run", "scheduler:"+id, "")
+	jsonAdminOK(w, map[string]any{"queued": true, "id": id})
+}
+
+// APIConfigSchedulerEnable handles POST /api/v1/server/{adminPath}/config/scheduler/{id}/enable
+func (h *AdminHandler) APIConfigSchedulerEnable(w http.ResponseWriter, r *http.Request) {
+	h.apiSchedulerSetEnabled(w, r, true)
+}
+
+// APIConfigSchedulerDisable handles POST /api/v1/server/{adminPath}/config/scheduler/{id}/disable
+func (h *AdminHandler) APIConfigSchedulerDisable(w http.ResponseWriter, r *http.Request) {
+	h.apiSchedulerSetEnabled(w, r, false)
+}
+
+// apiSchedulerSetEnabled is the shared body of the enable/disable POST endpoints.
+func (h *AdminHandler) apiSchedulerSetEnabled(w http.ResponseWriter, r *http.Request, enabled bool) {
+	if h.scheduler == nil {
+		jsonAdminErr(w, http.StatusServiceUnavailable, "MAINTENANCE", "Scheduler engine unavailable.")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if err := h.scheduler.SetTaskEnabled(r.Context(), id, enabled); err != nil {
+		apiSchedulerErr(w, err)
+		return
+	}
+	action := "scheduler_disable"
+	if enabled {
+		action = "scheduler_enable"
+	}
+	h.recordAudit(r, adminActorID(r), action, "scheduler:"+id, "")
+	v, err := h.scheduler.TaskByID(r.Context(), id)
+	if err != nil {
+		apiSchedulerErr(w, err)
+		return
+	}
+	jsonAdminOK(w, taskViewJSON(v))
+}
+
+// APIConfigSchedulerHistory handles GET /api/v1/server/{adminPath}/config/scheduler/{id}/history
+func (h *AdminHandler) APIConfigSchedulerHistory(w http.ResponseWriter, r *http.Request) {
+	if h.scheduler == nil {
+		jsonAdminErr(w, http.StatusServiceUnavailable, "MAINTENANCE", "Scheduler engine unavailable.")
+		return
+	}
+	id := chi.URLParam(r, "id")
+	limit := 100
+	if q := r.URL.Query().Get("limit"); q != "" {
+		if n, err := strconv.Atoi(q); err == nil {
+			limit = n
+		}
+	}
+	entries, err := h.scheduler.TaskHistory(r.Context(), id, limit)
+	if err != nil {
+		apiSchedulerErr(w, err)
+		return
+	}
+	out := make([]map[string]any, 0, len(entries))
+	for _, e := range entries {
+		row := map[string]any{
+			"status":      e.Status,
+			"error":       e.Error,
+			"duration_ms": e.DurationMs,
+		}
+		if !e.StartedAt.IsZero() {
+			row["started_at"] = e.StartedAt.UTC().Format(time.RFC3339)
+		}
+		if !e.FinishedAt.IsZero() {
+			row["finished_at"] = e.FinishedAt.UTC().Format(time.RFC3339)
+		}
+		out = append(out, row)
+	}
+	jsonAdminOK(w, map[string]any{"history": out})
 }
 
 // APIConfigMaintenance handles GET /api/v1/server/{adminPath}/config/maintenance

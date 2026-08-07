@@ -30,6 +30,19 @@ type torHealthChecker interface {
 	Restart() error
 }
 
+// nonSkippableTasks are the critical tasks that must never be disabled via
+// config or the admin panel (AI.md PART 19 "Built-in Tasks" — Skippable = No).
+// addTasks forces them enabled; SetTaskEnabled refuses to disable them.
+var nonSkippableTasks = map[string]bool{
+	"session_cleanup":   true,
+	"token_cleanup":     true,
+	"log_rotation":      true,
+	"ssl_renewal":       true,
+	"healthcheck_self":  true,
+	"tor_health":        true,
+	"cluster_heartbeat": true,
+}
+
 // task is one registered scheduled job, per AI.md PART 19 "Built-in Tasks".
 type task struct {
 	id         string
@@ -225,17 +238,8 @@ func (s *Scheduler) addTasks() {
 	// disabled via config or the admin panel, so force them enabled regardless
 	// of the cfg value. Their schedule stays configurable — only the on/off
 	// switch is locked on.
-	nonSkippable := map[string]bool{
-		"session_cleanup":   true,
-		"token_cleanup":     true,
-		"log_rotation":      true,
-		"ssl_renewal":       true,
-		"healthcheck_self":  true,
-		"tor_health":        true,
-		"cluster_heartbeat": true,
-	}
 	for _, t := range defs {
-		if nonSkippable[t.id] {
+		if nonSkippableTasks[t.id] {
 			t.enabled = true
 		}
 	}
@@ -311,11 +315,10 @@ func (s *Scheduler) loop() {
 func (s *Scheduler) tick() {
 	now := time.Now()
 	for _, t := range s.tasks {
-		if !t.enabled {
-			continue
-		}
+		// enabled is read under t.mu because the admin panel can toggle it
+		// concurrently via SetTaskEnabled — an unlocked read would be a data race.
 		t.mu.Lock()
-		ready := !t.running && !now.Before(t.nextRun)
+		ready := t.enabled && !t.running && !now.Before(t.nextRun)
 		if ready {
 			t.running = true
 		}
@@ -345,14 +348,15 @@ func (s *Scheduler) loadOrInitTaskState(t *task, now time.Time) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	var nextRunUnix, runCount, failCount int64
+	var nextRunUnix, runCount, failCount, storedEnabled int64
 	var lastStatus, lastErrorS string
 	row := s.store.ServerDB.QueryRowContext(ctx,
-		`SELECT next_run, run_count, fail_count, COALESCE(last_status,''), COALESCE(last_error,'') FROM scheduler_tasks WHERE id = ?`, t.id)
-	err := row.Scan(&nextRunUnix, &runCount, &failCount, &lastStatus, &lastErrorS)
+		`SELECT next_run, run_count, fail_count, enabled, COALESCE(last_status,''), COALESCE(last_error,'') FROM scheduler_tasks WHERE id = ?`, t.id)
+	err := row.Scan(&nextRunUnix, &runCount, &failCount, &storedEnabled, &lastStatus, &lastErrorS)
 
 	if err != nil {
-		// New task: insert with next_run computed from now.
+		// New task: insert with next_run computed from now, enabled seeded
+		// from config (first run only).
 		next := t.cron.Next(now, s.loc)
 		t.nextRun = next
 		_, insErr := s.store.ServerDB.ExecContext(ctx,
@@ -366,8 +370,16 @@ func (s *Scheduler) loadOrInitTaskState(t *task, now time.Time) {
 		return
 	}
 
-	// Existing row: keep name/type/schedule/enabled in sync with config,
-	// clear any stale lock this node held across a restart.
+	// Existing row: server.db is authoritative for the enabled bit so admin
+	// panel toggles (SetTaskEnabled) survive a restart per AI.md PART 19
+	// ("Persistent State" — enabled is a persisted column). Non-skippable
+	// tasks are always forced on regardless of the stored value. Name, type,
+	// and schedule are still synced from config, and any stale lock this node
+	// held across a restart is cleared.
+	t.enabled = storedEnabled != 0
+	if nonSkippableTasks[t.id] {
+		t.enabled = true
+	}
 	_, updErr := s.store.ServerDB.ExecContext(ctx,
 		`UPDATE scheduler_tasks SET name=?, task_type=?, schedule=?, enabled=?, locked_by=NULL, locked_at=NULL WHERE id=?`,
 		t.name, t.taskType, t.schedule, boolToInt(t.enabled), t.id)

@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/webappsgo/caslink/src/config"
+	"github.com/webappsgo/caslink/src/scheduler"
 	"github.com/webappsgo/caslink/src/server/service"
 	"github.com/webappsgo/caslink/src/server/store"
 	apktor "github.com/webappsgo/caslink/src/tor"
@@ -356,6 +357,7 @@ type AdminHandler struct {
 	domainService    *service.DomainService
 	tokenService     *service.TokenService
 	clusterService   *service.ClusterService
+	scheduler        *scheduler.Scheduler
 	version          string
 	mode             string
 	adminPath        string // configurable admin path segment, default "admin"
@@ -370,6 +372,7 @@ func NewAdminHandler(
 	userAdminService *service.UserAdminService,
 	auditService *service.AuditService,
 	domainService *service.DomainService,
+	sched *scheduler.Scheduler,
 	version, mode, adminPath string,
 	cfg *config.Config,
 	st *store.Store,
@@ -386,6 +389,7 @@ func NewAdminHandler(
 		domainService:    domainService,
 		tokenService:     service.NewTokenService(st),
 		clusterService:   service.NewClusterService(st),
+		scheduler:        sched,
 		version:          version,
 		mode:             mode,
 		adminPath:        adminPath,
