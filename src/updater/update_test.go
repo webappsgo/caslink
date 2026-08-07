@@ -1,8 +1,12 @@
 package updater
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -517,5 +521,67 @@ func TestDoUpdateFor_ChecksumAssetRecognizedBySHA256SUMSName(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "checksum verification failed") {
 		t.Errorf("unexpected error (want checksum path to have been used): %v", err)
+	}
+}
+
+// TestDoUpdateFor_SuccessReplacesBinary exercises the full happy path that
+// every other DoUpdateFor test stops short of: download → SHA256 verify (this
+// time with a matching checksum) → installUpdatedBinary → replaceBinary. The
+// currentExecutable seam redirects the atomic replace at a synthetic file in a
+// temp dir so the real running test binary is never touched, letting the test
+// assert the target file is overwritten with the new payload and left
+// executable. Unix-only: Windows uses a distinct rename-to-.old strategy.
+func TestDoUpdateFor_SuccessReplacesBinary(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("unix atomic-rename replace path; windows uses a distinct .old strategy")
+	}
+
+	newContent := []byte("brand new caslink binary payload")
+	sum := sha256.Sum256(newContent)
+	hexSum := hex.EncodeToString(sum[:])
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/binary", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(newContent)
+	})
+	mux.HandleFunc("/checksums.txt", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprintf(w, "%s  caslink-linux-amd64\n", hexSum)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	// Synthetic "currently running" binary in a writable temp dir so the atomic
+	// replace overwrites it instead of the real test process executable.
+	target := filepath.Join(t.TempDir(), "caslink")
+	if err := os.WriteFile(target, []byte("stale old binary"), 0o755); err != nil {
+		t.Fatalf("seed target binary: %v", err)
+	}
+	orig := currentExecutable
+	currentExecutable = func() (string, error) { return target, nil }
+	defer func() { currentExecutable = orig }()
+
+	release := &Release{
+		Assets: []Asset{
+			{Name: "caslink-linux-amd64", BrowserDownloadURL: srv.URL + "/binary"},
+			{Name: "checksums.txt", BrowserDownloadURL: srv.URL + "/checksums.txt"},
+		},
+	}
+	if err := DoUpdateFor(t.Context(), release, "caslink-linux-amd64"); err != nil {
+		t.Fatalf("DoUpdateFor success path returned error: %v", err)
+	}
+
+	got, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("read replaced binary: %v", err)
+	}
+	if !bytes.Equal(got, newContent) {
+		t.Errorf("target not replaced with new payload: got %q", got)
+	}
+	info, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("stat replaced binary: %v", err)
+	}
+	if info.Mode().Perm()&0o100 == 0 {
+		t.Errorf("replaced binary not left executable: mode %v", info.Mode())
 	}
 }

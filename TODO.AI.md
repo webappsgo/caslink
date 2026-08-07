@@ -5,6 +5,44 @@ feature-sized, carries real regression risk, or needs a design decision — so i
 was logged here rather than fixed inline during the audit. All small, safe
 findings from that audit were fixed directly and are not listed here.
 
+## Resolved in the 2026-08 admin/backlog completeness pass
+
+- Admin API tokens (PART 11/17): DONE. `/config/security/tokens` GET+POST were
+  silent no-op stubs; now wired to a real TokenService (create shows the
+  plaintext once and never in a URL/cookie, list, revoke), scoped by
+  owner_type+owner_id so one owner can never see or revoke another's token.
+- Admin metrics status page (PART 17/21): DONE. Added the missing
+  `/config/metrics` read-only status page + sidebar entry (the /metrics
+  endpoint itself was already wired); the bearer token value is never rendered,
+  only whether auth is required.
+- Updater success-path test gap (PART 23): DONE. Every prior `DoUpdateFor` test
+  covered an error path; added `TestDoUpdateFor_SuccessReplacesBinary`, which
+  drives the full download → SHA256-verify(match) → installUpdatedBinary →
+  atomic replaceBinary path via the `currentExecutable` seam against a
+  synthetic target, asserting the target is overwritten and left executable.
+- trusted_proxies.additional hostname DNS resolution: VERIFIED ALREADY COMPLETE
+  — `src/config/trustedproxy.go` resolves hostname entries via `net.LookupIP`
+  with a 5-minute background refresh and a resolved-IP cache checked under read
+  lock in `IsTrusted`. No code change needed.
+
+## Deferred subsystem builds (each fronts an unbuilt/engine-less subsystem)
+
+Confirmed by direct code search (2026-08). These are not stub-wires — each
+needs a real service, schema, and/or engine before its admin page is more than
+a facade, so each is a feature-sized build tracked here rather than faked:
+
+- Cluster join-token subsystem: `ConfigClusterAddAction` redirects `?created=1`
+  without issuing a token; there is no ClusterService, no `srv_cluster*`/nodes
+  schema, and no single-use join-token generator behind it.
+- `/config/agents` admin page: fully unbuilt — no AgentService, schema, handler,
+  or route; depends on the agent (`caslink-agent`) enrollment subsystem.
+- OIDC/LDAP/SAML config sub-pages: `/config/security/auth` renders only password
+  policy / session / MFA; there is no provider config struct or service and no
+  oidc/ldap/saml child routes.
+- Scheduler save/enable/disable/run-now: `/config/scheduler` is a read-only
+  task table with no action POSTs; there is no running scheduler engine to
+  enable/disable/trigger against (changes still require editing server.yml).
+
 ## Deferred from the 2026-08 extended PART 13-36 audit
 
 These surfaced during the extended audit (tracker was AUDIT.AI.md, now
