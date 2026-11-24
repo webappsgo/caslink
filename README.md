@@ -146,6 +146,18 @@ make dev            # Quick dev build
 
 All builds use Docker containers - no Go installation required on host.
 
+To build production or development images directly with Docker Buildx:
+
+```bash
+scripts/build-docker.sh --target production
+scripts/build-docker.sh --target development --single-arch
+```
+
+The script also accepts `--target all`, `--version`, `--registry`, `--platforms`,
+and `--no-cache`. Multi-platform builds use Buildx's cache; use `--single-arch`
+to load the host architecture image into the local Docker daemon. The script
+builds images locally and does not push them.
+
 ## Documentation
 
 - **[Installation Guide](https://caslink.casapps.us/installation)** - Detailed setup instructions

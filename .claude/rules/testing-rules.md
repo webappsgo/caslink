@@ -73,6 +73,7 @@ Only acceptable pattern: `${TMPDIR:-/tmp}/webappsgo/caslink-XXXXXX/` (with `volu
 | fr | French | ltr | one, other |
 | ar | Arabic | rtl | zero, one, two, few, many, other |
 | de | German | ltr | one, other |
+| it | Italian | ltr | one, many, other |
 | ja | Japanese | ltr | other |
 
 Language resolution order: `?lang=` (sets cookie) → `lang` cookie → `Accept-Language` header → `en`. Files at `src/common/i18n/locales/{lang}.json`, embedded via `go:embed`, validated by `make i18n-validate`.

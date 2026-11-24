@@ -5,7 +5,7 @@ translation keys. The server and client binaries embed the same locale files.
 
 ## Supported languages
 
-The repository currently ships seven locale files:
+The repository currently ships eight locale files:
 
 | Code | Language | Direction |
 |------|----------|-----------|
@@ -14,6 +14,7 @@ The repository currently ships seven locale files:
 | `en` | English | Left to right |
 | `es` | Spanish | Left to right |
 | `fr` | French | Left to right |
+| `it` | Italian | Left to right |
 | `ja` | Japanese | Left to right |
 | `zh` | Chinese | Left to right |
 
