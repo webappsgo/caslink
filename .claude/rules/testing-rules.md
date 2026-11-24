@@ -21,7 +21,7 @@
 - Always create/update the matching `*_test.go` in the same work pass when package logic changes — never defer
 - Always test every route with all applicable Accept headers (`text/html`+`text/plain` frontend; `application/json`+`text/plain` API) and every `.txt` endpoint
 - Always test admin routes for both rejection (unauthenticated/invalid) and success (setup token → login → session)
-- Always prefer Incus (full systemd) for Phase 2; fall back to Docker Alpine when Incus unavailable
+- Always run `tests/run_tests.sh` for Phase 2's Docker-only basic tier; run `tests/incus.sh` explicitly for the preferred full-app service-lifecycle tier (it must not be selected automatically by `run_tests.sh`)
 - Always host `docs/` on ReadTheDocs via MkDocs Material with dark/light/auto toggle, per PART 16 theme rules
 - Always keep every language's JSON keys in sync with `en.json` (`make i18n-validate`) and rebuild all binaries after adding a language
 - Always set `dir="rtl"` for Arabic and use CSS logical properties (`margin-inline-start`, not `margin-left`)
@@ -36,7 +36,7 @@
 | 1 — Toolchain | `*_test.go` | `make test` | ≥60% coverage, pre-commit, CI |
 | 2 — Binary Validation | `tests/*.sh` | `./tests/run_tests.sh` | 100% endpoint/route coverage, manual only |
 
-Required scripts: `tests/run_tests.sh` (auto-detect), `tests/docker.sh` (alpine fallback), `tests/incus.sh` (debian/systemd, preferred). All license `WTFPL`.
+Required scripts: `tests/run_tests.sh` (Docker-only basic tier), `tests/docker.sh` (Alpine binary suite), and `tests/incus.sh` (explicit full-app service-lifecycle suite). All license `WTFPL`.
 
 ### Temp directory rule
 

@@ -1,160 +1,39 @@
 # Integrations
 
-This page documents external integrations, identity providers, native app links, autodiscovery, and protocol-level integrations supported by Caslink.
+This page describes integration surfaces currently exposed by Caslink. The server does not provide native mobile-app association files or outbound webhooks.
 
-## Social Login (OAuth2 / OIDC)
+## External identity providers
 
-Caslink supports social login via any OAuth2/OIDC-compatible provider. Built-in presets:
+The admin interface supports configuring named OIDC, LDAP, and SAML providers at `/server/{admin_path}/security/auth/{type}`. Provider configuration is stored in the server configuration and sensitive values are encrypted. The provider API is under `/api/v1/server/{admin_path}/security/auth/{type}/providers`; it requires an admin-scoped bearer token (`adm_`).
 
-| Provider | Type | Configuration |
-|----------|------|---------------|
-| Google | OIDC | `settings.auth.oauth2.google` |
-| GitHub | OAuth2 | `settings.auth.oauth2.github` |
-| Custom OIDC | OIDC | `settings.auth.oauth2.custom[]` |
+The browser and client sign-in flows depend on enabled providers. Configure and test a provider in the admin interface before enabling it for users. Use TLS for provider endpoints and keep client secrets, bind credentials, SAML signing keys, and metadata private. The server does not ship Google or GitHub-specific presets.
 
-### Configuring a Provider
+## API discovery and documentation
 
-In the admin panel: **Settings → Authentication → OAuth2**.
+Clients can request `GET /api/autodiscover` before selecting an API version. It returns server connection information and enabled capabilities. OpenAPI JSON is served at `/api/swagger` and at `{api_base_path}/server/swagger` (default `{api_base_path}`: `/api/v1`). The browser documentation is at `/server/docs/swagger`. The GraphQL console and endpoint are at `/server/docs/graphql`; GraphQL queries are also accepted at `/api/graphql` and `{api_base_path}/server/graphql`.
 
-Minimum required fields:
+The API base path is configurable. See [API Reference](api.md) for authentication and route families.
 
-```yaml
-auth:
-  oauth2:
-    github:
-      enabled: true
-      client_id: "your-client-id"
-      client_secret: "your-client-secret"
-      # redirect URI is auto-set to {baseurl}/auth/oauth2/github/callback
-```
+## Custom domains and certificates
 
-## Native App Links
+Users and organization members can add custom domains from their account pages or API. Caslink provides a DNS TXT verification value and reports DNS/SSL status. Verification and certificate issuance require outbound DNS/network access. The server serves ACME HTTP-01 challenges at `/.well-known/acme-challenge/{token}` when a challenge is active. Certificate configuration is managed in the admin panel; availability depends on the configured TLS mode and reachable DNS/HTTP endpoints.
 
-Caslink serves the standard well-known files required for native mobile app deep links.
+## GeoIP and blocklists
 
-### iOS — Universal Links
+The built-in scheduler updates the configured GeoIP database and security blocklists. GeoIP enriches click analytics and may inform security decisions; it must not be used as the sole access-control decision. The default GeoIP source is the project-configured `sapics/ip-location-db` dataset and does not require a MaxMind account.
 
-```
-GET /.well-known/apple-app-site-association
-```
+## Metrics
 
-Enables iOS apps to open short links directly in-app instead of the browser. Configure your app team ID and bundle ID in the admin panel under **Settings → Integrations → iOS**.
+Prometheus metrics are available only when enabled in server configuration. The configured endpoint defaults to `/metrics`; an optional bearer token can protect it. Restrict this endpoint at the network boundary as well. The admin metrics page reports server status but is not the Prometheus scrape endpoint.
 
-### Android — App Links
+## Tor
 
-```
-GET /.well-known/assetlinks.json
-```
+When Tor support is enabled and a Tor executable is available, the server can create a hidden service and report its address through server status and autodiscovery. Tor requires outbound network access. See [Configuration](configuration.md) for the supported settings.
 
-Enables Android apps to open short links directly. Configure your package name and SHA-256 signing certificate fingerprint in the admin panel under **Settings → Integrations → Android**.
+## Standards endpoints
 
-## Webhooks
+Caslink serves `/.well-known/security.txt`, `/.well-known/change-password`, and active ACME HTTP-01 challenge paths. Other `/.well-known/` paths are not served unless an explicitly enabled feature provides them. Unknown paths return `404`.
 
-Caslink can deliver event notifications to any HTTP endpoint.
+## Billing and federation
 
-### Supported Events
-
-| Event | Description |
-|-------|-------------|
-| `link.created` | A new short link was created |
-| `link.clicked` | A short link was visited |
-| `link.deleted` | A short link was deleted |
-| `link.expired` | A short link passed its expiration date |
-| `user.registered` | A new user registered |
-
-### Configuring Webhooks
-
-In the admin panel: **Settings → Integrations → Webhooks → Add Webhook**.
-
-Payload format (JSON):
-
-```json
-{
-  "event": "link.clicked",
-  "timestamp": "2025-12-04T13:05:13Z",
-  "data": {
-    "slug": "my-link",
-    "url": "https://example.com",
-    "country": "US",
-    "referrer": "https://twitter.com"
-  }
-}
-```
-
-Webhook deliveries include a `X-Caslink-Signature` header (HMAC-SHA256 of the payload body, keyed with the webhook secret).
-
-## API Integrations
-
-Caslink exposes a versioned REST API and a GraphQL endpoint:
-
-| Surface | URL |
-|---------|-----|
-| REST API | `/api/v1/` |
-| GraphQL | `/api/v1/server/graphql` (aliased at `/api/graphql`) |
-| Swagger UI | `/server/docs/swagger` |
-| GraphiQL | `/server/docs/graphql` |
-| OpenAPI JSON spec | `/api/v1/server/swagger` |
-
-See [API Reference](api.md) for complete endpoint documentation.
-
-## Prometheus Metrics
-
-Caslink exposes internal metrics in Prometheus text format:
-
-```
-GET /metrics
-Authorization: Bearer <metrics-token>  # if configured
-```
-
-The `/metrics` endpoint is **internal-only** and never publicly routed. Configure access in the admin panel under **Settings → Monitoring**.
-
-## Email / SMTP
-
-Caslink sends transactional email for registration confirmation, password reset, 2FA changes, and link expiration notices.
-
-Supported providers:
-
-| Provider | Configuration |
-|----------|---------------|
-| SMTP (any) | `email.smtp.*` |
-| SendGrid | `email.sendgrid.api_key` |
-| Amazon SES | `email.ses.*` |
-
-Configure in the admin panel under **Settings → Email** or in `server.yml`:
-
-```yaml
-email:
-  from: "noreply@yourdomain.com"
-  smtp:
-    host: smtp.example.com
-    port: 587
-    username: user
-    password: pass
-    tls: starttls
-```
-
-## GeoIP Database
-
-Caslink uses a GeoIP2 database for country/city lookup on link clicks. The database is updated automatically by the built-in scheduler.
-
-To use MaxMind GeoLite2 (free, requires account key):
-
-```yaml
-geoip:
-  provider: maxmind
-  license_key: "your-license-key"
-  edition: GeoLite2-City
-```
-
-## Let's Encrypt (ACME)
-
-Caslink manages TLS certificates automatically via Let's Encrypt:
-
-- **HTTP-01** challenge: used when port 80 is accessible
-- **DNS-01** challenge: used for wildcard certificates or when port 80 is not accessible
-
-Configure DNS-01 in the admin panel under **Settings → SSL → DNS Provider**.
-
-## Tor Hidden Service
-
-When `tor` is installed on the host, Caslink automatically starts a Tor process and creates a `.onion` address. No manual torrc configuration required. The `.onion` address is shown in the admin panel under **Settings → Network → Tor**.
+Billing and federation are described as optional product capabilities in the project definition. They are not exposed by the current server routes and are not enabled integrations in this build.

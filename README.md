@@ -1,261 +1,56 @@
-# Caslink - Self-Hosted URL Shortener
+# Caslink
 
 [![License](https://img.shields.io/github/license/webappsgo/caslink)](LICENSE.md)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/webappsgo/caslink)](go.mod)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/webappsgo/caslink/release.yml?branch=main)](https://github.com/webappsgo/caslink/actions)
-[![Docker Pulls](https://img.shields.io/docker/pulls/webappsgo/caslink)](https://hub.docker.com/r/webappsgo/caslink)
+[![Go](https://img.shields.io/github/go-mod/go-version/webappsgo/caslink)](go.mod)
+[![Build](https://github.com/webappsgo/caslink/actions/workflows/ci.yml/badge.svg)](https://github.com/webappsgo/caslink/actions/workflows/ci.yml)
+[![Documentation](https://readthedocs.org/projects/caslink/badge/?version=latest)](https://caslink.casapps.us/)
 
-**Caslink** is a secure, mobile-first, feature-rich, fully self-hosted URL shortener application written in Go that compiles into a single static binary with zero external dependencies.
+Caslink is a self-hosted URL shortener written in Go. It provides link creation and redirects, click analytics, QR codes, bulk import/export, user accounts, organizations, custom domains, and an administrator interface. The server renders its web pages in Go templates and embeds its frontend assets in the binary.
 
 ## Features
 
-- **Multi-User Support** - Public registration enabled by default, full user account management
-- **Organization Support** - Teams/organizations with role-based access control (owner, admin, member)
-- **Custom Domains** - Users and organizations can use branded domains with automatic SSL
-- **Universal Feature Parity** - All users get all features, regardless of deployment type
-- **Zero-Config Startup** - Works immediately with intelligent defaults
-- **Single Static Binary** - No external dependencies, just one executable
-- **Database Agnostic** - SQLite, PostgreSQL, MySQL, SQL Server support
-- **Advanced Analytics** - Real-time click tracking with geolocation
-- **QR Code Generation** - Customizable QR codes in PNG, SVG, PDF formats
-- **Bulk Operations** - Import/export URLs in CSV and JSON
-- **Proxy Aware** - Automatic detection of reverse proxies
-- **Production Ready** - Migrations, audit trails, backups
-- **Security** - Argon2id password hashing, TOTP/2FA, Passkeys/WebAuthn, OAuth2/OIDC
+- Short links with custom codes, passwords, expiration, visibility, and targeting options
+- Click analytics with referrer, device, and GeoIP information
+- QR code generation and CSV/JSON import and export
+- User accounts, API tokens, TOTP, passkeys, and organization membership
+- Custom domains with DNS verification and certificate management
+- Configurable server administration, scheduler, backup, and security controls
+- REST and GraphQL APIs, OpenAPI documentation, and API autodiscovery
+- Eight embedded locales: English, Spanish, Chinese, French, Arabic, German, Italian, and Japanese
 
-## Quick Start
+## Quick start
 
-### Using Docker (Recommended)
+Use the published container with persistent configuration and data directories:
 
-```bash
-docker run -d \
-  -p 64580:80 \
-  -v caslink-config:/etc/webappsgo/caslink \
-  -v caslink-data:/var/lib/webappsgo/caslink \
+```sh
+docker run --detach \
+  --name caslink \
+  --publish 64580:80 \
+  --volume caslink-config:/config/caslink \
+  --volume caslink-data:/data/caslink \
   webappsgo/caslink:latest
 ```
 
-Access at: `http://localhost:64580`
-
-### Using Binary
-
-```bash
-# Download latest release
-wget https://github.com/webappsgo/caslink/releases/latest/download/caslink-linux-amd64
-chmod +x caslink-linux-amd64
-
-# Run server (creates admin on first run)
-./caslink-linux-amd64
-```
-
-Access at: `http://localhost:64580` (or auto-selected port shown in terminal)
-
-### Using Docker Compose
-
-```bash
-git clone https://github.com/webappsgo/caslink
-cd caslink/docker
-docker-compose up -d
-```
-
-## Configuration
-
-Caslink works with zero configuration but can be customized via:
-
-1. **Environment Variables** - `CASLINK_*` prefix
-2. **Config File** - `/etc/webappsgo/caslink/server.yml`
-3. **CLI Flags** - `--config`, `--data`, `--port`, etc.
-4. **Admin Panel** - Web UI at `/admin`
-
-### Example Configuration
-
-```yaml
-server:
-  address: "0.0.0.0:8080"
-  mode: production
-
-database:
-  type: sqlite
-  path: "{datadir}/db/server.db"
-
-url:
-  min_random_length: 6
-  default_expiration: never
-
-analytics:
-  enabled: true
-  enable_geolocation: true
-  anonymize_ips: true
-```
-
-## CLI Commands
-
-```bash
-caslink --help                 # Show all commands
-caslink --version              # Show version
-caslink --config /path         # Set config directory
-caslink --data /path           # Set data directory
-caslink --port 8080            # Set port
-caslink --mode production      # Set mode (production/development)
-caslink --debug                # Enable debug mode
-caslink --status               # Show server status
-caslink --maintenance backup   # Create backup
-caslink --update check         # Check for updates
-```
-
-## API Usage
-
-### Create Short URL
-
-```bash
-curl -X POST http://localhost:64580/api/v1/urls \
-  -H "Content-Type: application/json" \
-  -d '{"url": "https://example.com", "custom_code": "ex"}'
-```
-
-### Get Analytics
-
-```bash
-curl http://localhost:64580/api/v1/urls/ex/stats
-```
-
-### Generate QR Code
-
-```bash
-curl http://localhost:64580/api/v1/qr/ex > qr.png
-```
-
-See [API Documentation](https://caslink.casapps.us/api) for complete API reference.
-
-## Building from Source
-
-### Prerequisites
-
-- Docker (for building - Go is run in containers)
-- Make
-
-### Build Commands
-
-```bash
-make build          # Build for current platform
-make release        # Build for all platforms
-make docker         # Build Docker image
-make test           # Run tests
-make dev            # Quick dev build
-```
-
-All builds use Docker containers - no Go installation required on host.
-
-To build production or development images directly with Docker Buildx:
-
-```bash
-scripts/build-docker.sh --target production
-scripts/build-docker.sh --target development --single-arch
-```
-
-The script also accepts `--target all`, `--version`, `--registry`, `--platforms`,
-and `--no-cache`. Multi-platform builds use Buildx's cache; use `--single-arch`
-to load the host architecture image into the local Docker daemon. The script
-builds images locally and does not push them.
+Open `http://localhost:64580` and follow the first-run setup instructions. For other installation methods, see the [installation guide](docs/installation.md).
 
 ## Documentation
 
-- **[Installation Guide](https://caslink.casapps.us/installation)** - Detailed setup instructions
-- **[Configuration Reference](https://caslink.casapps.us/configuration)** - All config options
-- **[API Documentation](https://caslink.casapps.us/api)** - Complete API reference
-- **[Admin Guide](https://caslink.casapps.us/admin)** - Managing your instance
-- **[Development Guide](https://caslink.casapps.us/development)** - Contributing and development
+- [Installation](docs/installation.md)
+- [Configuration](docs/configuration.md)
+- [API reference](docs/api.md)
+- [CLI reference](docs/cli.md)
+- [Administrator guide](docs/admin.md)
+- [Security](docs/security.md)
+- [Integrations](docs/integrations.md)
+- [Development](docs/development.md)
+- [Translation](docs/translating.md)
 
-## Architecture
+The documentation is built with MkDocs Material and published on [Read the Docs](https://caslink.casapps.us/).
 
-Caslink uses a clean architecture with separation of concerns:
+## Build and development
 
-```
-src/
-├── main.go              # Entry point
-├── config/              # Configuration management
-├── server/              # HTTP server and routes
-│   ├── handler/         # HTTP handlers
-│   ├── service/         # Business logic
-│   ├── model/           # Data models
-│   └── store/           # Database access
-├── swagger/             # OpenAPI/Swagger
-├── graphql/             # GraphQL API
-└── mode/                # Production/Development modes
-```
-
-## User Accounts & Organizations
-
-### Multi-User Mode
-
-Caslink supports full multi-user functionality with public registration enabled by default:
-
-- **User Registration**: Open registration at `/auth/register` (can be disabled via config)
-- **Authentication**: Username or email + password login
-- **User Profiles**: Customizable display names, avatars, and bios
-- **Personal URLs**: Users can create and manage their own shortened URLs
-- **Privacy**: Users can only view and manage their own URLs
-
-### Organizations
-
-Users can create and join organizations for collaborative URL management:
-
-- **Create Organizations**: Users can create up to 5 organizations (configurable)
-- **Role-Based Access**: Owner, admin, and member roles with different permissions
-- **Shared URLs**: Organization members can collaborate on URLs owned by the org
-- **Org Domains**: Organizations can use up to 20 custom branded domains
-
-### Custom Domains
-
-Both users and organizations can use custom domains for their short links:
-
-- **Automatic SSL**: Let's Encrypt integration with automatic certificate management
-- **Domain Verification**: DNS-based ownership verification
-- **User Limits**: 5 custom domains per user (configurable)
-- **Org Limits**: 20 custom domains per organization (configurable)
-- **Supported**: Apex domains (example.com) and subdomains (go.example.com)
-
-## Security
-
-- Argon2id password hashing (not bcrypt)
-- TOTP/2FA support
-- Passkeys/WebAuthn support
-- OAuth2/OIDC integration
-- Rate limiting
-- CSRF protection
-- XSS prevention
-- SQL injection prevention
-- Comprehensive audit logging
-- Username blocklist to prevent impersonation
+Builds run in Docker; a local Go toolchain is not required. See [Development](docs/development.md) for the supported build and validation commands. The project supports Linux, macOS, Windows, and FreeBSD on amd64 and arm64.
 
 ## License
 
-MIT License - see [LICENSE.md](LICENSE.md) for details.
-
-Includes embedded licenses for all third-party dependencies.
-
-## Support
-
-- **Documentation**: https://caslink.casapps.us
-- **Issues**: https://github.com/webappsgo/caslink/issues
-- **Discussions**: https://github.com/webappsgo/caslink/discussions
-
-## Contributing
-
-Contributions welcome! Please read [CONTRIBUTING.md](.github/CONTRIBUTING.md) first.
-
-## Roadmap
-
-- [ ] Mobile apps (iOS/Android)
-- [ ] Browser extensions
-- [ ] Link in bio pages
-- [ ] Advanced link rotation
-- [ ] A/B testing for links
-- [ ] Link expiration notifications
-- [ ] Webhook events
-
-## Credits
-
-Built with ❤️ by [webappsgo](https://github.com/webappsgo)
-
-Powered by Go and amazing open-source libraries.
+Caslink is distributed under the MIT license. Third-party license notices are included in [LICENSE.md](LICENSE.md).

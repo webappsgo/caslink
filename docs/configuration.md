@@ -40,7 +40,7 @@ Short flags: only `-h` (help) and `-v` (version). All other flags use long form.
 
 ## Environment Variables
 
-Most variables use the `CASLINK_` prefix. The bare name (without prefix) is also accepted as a fallback (e.g. both `CASLINK_PORT` and `PORT` work). Env values override `server.yml`; CLI flags override env.
+For each setting below, the loader checks `CASLINK_{NAME}` first and then `{NAME}`. Environment values override `server.yml`. CLI flags override configuration where a matching flag exists. This is the full set read by the current server config loader; similarly named variables are not necessarily supported.
 
 ### Server
 
@@ -48,14 +48,12 @@ Most variables use the `CASLINK_` prefix. The bare name (without prefix) is also
 |----------|---------|-------------|
 | `CASLINK_MODE` | `production` | Application mode: `production` or `development` |
 | `CASLINK_PORT` | `8080` | Listen port (`0` = auto-select from 64xxx range) |
-| `CASLINK_LISTEN` | `0.0.0.0` | Listen address (alias of `CASLINK_ADDRESS`) |
+| `CASLINK_LISTEN` | `0.0.0.0` | Listen address; `CASLINK_ADDRESS` is applied afterward if both are set |
 | `CASLINK_ADDRESS` | `[::]` | Listen address |
 | `CASLINK_DOMAIN` | `short.example.com` | Public FQDN / base URL |
 | `CASLINK_FQDN` | `short.example.com` | Public hostname used in generated links |
 | `CASLINK_APP_NAME` | `Caslink` | Branding title |
 | `CASLINK_APP_DESCRIPTION` | `URL shortener` | Branding description |
-| `APP_URL` | `https://short.example.com` | Explicit base URL for links in outbound email; overrides the derived `{proto}://{fqdn}[:port]`. Bare name only (no `CASLINK_` prefix) |
-| `DEBUG` | `false` | Enable debug endpoints and verbose logging (equivalent to `--debug` / `MODE=development`). Bare name only |
 
 ### Admin
 
@@ -68,8 +66,8 @@ Most variables use the `CASLINK_` prefix. The bare name (without prefix) is also
 
 | Variable | Example | Description |
 |----------|---------|-------------|
-| `CASLINK_DATABASE_DRIVER` | `postgres` | Driver: `file`, `sqlite`, `postgres`, `mysql`, `mariadb`, `mssql` |
-| `CASLINK_DATABASE_URL` | `postgres://...` | Full database DSN (overrides host/name/user/pass) |
+| `CASLINK_DATABASE_DRIVER` | `sqlite` | Database driver |
+| `CASLINK_DATABASE_URL` | `postgres://...` | Database DSN |
 | `CASLINK_DATABASE_HOST` | `db.internal` | Database host |
 | `CASLINK_DATABASE_NAME` | `caslink` | Database name |
 | `CASLINK_DATABASE_USERNAME` | `caslink` | Database username |
@@ -82,7 +80,7 @@ Most variables use the `CASLINK_` prefix. The bare name (without prefix) is also
 | `CASLINK_SSL_ENABLED` | `true` | Enable TLS |
 | `CASLINK_LE_ENABLED` | `true` | Enable Let's Encrypt |
 | `CASLINK_LE_EMAIL` | `admin@example.com` | ACME account email |
-| `CASLINK_LE_CHALLENGE` | `http-01` | ACME challenge: `http-01`, `tls-alpn-01`, `dns-01` |
+| `CASLINK_LE_CHALLENGE` | `http-01` | ACME challenge mode |
 | `CASLINK_LE_STAGING` | `false` | Use LE staging CA (for testing) |
 
 ### Email / SMTP
@@ -95,8 +93,6 @@ Most variables use the `CASLINK_` prefix. The bare name (without prefix) is also
 | `SMTP_PORT` | `587` | SMTP server port |
 | `SMTP_USERNAME` | `user` | SMTP auth username |
 | `SMTP_PASSWORD` | `pass` | SMTP auth password |
-| `SMTP_FROM_NAME` | `Caslink` | Display name on outbound mail |
-| `SMTP_FROM_EMAIL` | `no-reply@example.com` | From address (SMTP layer) |
 
 ### Features & Limits
 
@@ -104,7 +100,7 @@ Most variables use the `CASLINK_` prefix. The bare name (without prefix) is also
 |----------|---------|-------------|
 | `CASLINK_MIN_RANDOM_LENGTH` | `6` | Minimum random short-code length |
 | `CASLINK_RATE_LIMIT_ENABLED` | `true` | Enable rate limiting |
-| `CASLINK_RATE_LIMIT_REQUESTS` | `120` | Requests per window |
+| `CASLINK_RATE_LIMIT_REQUESTS` | `120` | Request count used by the configured rate-limit window |
 | `CASLINK_METRICS_ENABLED` | `true` | Enable the `/metrics` endpoint |
 | `CASLINK_METRICS_TOKEN` | `secret` | Bearer token protecting `/metrics` |
 | `CASLINK_GEOIP_ENABLED` | `true` | Enable GeoIP lookups |
@@ -113,17 +109,15 @@ Most variables use the `CASLINK_` prefix. The bare name (without prefix) is also
 
 ### Client / Maintenance
 
-These are read directly (no `CASLINK_`-prefix fallback logic beyond the literal name):
+`NO_COLOR` is read by the CLI. The API token and backup password are supplied through the client/command mechanisms, not these server configuration environment variables.
 
 | Variable | Example | Description |
 |----------|---------|-------------|
-| `CASLINK_TOKEN` | `tok_...` | API token used by the CLI client |
-| `CASLINK_BACKUP_PASSWORD` | `secret` | Password for `--maintenance backup`/`restore` (non-interactive) |
 | `NO_COLOR` | `1` | Disable coloured output (any non-empty value) |
 
 ## `server.yml` Reference
 
-The file is created automatically at `{config_dir}/server.yml` on first run. Edit it then restart the server for changes to take effect (or use the admin panel for live changes).
+The file is created automatically at `{config_dir}/server.yml` on first run. Edit it then restart the server for changes to take effect. The `server`, `web`, and `caslink` sections map to the application's configuration; the admin panel exposes only the settings supported by its pages and API.
 
 ### Server
 

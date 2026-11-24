@@ -1,61 +1,27 @@
 # Caslink
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](../LICENSE.md)
-[![Go](https://img.shields.io/badge/Go-1.22+-00ADD8.svg)](https://go.dev)
+Caslink is a self-hosted URL shortener written in Go. The server provides link creation and redirection, click analytics, QR codes, bulk link operations, user and organization accounts, custom domains, and a server-admin interface. Web pages are server-rendered with Go templates; JavaScript enhances selected interactions.
 
-Caslink is a secure, mobile-first, fully self-hosted URL shortener written in Go. It ships as a single static binary with all assets embedded — no external dependencies, no runtime configuration required to start.
+## Capabilities
 
-## Features
+- Short links with custom codes and configurable password, visibility, expiry, and targeting rules
+- Click statistics with referrer, device, and GeoIP enrichment
+- QR generation and CSV/JSON link import and export
+- User accounts, API tokens, TOTP, passkeys, and organizations
+- Custom domain verification and certificate management
+- Server configuration, scheduled maintenance, backup, and moderation tools
+- REST and GraphQL APIs, OpenAPI documentation, and API autodiscovery
+- English, Spanish, Chinese, French, Arabic, German, Italian, and Japanese translations
 
-- **Single static binary** — all templates, CSS, JS, and locale files embedded at build time
-- **Zero-config startup** — auto-selects a port in the 64xxx range, creates `server.yml` on first run
-- **Multi-database** — SQLite (default), PostgreSQL, MySQL/MariaDB, SQL Server
-- **Full REST API + GraphQL** — versioned REST at `/api/v1/`, GraphQL at `/api/v1/server/graphql`
-- **Interactive API docs** — Swagger UI at `/server/docs/swagger`, GraphiQL at `/server/docs/graphql`
-- **Click analytics** — real-time tracking with GeoIP enrichment, referrer and device parsing
-- **QR code generation** — PNG/SVG/PDF output, configurable size and error-correction level
-- **Bulk import/export** — CSV/JSON via `/api/v1/users/urls/import` and `/export`
-- **Multi-user with orgs** — registration, RBAC (owner/admin/member), org-scoped API tokens
-- **Custom domains** — up to 5 per user, 20 per org, DNS TXT verification, auto-SSL
-- **2FA** — TOTP (RFC 6238) and WebAuthn/passkeys
-- **Built-in scheduler** — SSL renewal, GeoIP updates, session cleanup, backup, blocklist refresh
-- **Tor hidden service** — auto-enabled when the `tor` binary is found on PATH
-- **7 embedded locales** — English, Spanish, French, German, Chinese, Arabic, Japanese
-- **Prometheus metrics** — internal-only endpoint, optional bearer token protection
+Optional integrations such as billing and federation are documented in [Integrations](integrations.md) with their current availability.
 
-## Quick Start
+## Start here
 
-**Docker (recommended):**
-
-```bash
-docker run -d \
-  -p 64580:80 \
-  -v ./volumes/config:/config \
-  -v ./volumes/data:/data \
-  webappsgo/caslink:latest
-```
-
-Open `http://localhost:64580/setup` to create the first admin account.
-
-**Binary:**
-
-```bash
-# Download for your platform, e.g. Linux amd64
-wget https://github.com/webappsgo/caslink/releases/latest/download/caslink-linux-amd64
-chmod +x caslink-linux-amd64
-./caslink-linux-amd64
-```
-
-The server prints the auto-selected port on startup and opens the setup wizard at `/setup`.
-
-## Quick Links
-
-- [Installation](installation.md)
-- [Configuration](configuration.md)
-- [API Reference](api.md)
-- [Admin Panel](admin.md)
-- [Security](security.md)
-- [Integrations](integrations.md)
-- [Development](development.md)
-- [Translating](translating.md)
-- [CLI Reference](cli.md)
+- [Install Caslink](installation.md)
+- [Configure the server](configuration.md)
+- [Use the API](api.md)
+- [Manage the server](admin.md)
+- [Review the security model](security.md)
+- [Configure integrations](integrations.md)
+- [Build and contribute](development.md)
+- [Translate the interface](translating.md)

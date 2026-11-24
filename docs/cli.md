@@ -1,145 +1,76 @@
 # CLI Reference
 
-`caslink-cli` is the companion command-line client for the Caslink server. It provides a full TUI (terminal user interface) as well as scriptable subcommands for managing short links, users, and organizations.
+`caslink-cli` is the companion client for server access from terminals and scripts. Run it without a command in an interactive terminal to open the TUI. With no terminal, it prints help. The client discovers the API version and cluster URLs through `/api/autodiscover` and can fail over to configured cluster members.
 
-## Installation
+## Install
 
-Download the latest release for your platform from the [releases page](https://github.com/webappsgo/caslink/releases).
+Download the `caslink-cli` release for your operating system and architecture from [GitHub Releases](https://github.com/webappsgo/caslink/releases). The server can also distribute client binaries when the operator provisions the configured binary directory.
 
-```bash
-# Linux amd64
-curl -LSsf https://github.com/webappsgo/caslink/releases/latest/download/caslink-cli-linux-amd64 \
-  -o caslink-cli && chmod +x caslink-cli
-sudo mv caslink-cli /usr/local/bin/
-```
+## Global options
 
-## Global Flags
+| Option | Purpose |
+|---|---|
+| `--server URL` | Select a server; overrides the saved config |
+| `--token TOKEN` | Supply a bearer token |
+| `--token-file FILE` | Read a bearer token from a file |
+| `--output table\|json\|csv` | Select output format |
+| `--user NAME` | Select user or organization context (`@NAME` for user, `+NAME` for org) |
+| `--debug` | Print diagnostic request information |
+| `--color auto\|yes\|no` | Select terminal colors; `NO_COLOR` disables automatic color |
+| `--lang CODE` | Select client language |
+| `--shell bash\|zsh\|fish` | Print shell completions |
+| `--update check\|yes\|branch CHANNEL` | Check or apply a client update, or select stable/beta/daily channel |
+| `-h`, `--help` | Print help |
+| `-v`, `--version` | Print version information |
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--help` / `-h` | — | Show help and exit |
-| `--version` / `-v` | — | Print version and exit |
-| `--server` | `OFFICIALSITE` or required | Caslink server URL (e.g., `https://caslink.example.com`) |
-| `--token` | `$CASLINK_TOKEN` | API token for authentication |
-| `--mode` | `production` | Application mode (`production`\|`development`) |
-| `--config` | OS default | Configuration directory |
-| `--data` | OS default | Data directory |
-| `--log` | OS default | Log directory |
-| `--pid` | OS default | PID file path |
-| `--address` | `0.0.0.0` | Listen address |
-| `--port` | `64580` | Listen port |
-| `--baseurl` | — | Base URL for generated short links |
-| `--debug` | `false` | Enable debug mode |
-| `--status` | — | Show server status and exit |
-| `--lang` | `en` | Language/locale code |
-| `--color` | `auto` | Color output (`auto`\|`yes`\|`no`) |
-| `--service` | — | Service command (`start`\|`stop`\|`restart`\|`reload`\|`--install`\|`--uninstall`\|`--disable`\|`--help`) |
-| `--daemon` | `false` | Daemonize (detach from terminal) |
-| `--maintenance` | — | Maintenance command (`backup`\|`restore`\|`update`\|`mode`\|`setup`\|`--help`) |
-| `--update` | — | Update command (`check`\|`yes`\|`branch stable`\|`branch beta`\|`branch daily`) |
+The default server and display preferences are read from `cli.yml`. Tokens are selected in this order: `--token`, `--token-file`, `CASLINK_TOKEN`, the `token` field in `cli.yml`, then the standalone token file.
 
-Respects `NO_COLOR` environment variable per [no-color.org](https://no-color.org/).
+## Commands
 
-## Shell Completions
+| Command | Purpose |
+|---|---|
+| `login` | Save a supplied or prompted API token and refresh discovery data |
+| `logout` | Clear the saved token |
+| `list` | List links visible to the token |
+| `create <url> [--code CODE]` | Create a short link, optionally with a custom code |
+| `get <code>` | Read link details |
+| `delete <code>` | Delete a link |
+| `qr <code>` | Display the link's QR code |
+| `stats <code>` | Read link analytics |
+| `version` | Print client version information |
 
-```bash
-# Bash
-caslink-cli --shell completions bash > /etc/bash_completion.d/caslink-cli
+Commands that manage a user's links require an appropriate bearer token. The server applies its normal ownership, organization-role, and link-policy checks.
 
-# Zsh
-caslink-cli --shell completions zsh > "${fpath[1]}/_caslink-cli"
+## Configuration and credentials
 
-# Fish
-caslink-cli --shell completions fish > ~/.config/fish/completions/caslink-cli.fish
-```
+The client stores `cli.yml` and the optional standalone `token` file under the user config directory:
 
-## Subcommands
+- Unix: `$XDG_CONFIG_HOME/webappsgo/caslink/`, or `~/.config/webappsgo/caslink/` when `XDG_CONFIG_HOME` is unset.
+- Windows: `%APPDATA%\webappsgo\caslink\`.
 
-### link
-
-Manage short links.
-
-```bash
-# Create a short link
-caslink-cli link create --url https://example.com --slug my-link
-
-# List your links
-caslink-cli link list
-
-# Get stats for a link
-caslink-cli link stats my-link
-
-# Delete a link
-caslink-cli link delete my-link
-```
-
-### user
-
-Manage your user account.
-
-```bash
-# Show current user info
-caslink-cli user info
-
-# Change password
-caslink-cli user password
-
-# Manage API tokens
-caslink-cli user tokens list
-caslink-cli user tokens create --name "my-token"
-caslink-cli user tokens revoke <token-id>
-```
-
-### org
-
-Manage organizations.
-
-```bash
-# List organizations
-caslink-cli org list
-
-# Create an organization
-caslink-cli org create --name my-org
-
-# Invite a member
-caslink-cli org invite --org my-org --user someone@example.com --role member
-```
-
-## Configuration File
-
-`caslink-cli` looks for configuration in `~/.config/caslink/cli.yml` (Linux/macOS) or `%APPDATA%\caslink\cli.yml` (Windows).
+Example `cli.yml`:
 
 ```yaml
-server: https://caslink.example.com
-token: your-api-token-here
+server: https://short.example.com
+api_version: v1
+token: usr_…
 lang: en
 color: auto
+display:
+  mode: auto
+update:
+  auto: false
+  channel: stable
 ```
 
-## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `CASLINK_SERVER` | Default server URL |
-| `CASLINK_TOKEN` | API token |
-| `CASLINK_LANG` | Language/locale |
-| `NO_COLOR` | Disable color output |
+The client refuses to use a config file readable by group or other users. Keep both credential files private; the CLI creates its config directory and file with restrictive permissions.
 
 ## Examples
 
-```bash
-# Create a short link (JSON output for scripting)
-caslink-cli link create --url https://example.com --output json
-
-# List all links, filtered by tag
-caslink-cli link list --tag marketing
-
-# Check server health
-caslink-cli --status
-
-# Check for updates
-caslink-cli --update check
-
-# Apply update
-caslink-cli --update yes
+```sh
+caslink-cli --server https://short.example.com login
+caslink-cli --output json list
+caslink-cli create https://example.com --code example
+caslink-cli stats example
+caslink-cli --shell bash > caslink-cli-completion.bash
 ```

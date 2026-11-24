@@ -1,231 +1,110 @@
 # API Reference
 
-## Interactive Documentation
+Caslink provides a JSON REST API, a GraphQL endpoint, and server-rendered pages. The default REST prefix is `/api/v1`; `server.api.base_path` can change it. The unauthenticated `GET /api/autodiscover` endpoint reports the configured API base path and server capabilities.
 
-| Tool | URL |
-|------|-----|
-| Swagger UI | `/server/docs/swagger` |
-| GraphiQL | `/server/docs/graphql` |
-| OpenAPI JSON spec | `/api/v1/server/swagger` (also aliased at `/api/swagger`) |
-| GraphQL endpoint | `POST /api/v1/server/graphql` (also aliased at `/api/graphql`) |
+## Documentation and response format
 
-## Overview
+- OpenAPI JSON: `/api/swagger` and `{api_base_path}/server/swagger`.
+- Browser API documentation: `/server/docs/swagger`.
+- GraphQL console: `/server/docs/graphql`.
+- GraphQL POST endpoints: `/api/graphql` and `{api_base_path}/server/graphql`.
 
-All REST endpoints are versioned under `/api/v1/`. The API uses a consistent JSON envelope:
-
-**Success:**
-
-```json
-{ "ok": true, "data": { ... } }
-```
-
-**Error (RFC 7807):**
-
-```json
-{ "ok": false, "error": "CODE", "message": "Human-readable description" }
-```
-
-Every request and response carries an `X-Request-ID` header for tracing.
+Successful JSON responses use `{ "ok": true, "data": ... }`. Errors use `{ "ok": false, "error": "CODE", "message": "..." }`. Frontend routes negotiate HTML or plain text; API routes negotiate JSON or plain text. Requests that mutate browser state require the CSRF token. API requests use bearer tokens.
 
 ## Authentication
 
-All write endpoints and user-specific read endpoints require a Bearer token:
+Send tokens in `Authorization: Bearer <token>`. Tokens are shown once when created and stored as SHA-256 hashes. `adm_` tokens are for server administration, `usr_` tokens for user operations, and `org_` tokens for organization-scoped access. A user token cannot access server-admin routes. Create and revoke user tokens through `/users/tokens` or `{api_base_path}/users/tokens`.
 
-```
-Authorization: Bearer <token>
-```
+## Public endpoints
 
-Tokens are issued per-user or per-organization and stored as SHA-256 hashes. The raw token is shown only once at creation. Token prefixes identify the token type:
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/autodiscover` | API base path and capability discovery |
+| GET | `/server/healthz` | Health page with HTML, JSON, or text negotiation |
+| GET | `/healthz` | Same handler when `server.healthz.root.enabled` is true |
+| GET | `/api/healthz` | Unversioned JSON health endpoint |
+| GET | `{api_base_path}/server/healthz` | Versioned JSON health endpoint |
+| GET | `/version`, `{api_base_path}/version` | Version, commit, and build date |
+| GET | `/api/swagger`, `{api_base_path}/server/swagger` | OpenAPI JSON |
+| POST | `/api/graphql`, `{api_base_path}/server/graphql` | GraphQL queries |
+| GET | `{api_base_path}/urls/{code}` | Public link information |
+| GET | `{api_base_path}/urls/{code}/stats` | Public link statistics where enabled |
+| GET | `{api_base_path}/qr/{code}` | QR code in a supported image/document format |
+| GET | `/server/about`, `/server/help`, `/server/privacy`, `/server/terms` | Public information pages |
+| GET | `/.well-known/security.txt` | Security contact and disclosure information |
+| GET | `/.well-known/change-password` | Password-change destination |
+| GET | `/.well-known/acme-challenge/{token}` | Active ACME HTTP-01 challenge response |
 
-| Prefix | Scope |
-|--------|-------|
-| `adm_` | Admin API access |
-| `usr_` | User-level API access |
-| `org_` | Organization-scoped access |
+The short-link redirect itself is `GET /{code}`. A link may require a password or may be private, expired, or restricted; the handler applies those link settings before redirecting.
 
-Manage tokens via the web UI at `/users/tokens` or via the API at `/api/v1/users/tokens`.
+## Authentication endpoints
 
-## Autodiscovery
+| Method | Path | Access |
+|---|---|---|
+| POST | `{api_base_path}/server/auth/login` | Public, rate limited |
+| POST | `{api_base_path}/server/auth/register` | Public when registration is enabled, rate limited |
+| GET/POST | `/server/auth/password/forgot` | Public, rate limited |
+| GET/POST | `/server/auth/password/reset/{token}` | Single-use reset token |
+| GET/POST | `/server/auth/2fa` | Login challenge |
+| GET/POST | `/server/auth/2fa/recovery` | Recovery-code challenge |
 
-```
-GET /api/autodiscover
-```
+The HTML login and registration pages are under `/server/auth/`. Setup is first-run only and is described in [Installation](installation.md).
 
-Not versioned — call this before you know the server's API version. Returns the server's base URL, API version, capabilities, and Tor `.onion` address (if running).
+## Link API
 
-## Public Endpoints (No Auth)
+| Method | Path | Access | Purpose |
+|---|---|---|---|
+| GET | `{api_base_path}/urls` | Bearer token | List links visible to the token owner |
+| POST | `{api_base_path}/urls` | Bearer token | Create a link |
+| PATCH | `{api_base_path}/urls/{code}` | Bearer token | Update an owned link |
+| DELETE | `{api_base_path}/urls/{code}` | Bearer token | Delete an owned link |
+| GET | `{api_base_path}/urls/{code}` | Public | Read public link details |
+| GET | `{api_base_path}/urls/{code}/stats` | Public | Read permitted click statistics |
+| GET | `{api_base_path}/qr/{code}` | Public | Generate QR image/document |
+| GET/POST | `{api_base_path}/users/urls/export` and `/import` | User token | Export or import CSV/JSON links |
 
-### Health Check
-
-```
-GET /server/healthz       → HTML/JSON/text (content negotiation)
-GET /healthz              → same as above (alias)
-GET /api/v1/server/healthz → JSON only
-GET /api/v1/healthz       → JSON only
-GET /api/v1/version       → JSON version info
-GET /version              → JSON version info
-```
-
-### URL Redirect
-
-```
-GET /{code}
-```
-
-Redirects to the original URL. Tracks a click (GeoIP, referrer, device) if analytics are enabled.
-
-### URL Info (Public)
-
-```
-GET /api/v1/urls/{code}
-GET /api/v1/urls/{code}/stats
-```
-
-### QR Code
-
-```
-GET /api/v1/qr/{code}
-GET /api/v1/qr/{code}?size=512&format=svg&error_correction=high
-```
-
-Query parameters: `size` (pixels, max 2048), `format` (`png`, `svg`, `pdf`), `error_correction` (`low`, `medium`, `quartile`, `high`).
-
-### Server Information
-
-```
-GET /api/v1/server/about
-GET /api/v1/server/help
-GET /api/v1/server/privacy
-GET /api/v1/server/terms
-POST /api/v1/server/contact
-```
-
-### Authentication (Rate-Limited)
-
-```
-POST /api/v1/server/auth/login
-POST /api/v1/server/auth/register
-```
-
-## URL Management
-
-### Create Short URL (requires auth)
-
-```
-POST /api/v1/urls
-Authorization: Bearer usr_...
-Content-Type: application/json
-
-{
-  "url": "https://example.com/very/long/path",
-  "custom_code": "ex",          // optional; omit for auto-generated code
-  "expiration": "7d",           // optional: 1h | 24h | 7d | 30d | never
-  "password": "",               // optional: password-protect the link
-  "utm_source": "",             // optional UTM parameters
-  "utm_medium": "",
-  "utm_campaign": ""
-}
-```
-
-Response:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "code": "ex",
-    "short_url": "https://your-domain.com/ex",
-    "original_url": "https://example.com/very/long/path",
-    "created_at": "2026-06-13T10:00:00Z"
-  }
-}
-```
+The server validates destinations, custom codes, ownership, expiration, passwords, visibility, and other configured restrictions. Consult the live OpenAPI document for request schemas and response fields.
 
 ## User API
 
-All endpoints require `Authorization: Bearer usr_...`.
+All paths below are beneath `{api_base_path}/users` and require a user bearer token.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/v1/users/` | Current user profile |
-| `GET` | `/api/v1/users/tokens` | List API tokens |
-| `GET` | `/api/v1/users/settings` | User settings |
-| `GET` | `/api/v1/users/security` | Security status (2FA, passkeys) |
-| `GET` | `/api/v1/users/urls/export` | Export all user URLs (CSV/JSON) |
-| `POST` | `/api/v1/users/urls/import` | Import URLs from CSV/JSON |
+| Method | Path | Purpose |
+|---|---|---|
+| GET/PATCH | `/` | Read or update the current profile |
+| GET/POST/DELETE | `/tokens`, `/tokens/{id}` | Manage API tokens |
+| GET | `/settings` | Read user settings |
+| GET | `/security` | Read security status |
+| GET | `/urls/export` | Export owned links |
+| POST | `/urls/import` | Import links |
+| GET/POST | `/domains`, `/domains/{domain}/verify` | Add and verify custom domains |
+| GET | `/domains/{domain}`, `/dns`, `/ssl` | Read domain, DNS, and SSL state |
+| POST | `/domains/{domain}/ssl`, `/ssl/renew` | Configure or renew domain SSL |
+| DELETE | `/domains/{domain}` | Remove a custom domain |
+
+WebAuthn/passkey ceremonies are session-protected at `/users/passkeys/begin-register`, `/finish-register`, `/begin-login`, and `/finish-login`.
 
 ## Organization API
 
-All endpoints require `Authorization: Bearer usr_...` or `org_...`.
+All paths are beneath `{api_base_path}/orgs` and require a bearer token with appropriate organization membership and role.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/v1/orgs/` | List organizations the user belongs to |
-| `POST` | `/api/v1/orgs/` | Create a new organization |
-| `GET` | `/api/v1/orgs/{slug}` | Get organization details |
-| `GET` | `/api/v1/orgs/{slug}/members` | List organization members |
-| `GET` | `/api/v1/orgs/{slug}/tokens` | List org-scoped API tokens |
-| `POST` | `/api/v1/orgs/{slug}/tokens` | Create org-scoped API token |
-| `DELETE` | `/api/v1/orgs/{slug}/tokens/{tokenID}` | Revoke org token |
-| `POST` | `/api/v1/orgs/{slug}/transfer` | Transfer org ownership |
+| Method | Path | Purpose |
+|---|---|---|
+| GET/POST | `/` | List or create organizations |
+| GET/PATCH/DELETE | `/{slug}` | Read, update, or delete an organization |
+| GET | `/{slug}/members` | List members |
+| GET/POST/DELETE | `/{slug}/invites`, `/{slug}/invites/{inviteID}` | Manage invitations |
+| GET/POST/DELETE | `/{slug}/tokens`, `/{slug}/tokens/{tokenID}` | Manage organization tokens |
+| POST | `/{slug}/transfer` | Transfer ownership |
+| GET/POST | `/{slug}/domains` | List or add organization domains |
+| GET | `/{slug}/domains/{domain}` and `/dns`, `/ssl` | Read domain state |
+| POST | `/{slug}/domains/{domain}/verify`, `/ssl`, `/ssl/renew` | Verify or configure SSL |
+| DELETE | `/{slug}/domains/{domain}` | Remove a domain |
 
 ## Admin API
 
-All endpoints require `Authorization: Bearer adm_...`.
+All paths are beneath `{api_base_path}/server/{admin_path}` and require an `adm_` token. `{admin_path}` is configured locally and is deliberately not disclosed by autodiscovery. The API includes user moderation and recovery-key regeneration; server settings, branding, info, and maintenance; scheduler tasks and history; custom-domain moderation; and OIDC, LDAP, and SAML provider management. The OpenAPI document lists the exact method, schema, and permissions for each endpoint.
 
-Base path: `/api/v1/server/{admin_path}/` where `admin_path` defaults to `admin`.
+## Contact, preferences, and security reporting
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `.../config/users` | List all users |
-| `GET` | `.../config/users/{id}` | Get user detail |
-| `POST` | `.../config/users/{id}/suspend` | Suspend a user |
-| `POST` | `.../config/users/{id}/activate` | Activate a user |
-| `POST` | `.../config/users/{id}/recovery-keys` | Regenerate user recovery keys |
-| `GET` | `.../config/settings` | Get server settings |
-| `PATCH` | `.../config/settings` | Update server settings |
-| `GET` | `.../config/branding` | Get branding config |
-| `PATCH` | `.../config/branding` | Update branding config |
-| `GET` | `.../config/info` | Server info (version, runtime, uptime) |
-| `GET` | `.../config/scheduler` | Scheduler task list and status |
-| `GET` | `.../config/maintenance` | Maintenance status |
-| `PATCH` | `.../config/maintenance` | Trigger maintenance action |
-| `GET` | `.../config/network/tor` | Tor service status and `.onion` address |
-
-## GraphQL
-
-```
-POST /api/graphql
-Content-Type: application/json
-
-{ "query": "{ urls { short_code long_url created_at } }" }
-```
-
-Explore the schema interactively at `/server/docs/graphql`.
-
-## CSP Violation Reports
-
-Browsers post CSP violation reports to:
-
-```
-POST /api/v1/server/reports/csp
-```
-
-This endpoint accepts the browser POST and returns `204 No Content`.
-
-## Well-Known Endpoints
-
-| Path | Description |
-|------|-------------|
-| `/.well-known/security.txt` | RFC 9116 security contact |
-| `/.well-known/change-password` | Redirect to password-change page |
-| `/.well-known/acme-challenge/{token}` | Let's Encrypt HTTP-01 challenge |
-
-## Static Resources
-
-| Path | Description |
-|------|-------------|
-| `/robots.txt` | Robots exclusion (admin path disallowed) |
-| `/sitemap.xml` | Sitemap for public pages |
-| `/locales/{lang}.json` | Embedded locale files (en, es, fr, de, zh, ar, ja) |
-| `/static/*` | CSS, JS, fonts, PWA manifest |
+Public server information APIs are beneath `{api_base_path}/server/`: `about`, `help`, `privacy`, `terms`, `preferences`, `preferences/sync`, `preferences/sync/import`, `security`, `security/policy`, and `security/thanks`. `POST /server/contact` is the browser form; its API counterpart is `{api_base_path}/server/contact`. Security-report submission uses the rotating `security_id` shown by the security contact flow. See [Security](security.md) for the disclosure process and report encryption.
