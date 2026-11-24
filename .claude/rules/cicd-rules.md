@@ -2,7 +2,7 @@
 
 ⚠️ **These rules are NON-NEGOTIABLE. Violations are bugs.** ⚠️
 
-**This project is hosted on GitHub (`webappsgo/caslink` → github.com), so `.github/workflows/*.yml` is the active CI system. Gitea/Forgejo/GitLab/Jenkins equivalents below are reference only, in case the remote ever changes.**
+**This project is hosted on GitHub (`webappsgo/caslink` → github.com), so GitHub Actions is the active CI system. AI.md PART 28 also requires complete equivalent workflows for GitLab, Gitea, Forgejo, and Jenkins in every project.**
 
 ## CRITICAL - NEVER DO
 
@@ -19,9 +19,9 @@
 
 ## CRITICAL - ALWAYS DO
 
-- Always set `VERSION`, `COMMIT_ID`, `BUILD_DATE` explicitly in a "Set build info" step, never as static `env:`
-- Always build the full 8-platform matrix for release/beta/daily workflows: linux/darwin/windows/freebsd × amd64/arm64
-- Always add `concurrency: { group: <workflow>-${{ github.ref }}, cancel-in-progress: true }` (or ref-conditional cancel for daily/docker) to every branch/tag workflow
+- Always set `VERSION`, `COMMIT_ID`, and `BUILD_EPOCH` explicitly in a "Set build info" step, never as static `env:`; derive human-readable `BUILD_DATE` from the epoch where needed
+- Always build the full 8-platform matrix for release/beta/devel workflows: linux/darwin/windows/freebsd × amd64/arm64
+- Always add `concurrency: { group: <workflow>-${{ github.ref }}, cancel-in-progress: true }` (or ref-conditional cancel for devel/docker) to every branch/tag workflow
 - Always run `ci.yml` security jobs (`secret-scan`, `workflow-policy`, `vuln-scan`, `image-scan`) on push, PR, AND weekly cron (`0 6 * * 1`); guard non-security jobs with `if: github.event_name != 'schedule'`
 - Always use truffleHog (Apache-2.0) for mandatory secret scanning on every public repo
 - Always build CLI/Agent binaries conditionally (`if: hashFiles('src/client/') != ''` / `src/agent/`)
@@ -39,28 +39,29 @@
 | `ci.yml` | push/PR to default branch + weekly cron (security jobs) | build, test, lint, coverage, secret-scan, image-scan, workflow-policy |
 | `release.yml` | tag push `v*` / `*.*.*` | stable release, all 8 platforms |
 | `beta.yml` | push to `beta` | beta release, timestamp-beta version |
-| `daily.yml` | schedule 3am UTC + push main/master | rolling `daily` release (max 1 kept) |
-| `docker.yml` | any branch push + version tags | multi-arch image build+push, standard + AIO |
+| `devel.yml` | schedule 3am UTC + push main/master | rolling `devel` release (max 1 kept) |
+| `docker.yml` | branch/tag pushes and schedule | standard multi-arch image build+push |
+| `docker-aio.yml` | branch/tag pushes and schedule | AIO multi-arch image build+push |
 
 ### Concurrency policy
 
 | Workflow type | Group key | Cancel behavior |
 |---|---|---|
-| Branch push (`ci`, `beta`, `daily`, `docker`) | `<name>-${{ github.ref }}` | cancel older run for same ref (`main`/`master`/`devel`/`dev`/`beta`) |
+| Branch push (`ci`, `beta`, `devel`, `docker`) | `<name>-${{ github.ref }}` | cancel older run for same ref (`main`/`master`/`devel`/`dev`/`beta`) |
 | Tag release (`release.yml`) | `release-${{ github.ref }}` | cancel only the same exact tag ref, never cross-tag |
 
 ### Version/build-info step (every workflow)
 
 ```
-VERSION: release.txt if present, else derived (tag strip / timestamp+beta / timestamp)
-COMMIT_ID: git rev-parse --short HEAD
-BUILD_DATE: human-readable, set at build time
+VERSION: explicit input, release.txt, or provider-specific derived version
+COMMIT_ID: git rev-parse --short=7 HEAD
+BUILD_EPOCH: UTC Unix epoch embedded in binaries; BUILD_DATE is derived from it for release metadata
 OFFICIAL_SITE: site.txt wins, else secrets.OFFICIAL_SITE, else empty (never guessed)
 ```
 
 ### ci.yml jobs (all run in `container: image: casjaysdev/go:latest`)
 
-`lint` (go vet + staticcheck) → `test` (coverage ≥60%, gate) → `build` (needs lint+test) → `vuln-scan` (govulncheck) → plus `secret-scan`, `workflow-policy`, `image-scan` (needs build), `coverage` (needs test), `upload-artifacts` (needs build).
+`lint` (go vet + staticcheck) → `test` (coverage ≥60%, gate) → `build` (needs lint+test) → `vuln-scan` (govulncheck), plus `secret-scan`, `workflow-policy`, and independent `image-scan`; `coverage` needs test and `upload-artifacts` needs build.
 
 ### Docker image tag matrix
 
@@ -70,14 +71,14 @@ OFFICIAL_SITE: site.txt wins, else secrets.OFFICIAL_SITE, else empty (never gues
 | Push to `beta` | + `beta` | + `beta-aio` |
 | Version tag | `{version}`, `latest`, `{YYMM}` | `{version}-aio`, `latest-aio`, `{YYMM}-aio` |
 
-### Cross-provider equivalence (reference only — not active for this repo)
+### Cross-provider equivalence (all five providers are required)
 
 | Feature | GitHub Actions | Gitea/Forgejo | GitLab CI | Jenkins |
 |---|---|---|---|---|
 | Config location | `.github/workflows/*.yml` | `.gitea/` or `.forgejo/workflows/*.yml` | `.gitlab-ci.yml` | `Jenkinsfile` |
 | Stable | `release.yml` | `release.yml` | `rules: tag` | `BUILD_TYPE == 'release'` |
 | Beta | `beta.yml` | `beta.yml` | `rules: beta` | `BUILD_TYPE == 'beta'` |
-| Daily | `daily.yml` | `daily.yml` | `rules: schedule` | `BUILD_TYPE == 'daily'` |
+| Devel | `devel.yml` | `devel.yml` | `rules: schedule` | `BUILD_TYPE == 'devel'` |
 | Docker | `docker.yml` | `docker.yml` | `docker:build` | Docker stage |
 | Context vars | `github.*` | `gitea.*` / `forgejo.*` | `$CI_*` | Groovy vars |
 | Secrets | `${{ secrets.X }}` | `${{ secrets.X }}` (GITEA_TOKEN/FORGEJO_TOKEN) | `$X` | `credentials('id')` |
