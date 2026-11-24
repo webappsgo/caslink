@@ -31,19 +31,23 @@ have_internal_org=$(grep -cE '^internal_org:[[:space:]]*.+$' IDEA.md 2>/dev/null
 
 | Value | Primary Source | Fallback |
 |-------|----------------|----------|
-| `{project_name}` | IDEA.md `## Project variables` | Existing long-form `CLAUDE.md` / `.claude/CLAUDE.md` project details, then `basename "$PWD"` |
-| `{project_org}` | IDEA.md `## Project variables` | Existing long-form `CLAUDE.md` / `.claude/CLAUDE.md` project details, then `basename "$(dirname "$PWD")"` |
-| `{internal_name}` | IDEA.md `## Project variables` (always — set at first run; reset only on an explicit rename or fork) | Existing long-form `CLAUDE.md` / `.claude/CLAUDE.md` project details, then first-time setup: copy from `{project_name}` |
-| `{internal_org}` | IDEA.md `## Project variables` (always — set at first run; reset only on an explicit rename or fork) | Existing long-form `CLAUDE.md` / `.claude/CLAUDE.md` project details, then first-time setup: copy from `{project_org}` |
+| `{project_name}` | IDEA.md `## Project variables` | The git remote (`git remote get-url origin`), then `basename "$PWD"` |
+| `{project_org}` | IDEA.md `## Project variables` | The git remote (`git remote get-url origin`), then `basename "$(dirname "$PWD")"` |
+| `{internal_name}` | IDEA.md `## Project variables` (always — set at first run; reset only on an explicit rename or fork) | First-time setup: copy from `{project_name}` |
+| `{internal_org}` | IDEA.md `## Project variables` (always — set at first run; reset only on an explicit rename or fork) | First-time setup: copy from `{project_org}` |
 | `{plist_name}` | **Derived (not stored)**: `io.github.{internal_org}.{internal_name}` | — |
 
 **Detection commands (use commands — never guess):**
 ```bash
-# Project name: current directory name
-project_name=$(basename "$PWD")
+# Project name: IDEA.md project variables first, then the git remote, then the directory name
+project_name=$(sed -n 's/^project_name:[[:space:]]*//p' IDEA.md 2>/dev/null | head -n1 | tr -d '[:space:]')
+[ -n "$project_name" ] || project_name=$(git remote get-url origin 2>/dev/null | sed -E 's|.*/([^/]+)$|\1|; s|\.git$||')
+[ -n "$project_name" ] || project_name=$(basename "$PWD")
 
-# Project org: parent directory name (assumes ~/org/project structure)
-project_org=$(basename "$(dirname "$PWD")")
+# Project org: IDEA.md project variables first, then the git remote, then the parent directory name (assumes ~/org/project structure)
+project_org=$(sed -n 's/^project_org:[[:space:]]*//p' IDEA.md 2>/dev/null | head -n1 | tr -d '[:space:]')
+[ -n "$project_org" ] || project_org=$(git remote get-url origin 2>/dev/null | sed -E 's|.*/([^/]+)/[^/]+(\.git)?$|\1|')
+[ -n "$project_org" ] || project_org=$(basename "$(dirname "$PWD")")
 
 # Internal name: same as project_name on first run, stable after
 internal_name="$project_name"
@@ -148,7 +152,7 @@ IDEA.md is the project PLAN. AI.md (this file) is the authoritative template bas
 | IDEA.md MAY | IDEA.md MAY NOT |
 |-------------|-----------------|
 | Define the product's features, data models, business rules and audience, and its API surface: the `### API routes` inventory of what callers can do (method, path, auth, purpose, request/response summary), never how a handler is written | Remove, weaken or waive a mandatory AI.md requirement (server baseline, configuration, security, health, build, CI/CD, i18n, accessibility, documentation, testing) |
-| Choose which of the template's explicitly OPTIONAL capabilities the project uses (the PARTs the template labels optional) | Change how a mandatory requirement is implemented |
+| Choose which of the template's explicitly OPTIONAL capabilities the project uses (the PARTs the template labels optional; for PARTS 34-36 IDEA.md only DESCRIBES the feature, and SPEC.md alone activates it) | Change how a mandatory requirement is implemented |
 | State non-goals in product terms (for example "no user accounts") | Use a non-goal as a reason to skip a mandatory part |
 
 **Non-goal vs mandatory requirement:** a non-goal limits the product's FEATURES, never AI.md's baseline. "No accounts" is honored by not enabling the optional multi-user parts; it does not remove the health endpoint, the config file, the security headers or any other mandatory part, which are built exactly as AI.md defines them. If an IDEA.md line contradicts a mandatory AI.md requirement, fix the IDEA.md line (reword it as product scope) — never change the implementation to match it. Log a template defect only when AI.md itself is ambiguous or self-contradictory.
@@ -668,7 +672,7 @@ if cacheSize > 1024*1024*1024 {
 | **No HTTP reverse proxy** | Never route raw protocols through nginx/Caddy HTTP vhosts; the only acceptable middle layer is a transparent TCP/stream proxy (nginx `stream`, HAProxy `mode tcp`) |
 | **No HTTP middleware** | Raw listeners bypass the HTTP middleware chain entirely (no HTTP logging/security-header/rate-limit middleware); each protocol implements its own logging and abuse protection |
 | **TLS variants on their own ports** | Implicit-TLS listeners use their standard port (SMTPS 465, POP3S 995, IMAPS 993, NNTPS 563); STARTTLS stays on the plain port where the RFC defines it; certificates come from the same TLS config as HTTPS |
-| **Per-protocol config** | Each listener gets its own `{proto}.address`/`{proto}.port` config keys + `{PROTO}_PORT` env override, defaulting to the standard port |
+| **Per-protocol config** | Each listener gets its own `{proto}.enabled`, `{proto}.address` and `{proto}.port` config keys + `{PROTO}_PORT` env override, defaulting to the standard port. These keys are read by the early config peek (PART 8 step 8e), so a privileged raw port is bound with its configured address BEFORE the privilege drop; changing them needs a restart |
 | **Independent enable/disable** | Every raw listener is individually toggleable in config, disabled by default unless it IS the project's core function; the HTTP admin/API listener keeps following the HTTP rules above |
 | **Custom raw services** | Projects exposing a non-IANA raw port (termbin-style netcat paste service, etc.) document the port in IDEA.md; once shipped that port is the published interface — treat it as stable like `{internal_name}` |
 | **Privileged ports** | Binding <1024 inside the container is fine (container has the capability); bare-host deploys follow Privileged Port Binding (<1024) in PART 5 — service-install escalation with bind-then-drop |
@@ -941,7 +945,7 @@ The `release` job already has `contents: write` to push assets — this covers t
 | Rule | Description |
 |------|-------------|
 | **SQLite default** | `{db_dir}/server.db` and `{db_dir}/users.db` (see PART 4 for platform-specific paths) |
-| **Password hashing** | Argon2id - NEVER bcrypt |
+| **Password hashing** | Argon2id for every stored hash - NEVER bcrypt for a new hash (an existing legacy bcrypt hash is only verified, then immediately rehashed to Argon2id, PART 11) |
 | **Valkey/Redis** | Every app supports it for caching/clustering |
 
 ## CLI Rules
@@ -1183,7 +1187,7 @@ Quick reference: Accept `yes/no`, `true/false`, `1/0`, `on/off`, `enable/disable
 
 | NEVER | Instead |
 |-------|---------|
-| Use bcrypt for passwords | Use Argon2id |
+| Use bcrypt for new password hashes | Use Argon2id (a legacy bcrypt hash is verified once, then rehashed at once) |
 | Put Dockerfile in project root | Put in `docker/Dockerfile` |
 | Use .env files | Hardcode sane defaults in docker-compose |
 | Run docker-compose in project dir | Use temp directory workflow |
@@ -1394,7 +1398,7 @@ paths:
 ## KEY DECISIONS (pre-answered)
 | Question | Answer | Reference |
 |----------|--------|-----------|
-| What password hash? | Argon2id (NEVER bcrypt) | PART 11 |
+| What password hash? | Argon2id (NEVER bcrypt for a new hash; legacy bcrypt is verify-then-rehash only) | PART 11 |
 | Where is Dockerfile? | `docker/Dockerfile` (NEVER root) | PART 27 |
 | CGO enabled? | NEVER (CGO_ENABLED=0 always) | PART 7 |
 | Premium features? | NEVER (all features free) | PART 1 |
@@ -1408,7 +1412,7 @@ paths:
 | client | CLI binary `{project_name}-cli` - REQUIRED |
 | agent | Optional binary `{project_name}-agent` |
 | Server Admin | App administrator (NOT OS root) |
-| Regular User | End-user (PART 34, optional feature) |
+| Regular User | End-user (PART 34, optional: active only when SPEC.md declares it) |
 
 ## COMPLIANCE CHECK
 Before completing ANY task:
@@ -1662,7 +1666,7 @@ On EVERY new conversation or after "context compacted" message:
 ## Account Types (CRITICAL)
 - **Server Admin** = manages the app (NOT a privileged OS user)
 - **Primary Admin** = first admin, cannot be deleted
-- **Regular User** = end-user (PART 34, optional feature)
+- **Regular User** = end-user (PART 34, optional: active only when SPEC.md declares it)
 - Server Admins ≠ Regular Users (separate DB tables)
 
 ## Cluster vs Managed Nodes (CRITICAL)
@@ -1671,7 +1675,7 @@ On EVERY new conversation or after "context compacted" message:
 - Most apps only have cluster nodes
 
 ## NEVER Do (Top 19) - VIOLATIONS ARE BUGS
-1. Use bcrypt → Use Argon2id
+1. Store a new bcrypt hash → Use Argon2id (a legacy bcrypt hash is only verified, then rehashed)
 2. Put Dockerfile in root → `docker/Dockerfile`
 3. Use CGO → CGO_ENABLED=0 always
 4. Hardcode dev values → Detect at runtime
@@ -1715,18 +1719,15 @@ On EVERY new conversation or after "context compacted" message:
 - Frontend/WebUI: `.claude/rules/frontend-rules.md` (PART 16, 17)
 - Full spec: `AI.md` (~62k lines) ← **SOURCE OF TRUTH**
 
-## Current Project State
-[AI updates this section as work progresses]
-- Last read AI.md: [date/time]
-- Current task: [description]
-- Relevant PARTs: [list]
+## Progress
+No progress or date-specific state lives in this file or in AI.md: the loader stays project-neutral. Current task, status and the PARTs in play are tracked in `TODO.AI.md` or `PLAN.AI.md`.
 ```
 
 **Rules:**
 - This file is ALWAYS loaded first by the AI tool
 - Keep it under 100 lines - it's a quick reference, not the full spec
 - Points to rules/ files and AI.md for details
-- "Current Project State" section updated by AI as work progresses
+- Progress is tracked in `TODO.AI.md` / `PLAN.AI.md`, never in CLAUDE.md or AI.md
 - Existing valid `CLAUDE.md` content must be merged/migrated, not blindly replaced
 
 **AI Enforcement - Surviving Context Compaction:**
@@ -2471,7 +2472,7 @@ server:
 | FINAL | ~64912 | Compliance Checklist | Final verification, **AI Quick Reference Rules**, **Console/Banner Checklist**, **I18N Checklist**, **Host Safety Checklist** |
 
 **When Implementing OPTIONAL PARTs (34-36, Agent from 33):**
-1. Change PART title from `OPTIONAL` → `NON-NEGOTIABLE` in AI.md
+1. PARTS 34-36: declare the PART in SPEC.md under `## Optional parts` ("SPEC.md — Optional Part Activation"); AI.md is never edited and its marker stays `OPTIONAL`. The Agent binary of PART 33 follows PART 33's own rule
 2. Update IDEA.md to document the feature as implemented
 3. Follow ALL rules in that PART exactly (no longer optional)
 
@@ -2973,7 +2974,7 @@ fi
 **Migration procedure (NEVER overwrite without confirmation):**
 
 1. **Detect** — run the check above. If all three sections exist exactly once, no migration needed; proceed.
-2. **Backup** — copy the existing file: `cp IDEA.md IDEA.md.preMigration.bak`. Tell the user the backup path.
+2. **Backup** — copy the existing file into the project's temp directory, never into the repository (the root files are exhaustive): `mkdir -p "${TMPDIR:-/tmp}/{project_org}" && BAK=$(mktemp -d "${TMPDIR:-/tmp}/{project_org}/{internal_name}-XXXXXX") && cp IDEA.md "$BAK/IDEA.md.preMigration.bak"`. Tell the user the backup path. The previous version is also in git history.
 3. **Read the whole file** before proposing anything. Do NOT skim.
 4. **Map old content to the new sections:**
 
@@ -2990,7 +2991,7 @@ fi
 
 6. **Show the user the proposed rewrite** as a diff or full file preview. Wait for explicit approval. Do NOT write the new file until approved.
 
-7. **Write the migrated file** only after approval. Keep the `.preMigration.bak` until the user confirms the new file is correct.
+7. **Write the migrated file** only after approval. Keep the backup until the user confirms the new file is correct, then delete its temp directory.
 
 **Rules:**
 
@@ -6167,7 +6168,7 @@ package main
 
 | Project License | Can Use Dependencies Licensed As |
 |----------------|----------------------------------|
-| **MIT** | MIT, Apache 2.0, BSD, ISC, Public Domain |
+| **MIT** | MIT, Apache 2.0, BSD, ISC, MPL 2.0 (as an unmodified dependency: its file-level copyleft covers only its own files; a modified MPL file is published under MPL, and attribution is required as above), Public Domain |
 | **MIT** | ❌ **CANNOT use:** GPL, AGPL, LGPL |
 
 **When in doubt:** Choose MIT/Apache 2.0/BSD licensed alternatives.
@@ -6229,7 +6230,7 @@ package main
 ```bash
 # Method 1: Infer from git remote (PREFERRED - works regardless of directory location)
 # github.com/cloudops/echoip.git → PROJECT_ORG=cloudops, PROJECT_NAME=echoip
-PROJECT_NAME=$(git remote get-url origin 2>/dev/null | sed -E 's|.*/([^/]+)(\.git)?$|\1|')
+PROJECT_NAME=$(git remote get-url origin 2>/dev/null | sed -E 's|.*/([^/]+)$|\1|; s|\.git$||')
 PROJECT_ORG=$(git remote get-url origin 2>/dev/null | sed -E 's|.*/([^/]+)/[^/]+(\.git)?$|\1|')
 
 # Method 2: Infer from current directory path (fallback if no git remote)
@@ -6240,7 +6241,7 @@ PROJECT_NAME=$(basename "$PWD")
 PROJECT_ORG=$(basename "$(dirname "$PWD")")
 
 # Method 3: Combined approach (git first, fallback to path)
-PROJECT_NAME=$(git remote get-url origin 2>/dev/null | sed -E 's|.*/([^/]+)(\.git)?$|\1|' || basename "$PWD")
+PROJECT_NAME=$(git remote get-url origin 2>/dev/null | sed -E 's|.*/([^/]+)$|\1|; s|\.git$||' || basename "$PWD")
 PROJECT_ORG=$(git remote get-url origin 2>/dev/null | sed -E 's|.*/([^/]+)/[^/]+(\.git)?$|\1|' || basename "$(dirname "$PWD")")
 ```
 
@@ -6834,6 +6835,8 @@ require (
 |---------|---------|-------|
 | **YAML** | `gopkg.in/yaml.v3` | Config file parsing |
 | **UUID** | `github.com/google/uuid` | Standard UUID generation |
+| **Markdown** | `github.com/yuin/goldmark` | The one renderer for every Markdown surface (configured branding and page content, help pages, OpenAPI descriptions, tool descriptions): CommonMark, pure Go. Raw HTML passthrough stays OFF (never `html.WithUnsafe`) and the output ALWAYS goes through the bluemonday policy before it is served |
+| **HTML sanitizer** | `github.com/microcosm-cc/bluemonday` | The allow-list policy applied to rendered Markdown and to operator HTML (PART 16 "Custom HTML Validation") |
 | **Argon2** | `golang.org/x/crypto/argon2` | Password hashing |
 | **Bcrypt** | `golang.org/x/crypto/bcrypt` | Verify existing passwords (rehash to Argon2id) |
 
@@ -7080,6 +7083,10 @@ require (
 	gopkg.in/yaml.v3 {version}
 	// UUID generation
 	github.com/google/uuid {version}
+	// Markdown rendering (raw HTML off, output sanitized)
+	github.com/yuin/goldmark {version}
+	// HTML sanitizing
+	github.com/microcosm-cc/bluemonday {version}
 	// Argon2, Bcrypt
 	golang.org/x/crypto {version}
 
@@ -7560,7 +7567,35 @@ func SafePath(input string) (string, error) {
     }
     return normalizePath(input), nil
 }
+
+// validFileSegment: file and resource names keep their dots and their case (main.css, robots.txt, Report_2024.pdf);
+// no leading dot, so hidden files are never addressable
+var validFileSegment = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+
+// SafeResourcePath validates a relative FILE or RESOURCE path (static files, downloads, an API file parameter).
+// It does not lowercase or rewrite the name; it only accepts or rejects it
+func SafeResourcePath(input string) (string, error) {
+    if len(input) > 2048 || strings.Contains(input, "..") || strings.Contains(input, "\\") {
+        return "", ErrPathTraversal
+    }
+    var kept []string
+    for _, seg := range strings.Split(strings.Trim(input, "/"), "/") {
+        if seg == "" {
+            continue
+        }
+        if len(seg) > 255 || !validFileSegment.MatchString(seg) {
+            return "", ErrInvalidPath
+        }
+        kept = append(kept, seg)
+    }
+    if len(kept) == 0 {
+        return "", ErrInvalidPath
+    }
+    return strings.Join(kept, "/"), nil
+}
 ```
+
+**Two validation contracts, never one.** `SafePath` is for configured identifiers and URL prefixes (`admin_path`, base paths): lowercase `[a-z0-9_-]` segments only, so it correctly rejects a dot. `SafeResourcePath` is for file and resource names that legitimately carry dots and case (`/static/css/main.css`, `/robots.txt`, an API `file` parameter). The HTTP path middleware below checks only traversal and encoding of the request path and applies neither contract. Every use of user input as a file name goes through `SafeResourcePath`, then `SafeFilePath`'s base-directory check.
 
 ### Normalization Examples
 
@@ -7630,7 +7665,7 @@ func parseFlags() error {
 func handleFileRequest(w http.ResponseWriter, r *http.Request) {
     filename := r.URL.Query().Get("file")
 
-    safe, err := SafePath(filename)
+    safe, err := SafeResourcePath(filename)
     if err != nil {
         http.Error(w, t(r, "errors.invalid_format"), http.StatusBadRequest)
         return
@@ -7707,8 +7742,8 @@ func PathSecurityMiddleware(next http.Handler) http.Handler {
 ```go
 // SafeFilePath ensures path stays within base directory
 func SafeFilePath(baseDir, userPath string) (string, error) {
-    // Normalize user input
-    safe, err := SafePath(userPath)
+    // Validate the user-supplied resource path (dots and case allowed, traversal never)
+    safe, err := SafeResourcePath(userPath)
     if err != nil {
         return "", err
     }
@@ -8389,12 +8424,14 @@ func ParseBool(s string, defaultVal bool) (bool, error) {
 	return false, fmt.Errorf("invalid boolean value: %q", s)
 }
 
-// MustParseBool parses a string into a boolean, panics on invalid value.
-// Use only during initialization where invalid config should halt startup.
-func MustParseBool(s string, defaultVal bool) bool {
+// ParseBoolOrDefault is the helper for ALL configuration input (environment variables, config files, flags): an invalid value
+// never fails startup, it is replaced by the default with ONE warning that names the setting. There is deliberately no
+// panicking variant: a bad configuration value must never stop the server (PART 5 -> "Invalid → default").
+func ParseBoolOrDefault(name, s string, defaultVal bool) bool {
 	val, err := ParseBool(s, defaultVal)
 	if err != nil {
-		panic(err)
+		slog.Warn("invalid boolean, using default", "setting", name, "value", s, "default", defaultVal)
+		return defaultVal
 	}
 	return val
 }
@@ -8416,13 +8453,10 @@ func IsFalsy(s string) bool {
 
 ```go
 // Environment variables
-debug := config.MustParseBool(os.Getenv("DEBUG"), false)
+debug := config.ParseBoolOrDefault("DEBUG", os.Getenv("DEBUG"), false)
 
 // Config file values (after YAML/JSON unmarshal to string)
-sslEnabled, err := config.ParseBool(cfg.SSL.Enabled, false)
-if err != nil {
-    return fmt.Errorf("invalid ssl.enabled value: %w", err)
-}
+sslEnabled := config.ParseBoolOrDefault("server.ssl.enabled", cfg.SSL.Enabled, false)
 
 // CLI flags (custom parsing)
 if config.IsTruthy(flagValue) {
@@ -8556,7 +8590,7 @@ func (req *CreateResourceRequest) Parse() (*Resource, error) {
 | **Reload** | The file watcher watches `server.yml`, `yaml.d/`, `secrets.yml` and `assets/`. A change, add or remove re-merges everything; an invalid value resets that key to its default and an unparseable file keeps its last good copy ("Validation") |
 | **Generated values** | The server writes generated values (the saved random port) to `server.yml` and the secrets to `secrets.yml`. It writes area files only for the automatic migration, the admin panel, the setup flow, the CLI and the database sync. If two files set the same key, the later one wins and the startup log says which file did |
 | **Permissions** | `server.yml`, `secrets.yml` and every drop-in are ALWAYS `0600`, and `yaml.d/` is `0700` (PART 8 → "Directory Validation Rules": private paths); a wrong mode is fixed at start, and a drop-in that is group or world writable and cannot be fixed is refused: it is ignored and the error is logged |
-| **Early read** | Before the privileged bind (PART 8 startup, step 8e), ONLY `server.port`, `server.address`, `server.daemonize` and `server.pidfile` are read (`ssl.enabled` is not among them: it only decides whether an already bound single-port listener serves TLS, and the full load at step 13 reads it), from the same merged view (`server.yml`, then drop-ins in order). So a drop-in MAY set any of these four settings and it takes effect on the first start; none of them is re-read or rebound later, so changing `server.port`, `server.address`, `server.daemonize` or `server.pidfile` needs a restart (PART 12) |
+| **Early read** | Before the privileged bind (PART 8 startup, step 8e), ONLY `server.port`, `server.address`, `server.daemonize` and `server.pidfile` (plus, for every raw-protocol listener the project defines, its `{proto}.enabled`, `{proto}.address` and `{proto}.port`) are read (`ssl.enabled` is not among them: it only decides whether an already bound single-port listener serves TLS, and the full load at step 13 reads it), from the same merged view (`server.yml`, then drop-ins in order). So a drop-in MAY set any of these four settings and it takes effect on the first start; none of them is re-read or rebound later, so changing `server.port`, `server.address`, `server.daemonize` or `server.pidfile` needs a restart (PART 12) |
 | **Backup** | `{config_dir}/yaml.d/` and `{config_dir}/secrets.yml` are included in backups whenever they exist (PART 22 → "Backup Contents") |
 - **Admin panel:** the panel writes each setting to the file that owns it ("Area Files and Automatic Migration"), `secrets.yml` for the secret keys ("Secrets File") and `assets/` for uploaded images ("Image Files"). A setting that a file OTHER than its owner sets is shown read-only with the file name (`set by yaml.d/90-local.yml`) and cannot be changed in the panel; edit that file instead.
 - **Cluster Mode:** the area files are synced through the database ("Config Sync"); `server.yml` and `secrets.yml` are node-local.
@@ -8655,7 +8689,7 @@ Wherever this specification says a setting is set "in `server.yml`", it means th
 | **Written by** | The server writes generated, rotated and moved secrets to `secrets.yml` and ONLY there, never to `server.yml` and never to a drop-in (this limits what the server writes; an operator may still hand-write a value elsewhere, see "Operator-set values"): the first-run `server.token`, `server.security.encryption_key` with its version, and every rotation (`--maintenance secret rotate encryption_key`) |
 | **Operator-set values** | An operator MAY write a secret key in `server.yml` or a drop-in (for example from configuration management). The automatic migration moves it to `secrets.yml` at the next start ("Area Files and Automatic Migration"), where it wins over any other file. A value may also be an environment reference such as `${DB_PASSWORD}`, which is moved like any other value. A plaintext DNS credential is rewritten as `enc:v1:` in the file that holds it. So `secrets.yml` is where a secret lives at rest, and a secret in `server.yml` or a drop-in is a hand-off that ends at the next start |
 | **Migration** | At start, if `server.token` or `server.security.encryption_key` is found in `server.yml` and `secrets.yml` does not hold it, the server writes `secrets.yml` first (atomic, `0600`, fsynced) and only then rewrites `server.yml` without those keys, so a secret is never in both files and never lost |
-| **Early read** | The early config read (PART 8 startup, step 8e) never opens `secrets.yml`: it needs only `server.port`, `server.address`, `server.daemonize` and `server.pidfile` |
+| **Early read** | The early config read (PART 8 startup, step 8e) never opens `secrets.yml`: it needs only `server.port`, `server.address`, `server.daemonize` and `server.pidfile`, plus each raw-protocol listener's `{proto}.enabled`, `{proto}.address` and `{proto}.port` |
 | **Permissions** | Always `0600` (PART 8 → "Directory Validation Rules": private paths); a wrong mode is fixed at start |
 | **Reload** | The file watcher watches it with `server.yml`, `yaml.d/` and `assets/`; a change re-merges everything and an invalid result keeps the last good config |
 | **Backup** | Included in every backup whenever it exists (PART 22 → "Backup Contents"), so a restore brings back the same token and encryption key |
@@ -11715,7 +11749,7 @@ PHASE 5: Server startup (actual server start)
       │   ├─ First port = HTTP
       │   └─ Second port = HTTPS
       ├─ No --port? → check PORT env var (same format)
-      ├─ No env var? → EARLY CONFIG PEEK: read ONLY `server.port`, `server.address`, `server.daemonize` and `server.pidfile` from the merged view of {config_dir}/server.yml and the ordered {config_dir}/yaml.d/* drop-ins (same file selection, order and replace-whole-value rule as PART 5 → "Drop-in Config Directory"; read-only, as root, after the step 8d permission fix; no other key is read or validated here, and a file that does not parse is skipped for these three keys, its error is reported by the full load at step 13)
+      ├─ No env var? → EARLY CONFIG PEEK: read ONLY `server.port`, `server.address`, `server.daemonize` and `server.pidfile` (plus every raw-protocol listener's `{proto}.enabled`, `{proto}.address` and `{proto}.port`, with the `{PROTO}_PORT` override) from the merged view of {config_dir}/server.yml and the ordered {config_dir}/yaml.d/* drop-ins (same file selection, order and replace-whole-value rule as PART 5 → "Drop-in Config Directory"; read-only, as root, after the step 8d permission fix; no other key is read or validated here, and a file that does not parse is skipped for these three keys, its error is reported by the full load at step 13)
       └─ No file, or no `server.port` in it? → the default for the context: port `80` in an application container (it starts as root, so step 8f binds it before the drop), otherwise a random port in 64000-64999 (a system container or any host; single, HTTP); step 13 writes it to the new config
       Listen address (resolved in the same early step): `--address` flag > `LISTEN` env > the early peek of `server.address` > default `[::]` (IPv4 `0.0.0.0` fallback when the kernel has no IPv6, logged once as a warning). `[::]` and `::` are both accepted for `--address`, `LISTEN` and `server.address`; the brackets are stripped before the value is parsed as an IP. Privileged sockets are bound to THIS address and never to a broader one; step 13 never rebinds (`server.address` needs a restart, PART 12)
    e2. Daemonize (manual start only; never for `--service start` or in a container, see "Daemonization"): when `--daemon` was given, or the early peek found `server.daemonize: true`, re-execute now (marker `_DAEMON_CHILD=1`) and exit the parent with 0. This happens BEFORE any privileged socket is bound, so the child repeats steps 6-8e (all idempotent) and binds the ports itself; a bound socket never has to cross the re-execute.
@@ -14035,17 +14069,19 @@ func isWritable(path string) bool {
 // macOS: /Library/Backups/{internal_org}/{internal_name}
 // BSD:   /var/backups/{internal_org}/{internal_name}
 // Windows: %ProgramData%\Backups\{internal_org}\{internal_name}
+// internalOrg and internalName are the frozen identity ({internal_org}/{internal_name}): backup paths use them, never the
+// renameable project_org/project_name, so a rename never orphans existing backups
 func systemBackupDir() string {
     switch runtime.GOOS {
     case "darwin":
-        return filepath.Join("/Library/Backups", projectOrg, projectName)
+        return filepath.Join("/Library/Backups", internalOrg, internalName)
     case "windows":
-        return filepath.Join(os.Getenv("ProgramData"), "Backups", projectOrg, projectName)
+        return filepath.Join(os.Getenv("ProgramData"), "Backups", internalOrg, internalName)
     case "freebsd", "openbsd", "netbsd":
-        return filepath.Join("/var/backups", projectOrg, projectName)
+        return filepath.Join("/var/backups", internalOrg, internalName)
     // linux
     default:
-        return filepath.Join("/mnt/Backups", projectOrg, projectName)
+        return filepath.Join("/mnt/Backups", internalOrg, internalName)
     }
 }
 
@@ -14059,12 +14095,12 @@ func userBackupDir() string {
     home, _ := os.UserHomeDir()
     switch runtime.GOOS {
     case "darwin":
-        return filepath.Join(home, "Library/Backups", projectOrg, projectName)
+        return filepath.Join(home, "Library/Backups", internalOrg, internalName)
     case "windows":
-        return filepath.Join(os.Getenv("LOCALAPPDATA"), "Backups", projectOrg, projectName)
+        return filepath.Join(os.Getenv("LOCALAPPDATA"), "Backups", internalOrg, internalName)
     // linux, bsd
     default:
-        return filepath.Join(home, ".local/share/Backups", projectOrg, projectName)
+        return filepath.Join(home, ".local/share/Backups", internalOrg, internalName)
     }
 }
 ```
@@ -18015,7 +18051,7 @@ server:
 | `event` | String | Event type (e.g., `admin.login`) |
 | `category` | String | Event category (e.g., `authentication`) |
 | `severity` | String | `info`, `warn`, `error`, `critical` |
-| `actor` | Object | Who performed the action: `type` (`owner`, `operator`, `visitor` or `system`), `id` (the owner id, or `server` or `scheduler`) and `ip` when the event arrived over the network. Autonomous events (startup, shutdown, backups, scheduler tasks) have `type: system` and no `ip` |
+| `actor` | Object | Who performed the action: `type` (`owner`, `operator`, `anonymous` or `system`), `id` (the owner id, or `server` or `scheduler`) and `ip` when the event arrived over the network. Autonomous events (startup, shutdown, backups, scheduler tasks) have `type: system` and no `ip` |
 | `result` | String | `success` or `failure` |
 | `prev` | String | Lowercase hex SHA-256 of the previous entry's line (hash chain, see "Audit Log Integrity") |
 
@@ -19667,7 +19703,7 @@ server:
 | `gotify` | Gotify URL | `POST {url}/message?token={token}` body `{"title", "message", "priority"}` (mapping below) |
 | `generic` | Any HTTPS URL | `POST {url}` JSON body: `{role, event, subject, body, severity, timestamp, project_name, project_version, app_url, tracking_id?}` |
 
-**Generic payload `timestamp`.** The event time as an RFC 3339 string in UTC with a `Z` suffix and whole seconds (`2026-01-15T10:30:00Z`), set by the server when the event is raised, never local time. It is the same instant as the `X-Webhook-Timestamp` header, which carries it as Unix seconds.
+**Generic payload `timestamp`.** The event time as an RFC 3339 string in UTC with a `Z` suffix and whole seconds (`2026-01-15T10:30:00Z`), set by the server when the event is raised, never local time. It is the immutable event time and is NOT the `X-Webhook-Timestamp` header: that header is the send time of THIS delivery attempt, so every retry gets a fresh one and stays inside the receiver's replay window.
 
 **Severity and priority.** `severity` is `info`, `warning` or `critical` (a success or info event is `info`, a warning is `warning`, an error is `critical`). Pushover `priority` is `0` for `info` and `warning` and `1` for `critical`; the emergency priority `2` is never used because it needs retry and expire parameters. Gotify `priority` is `2` for `info`, `5` for `warning` and `8` for `critical`.
 
@@ -19680,7 +19716,7 @@ Every outbound webhook POST includes these headers so the receiver can verify th
 | Header | Value |
 |--------|-------|
 | `X-Webhook-Signature` | `sha256=<hex_hmac>` where `hmac = HMAC-SHA256(per_webhook_secret, request_body_bytes)`. The `per_webhook_secret` is generated whenever the webhook URL is set and its secret is empty (random 32 bytes, persisted in `secrets.yml` as `server.contact.{role}.webhooks.{transport}_secret`, the sibling of the URL key `{transport}`). It is never returned by any API response and never shown in the admin panel: the operator reads it from `secrets.yml` (mode `0600`) to configure the receiving end. |
-| `X-Webhook-Timestamp` | Unix seconds — receiver SHOULD reject if delta exceeds `±5 min` to prevent replay |
+| `X-Webhook-Timestamp` | Unix seconds of THIS delivery attempt, set again on every retry (the payload `timestamp` stays the immutable event time) — receiver SHOULD reject if delta exceeds `±5 min` to prevent replay |
 | `X-Webhook-ID` | UUID v7 (time-ordered, RFC 9562) — idempotency key the receiver can use to deduplicate retries |
 | `X-Webhook-Event` | The event type (e.g., `security.report_received`, `admin.cluster_failover`) |
 | `User-Agent` | `{project_name}/{project_version} (+{app_url})` |
@@ -23614,7 +23650,7 @@ Need additional compatible endpoints?"
 
 | Field | Required | Description |
 |-------|----------|-------------|
-| `ok` | Yes | Always `true` for success. Exceptions: health endpoints return the bare health object (see PART 13); compatibility-layer routes return the target service's native body (see PART 14 → "External API Compatibility"); a route declared `Binary` returns its own bytes and `Content-Type`; the MCP endpoints answer with JSON-RPC 2.0 objects (canonical error body only for a request that cannot be parsed). |
+| `ok` | Yes | Always `true` for success. Exceptions: health endpoints return the bare health object (see PART 13); compatibility-layer routes return the target service's native body (see PART 14 → "External API Compatibility"); a route declared `Binary` returns its own bytes and `Content-Type`; the MCP endpoints answer with JSON-RPC 2.0 objects (canonical error body only for a request that cannot be parsed); the GraphQL endpoint (`/api/{api_version}/server/graphql` and its alias) answers with the standard GraphQL response map, never the envelope: success is `{"data": {...}}`; an execution error is `{"data": null or partial, "errors": [{"message": ..., "extensions": {"code": ...}}]}` with HTTP `200`; a request that fails before execution (`401`, `429`, malformed JSON body) keeps the canonical error body and its HTTP status. |
 | `data` | Yes | Response payload |
 | `data.id` | If created | ID of created/affected resource |
 | `data.message` | No | Human-readable status message |
@@ -26886,7 +26922,7 @@ if ('serviceWorker' in navigator) {
 > When a service worker calls `event.respondWith()` it owns that response completely. If the promise it passes **resolves to `undefined`** (a cache miss on the last fallback) or **rejects** (an uncaught network failure), the browser shows **`net::ERR_FAILED`** — a dead tab — instead of a page. A transient network blip on a page navigation MUST degrade to a real offline/error page, never a broken site. The handler below, and any service worker a project ships, MUST obey:
 >
 > - **Navigations are network-first** — fetch the network first so a new build's HTML is seen immediately (and the `Clear-Site-Data` build-purge has nothing stale to fight); only on failure fall back to the cached page, then to a **synthesized** `Response`.
-> - **Offline copies are for public pages only** — the server adds the internal header `X-Offline-Cache: public` to a navigation response ONLY when the page is identical for every visitor: the request carries no session or owner cookie, and the body holds no signed-in state, token, per-visitor value or CSRF token. `Cache-Control` stays `no-store`; the header is only a signal to the worker. The worker puts a navigation response in the cache only when it also has that header; any other navigation response is not cached, and the worker deletes an existing entry for that URL, so a page that becomes private leaves no old copy. Authenticated pages, token pages, the admin area and every page with a form never carry the header, and on offline they show the synthesized offline page.
+> - **Offline copies are for public pages only** — the server adds the internal header `X-Offline-Cache: public` to a navigation response ONLY when the page is identical for every visitor: the request carries no session or owner cookie, and the body holds no signed-in state, owner token or per-visitor value. The CSRF value of the shared header theme form and the consent forms does not count against eligibility: it is only used online, a form submitted from an offline copy fails, and nothing is queued. `Cache-Control` stays `no-store`; the header is only a signal to the worker. The worker puts a navigation response in the cache only when it also has that header; any other navigation response is not cached, and the worker deletes an existing entry for that URL, so a page that becomes private leaves no old copy. Authenticated pages, token pages, the admin area and every page with a form of its own (the shared header theme and consent forms do not count) never carry the header, and on offline they show the synthesized offline page.
 > - **Every `respondWith()` branch ends in a guaranteed `Response`** — a terminal `.catch()` returning a real `Response` (a synthesized 503 offline page for navigations, a 504 for subresources). Never end a chain on `cached || caches.match('/offline…')`: that link can itself miss and resolve `undefined`.
 > - **Only intercept same-origin GET.** Let API calls, cross-origin requests, and non-GET methods fall through untouched — never call `respondWith()` for them.
 > - **The wait for the network is bounded** — a navigation `fetch` races an 8 s timer (`NAV_TIMEOUT_MS`); on timeout the worker falls back to the cached public page, then the synthesized offline page. A server that is restarting, updating or hung never leaves a tab on a blank page with a stuck load bar.
@@ -29168,7 +29204,8 @@ Mobile:
 ```html
 <!-- Menu state checkbox, drawer panel and scrim are children of <body>, NOT of <header>
      (a fixed panel inside a header with transform/backdrop-filter is clipped to the header). -->
-<input type="checkbox" id="nav-toggle" class="nav-checkbox" hidden>
+<!-- NOT the `hidden` attribute: that removes the control from the focus order. It is visually hidden by CSS and is the focus target of the menu (Space toggles it, no JS) -->
+<input type="checkbox" id="nav-toggle" class="nav-checkbox" aria-label="Toggle navigation">
 
 <!-- Header bar: single row — brand | centered links | profile/preferences | theme toggle -->
 <header class="header">
@@ -29275,12 +29312,13 @@ Mobile:
 | Enhancement | Behavior |
 |-------------|----------|
 | **Overflow detection ("Smart Menu")** | On load and resize, if the inline `.nav-links` do not fit at >= 768px, add `nav-collapsed` to `<html>` so the hamburger is used instead. Without the script the 768px breakpoint decides |
-| **Keyboard** | Esc unchecks the checkbox; focus moves into the panel on open, stays inside while open and returns to the toggle on close |
+| **Keyboard** | Esc unchecks the checkbox; focus moves into the panel on open, stays inside while open and returns to the menu checkbox (`#nav-toggle`, the focusable control behind the hamburger label) on close |
 
 ```css
 /* Overflow fallback: only when app.js added .nav-collapsed on a wide viewport */
 @media (min-width: 768px) {
   .nav-collapsed .nav-toggle { display: block; }
+  .nav-collapsed .nav-checkbox { display: block; }
   .nav-collapsed .nav-links { display: none; }
   .nav-collapsed .nav-panel { display: block; }
   .nav-collapsed .nav-checkbox:checked ~ .nav-overlay { display: block; }
@@ -29292,6 +29330,9 @@ Without the script: Esc and overflow detection are unavailable, but the scrim, t
 **CSS-Only Baseline (works with NO JavaScript) - Mobile-First:**
 ```css
 /* Base: Mobile styles (no media query) */
+/* Visually hidden but focusable: the keyboard focus target of the menu, with its focus ring drawn on the visible hamburger */
+.nav-checkbox { position: absolute; inline-size: 1px; block-size: 1px; margin: 0; opacity: 0; }
+.nav-checkbox:focus-visible ~ .header .nav-toggle { outline: 2px solid var(--color-primary); outline-offset: 2px; }
 .nav-toggle { display: block; cursor: pointer; }
 .nav-links { display: none; }
 
@@ -29338,6 +29379,8 @@ Without the script: Esc and overflow detection are unavailable, but the scrim, t
 /* Desktop: show inline links, hide hamburger */
 @media (min-width: 768px) {
   .nav-toggle, .nav-panel, .nav-overlay { display: none; }
+  /* No hamburger on desktop, so the checkbox leaves the focus order too */
+  .nav-checkbox { display: none; }
   .nav-links { display: flex; }
 }
 ```
@@ -32343,7 +32386,7 @@ curl -H "Accept: application/xml" https://jokes.example.com/api/v1/joke</code></
 | `#limits` | Behavior and limits | `POST` only; no sessions; the same rate limits and audit as the API; `Origin` validated; the supported MCP protocol versions |
 | `#troubleshooting` | Troubleshooting | A table of `400` (protocol-version or header mismatch), `401` (missing, invalid or expired token — `WWW-Authenticate: Bearer`), `403` (bad `Origin` or insufficient scope), `405` (GET or DELETE; the endpoint is POST-only) with the fix for each |
 
-**Project expansion (required content):** the project appends its own section, `#project`, after the base sections. The text comes from IDEA.md `## Business logic` and is stored as Markdown in `server.pages.help.mcp` (canonical storage is `server.yml` `server.pages.help.mcp`, edited there by the operator and applied on config reload; a project that has an admin panel also exposes it in Pages → Help. API projects have no admin panel or web editor, so `server.yml` is the only editing path). It MUST use the project's real tool names and real data — example prompts a user can paste into an assistant, per-tool tips and limits, and documentation of any MCP resources or prompts the project exposes. It never repeats or contradicts the base sections, and generic placeholder text is forbidden (same rule as `/server/help`).
+**Project expansion (required content):** the project appends its own section, `#project`, after the base sections. The text comes from IDEA.md `## Business logic` and is stored as Markdown in `server.pages.help.mcp` (canonical storage is `server.yml` `server.pages.help.mcp`, edited there by the operator and applied on config reload; the admin panel also exposes it in Pages → Help, and both write the same `server.yml` value). It MUST use the project's real tool names and real data — example prompts a user can paste into an assistant, per-tool tips and limits, and documentation of any MCP resources or prompts the project exposes. It never repeats or contradicts the base sections, and generic placeholder text is forbidden (same rule as `/server/help`).
 
 **JSON body (`GET /api/{api_version}/server/help/mcp`, envelope `{ "ok": true, "data": ... }`; field names are fixed):**
 ```json
@@ -33216,7 +33259,7 @@ On first run, a one-time setup token is generated and displayed in console. Admi
 - Generated on first run ONLY
 - Displayed in console ONCE (never stored in plain text)
 - Single use - invalidated after setup complete
-- If lost, must reset database to regenerate
+- If lost, run `{project_name} --maintenance setup` as root: while no admin exists it regenerates the token and `{config_dir}/setup_token.txt` after a confirmation; the database is never reset for this
 - Format: 32 hexadecimal characters (128-bit random)
 
 ## Multiple Server Admins
@@ -33625,7 +33668,7 @@ Admin Panel Header:
 **Login page rules:**
 - Centered card on dark background
 - Project name/logo at top
-- No links to public site
+- No links to the public site of its own: the login page is not a shell exception, so it carries the shared header and footer (including the shell's brand link to `/`), and the card adds no further public links
 - Version number at bottom (small)
 - No "Forgot password" (admin resets via CLI if needed)
 
@@ -41618,7 +41661,7 @@ func (ws *windowsService) Execute(args []string, r <-chan svc.ChangeRequest, s c
 - **NEVER guess or assume** - must be explicitly created by the user, and never written by AI
 - Canonical single-line official site source when present
 - If `site.txt` exists, it wins over `IDEA.md`, README, env vars, CI secrets, and other fallbacks
-- If `site.txt` and `IDEA.md ## Project variables` both exist, `IDEA.md` should match `site.txt`; `site.txt` is the easy-to-update operational override
+- `IDEA.md` `official_site` only resolves the `{official_site}` placeholder in README and docs; it is NOT an operational source. The embedded `OfficialSite` and the CLI's default server come only from `site.txt`, `OFFICIAL_SITE` or CI secrets, so with none of them the CLI requires `--server` even when IDEA.md has a value. When both exist, `IDEA.md` should match `site.txt`; `site.txt` is the easy-to-update operational override
 - If not present, CLI/Agent users must always specify `--server` flag
 - Sources checked in order:
   1. File: `site.txt` in project root
@@ -41784,7 +41827,7 @@ binaries/
 # PROJECT_NAME and PROJECT_ORG: IDEA.md project variables first (the same source as {project_name}), then the git remote, then the directory path (NEVER hardcode)
 PROJECT_NAME := $(shell sed -n 's/^project_name:[[:space:]]*//p' IDEA.md 2>/dev/null | head -n1 | tr -d '[:space:]')
 ifeq ($(PROJECT_NAME),)
-PROJECT_NAME := $(shell git remote get-url origin 2>/dev/null | sed -E 's|.*/([^/]+)(\.git)?$$|\1|' || basename "$$(pwd)")
+PROJECT_NAME := $(shell git remote get-url origin 2>/dev/null | sed -E 's|.*/([^/]+)$$|\1|; s|\.git$$||' || basename "$$(pwd)")
 endif
 PROJECT_ORG := $(shell sed -n 's/^project_org:[[:space:]]*//p' IDEA.md 2>/dev/null | head -n1 | tr -d '[:space:]')
 ifeq ($(PROJECT_ORG),)
@@ -42620,7 +42663,7 @@ See dockerfile_conventions.md → OCI Annotations for the complete list of requi
 | **NEVER modify CMD** | Pass commands to entrypoint.sh instead |
 | **STOPSIGNAL** | Use `SIGRTMIN+3` for proper shutdown |
 | **ENTRYPOINT format** | `[ "tini", "-p", "SIGTERM", "--", "/usr/local/bin/entrypoint.sh" ]` |
-| **HEALTHCHECK timing** | Start: 90s, Interval: 10s, Timeout: 5s |
+| **HEALTHCHECK timing** | The image's `HEALTHCHECK` (standard and AIO alike) is `--start-period=10m --interval=5m --timeout=15s --retries=3`, long enough for Tor and I2P bootstrap and database init; the Compose files override it with `start_period: 90s` (30s for helper services), `interval: 10s`, `timeout: 5s` |
 | **Customization** | ALL customization via entrypoint.sh |
 
 ### Dockerfile Example (Multi-Stage)
@@ -43039,7 +43082,7 @@ services:
     environment:
       POSTGRES_DB: {project_name}
       POSTGRES_USER: {project_name}
-      POSTGRES_PASSWORD: {project_name}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD to a random secret, e.g. openssl rand -hex 24}
     volumes:
       - ./volumes/data/db/postgres/{project_name}:/var/lib/postgresql/data:z
     healthcheck:
@@ -43308,14 +43351,6 @@ priority=20
 stdout_logfile=/data/log/valkey.log
 stderr_logfile=/data/log/valkey.log
 
-[program:tor]
-command=/usr/bin/tor -f /config/{project_name}/tor/torrc
-autostart=%(ENV_TOR_ENABLED)s
-autorestart=true
-priority=30
-stdout_logfile=/data/log/tor.log
-stderr_logfile=/data/log/tor.log
-
 [program:app]
 command=/usr/local/bin/{project_name}
 autostart=true
@@ -43435,8 +43470,12 @@ if [ ! -f /data/db/postgres/PG_VERSION ]; then
     su - postgres -c "pg_ctl -D /data/db/postgres -l /data/log/postgres/init.log start"
     sleep 3
 
-    # Create application database and user
-    su - postgres -c "psql -c \"CREATE USER ${DB_USER:-{project_name}} WITH PASSWORD '${DB_PASSWORD:-{project_name}}';\""
+    # The database password is never derived from the project name: a value is generated on first init unless the operator
+# supplied DB_PASSWORD. The app uses the unix socket and never needs it; it is not printed or logged
+DB_PASSWORD="${DB_PASSWORD:-$(openssl rand -hex 24)}"
+
+# Create application database and user
+    su - postgres -c "psql -c \"CREATE USER ${DB_USER:-{project_name}} WITH PASSWORD '${DB_PASSWORD}';\""
     su - postgres -c "psql -c \"CREATE DATABASE ${DB_NAME:-{project_name}} OWNER ${DB_USER:-{project_name}};\""
     su - postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME:-{project_name}} TO ${DB_USER:-{project_name}};\""
 
@@ -43444,14 +43483,13 @@ if [ ! -f /data/db/postgres/PG_VERSION ]; then
     su - postgres -c "pg_ctl -D /data/db/postgres stop"
 fi
 
-# Set Tor enabled flag for supervisor
-# Tor is auto-enabled: the binary is installed in the AIO image; set TOR_ENABLED=false to opt out
-export TOR_ENABLED="${TOR_ENABLED:-true}"
+# Tor is NOT a supervisor program: the app owns the Tor process (PART 32) and starts its own dedicated, isolated instance as the
+# service user when the tor binary installed in the image is found, with its torrc and data under the app's own directories
 
 # I2P_ENABLED is not exported here: the binary's own default is ON in a container. Set I2P_ENABLED=false
 # (or server.i2p.enabled: false) to turn it off. The app prefers the i2pd binary and falls back to SAM.
 
-# Start supervisor (manages postgresql + valkey + tor + app)
+# Start supervisor (manages postgresql + valkey + app; the app manages Tor itself)
 exec /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
 ```
 
@@ -43472,8 +43510,7 @@ exec /usr/bin/supervisord -c /etc/supervisor/supervisord.conf
 | `TZ` | `America/New_York` | Timezone |
 | `DB_NAME` | `{project_name}` | PostgreSQL database name |
 | `DB_USER` | `{project_name}` | PostgreSQL username |
-| `DB_PASSWORD` | `{project_name}` | PostgreSQL password |
-| `TOR_ENABLED` | `true` | Tor hidden service (auto-enabled — tor binary is installed; set `false` to disable) |
+| `DB_PASSWORD` | random, generated at first init | PostgreSQL password; never a project-name default. The app connects over the unix socket, so set it only when something connects over TCP |
 | `I2P_ENABLED` | (unset) | I2P eepsite (default ON in a container, set `false` to turn it off; prefers i2pd binary, falls back to SAM) |
 
 **App Connection Strings (internal):**
@@ -43951,7 +43988,7 @@ services:
     environment:
       POSTGRES_DB: {project_name}
       POSTGRES_USER: {project_name}
-      POSTGRES_PASSWORD: {project_name}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD to a random secret, e.g. openssl rand -hex 24}
       TZ: ${TZ:-America/New_York}
     volumes:
       - ./volumes/data/db/postgres/{project_name}:/var/lib/postgresql/data:z
@@ -49465,7 +49502,7 @@ fi
 3. Install test tools in container (Docker: `apk add --no-cache curl bash file jq tor i2pd tzdata ca-certificates`)
 4. Copy binaries to test container
 5. Start server and capture logs (for setup token extraction)
-6. Run full beta test suite:
+6. Run the beta test suite below (identical in both scripts: operator-token authentication and the full CLI checks are required in BOTH; only the init-system and service-lifecycle checks belong to `incus.sh` alone):
    - Version and help checks (server, CLI, agent if built)
    - Binary info verification
    - **Binary rename tests** (copy binary, verify --help shows new name)
@@ -49478,9 +49515,15 @@ fi
    - **Agent full functionality** (with API token against running server)
 7. Clean up on exit: register `trap cleanup EXIT INT TERM` BEFORE the first container starts; it removes every container, sidecar, network and volume the script started, by the exact names the script recorded, so a failed or interrupted run leaves nothing behind (see "Container Discipline")
 
+#### Testing Operator-Token Routes
+
+**Every operator route (`server.token`, `adm_`) is tested with five requests, in `docker.sh` and `incus.sh` alike:** no `Authorization` header → `401`; a wrong token → `401`; an owner or linked token (`own_`) → `403`; the real `server.token` read from `secrets.yml` inside the test container → `200`; and the same route with the token in a query string → `401` (a URL is never a credential). The token value is never echoed: scripts pass it through a variable and print only the route and the status.
+
+**CLI full functionality:** the built client runs against the running server with a linked API token (not just `--help`): `--version`, a status or health command, one read command and one write command, each checked for exit code `0` and expected output, plus one failure case (bad token → non-zero exit and a clear message).
+
 #### tests/docker.sh
 
-**Purpose:** The basic tier: the binary-validation suite in one Docker Alpine container (does it start and answer, Tor and I2P health included). The shipped image is checked after `make docker` and in CI ("Image check"), not here. No init system and no service lifecycle: those belong to `tests/incus.sh`
+**Purpose:** The basic tier: the beta suite in one Docker Alpine container (does it start and answer, operator-token and CLI checks and Tor and I2P health included): the same suite as `tests/incus.sh` minus the init-system and service-lifecycle steps. The shipped image is checked after `make docker` and in CI ("Image check"), not here. No init system and no service lifecycle: those belong to `tests/incus.sh`
 
 ```bash
 #!/usr/bin/env bash
@@ -51973,7 +52016,8 @@ func LanguageMiddleware(next http.Handler) http.Handler {
                 MaxAge:   365 * 24 * 60 * 60,
                 SameSite: http.SameSiteLaxMode,
                 Secure:   r.TLS != nil,
-                HttpOnly: true,
+                // Not HttpOnly: preference cookies are read by JavaScript (PART 16, one visibility rule for theme, lang and the _pref_ cookies)
+                HttpOnly: false,
             })
         }
 
@@ -58141,9 +58185,9 @@ func EnsureConfigured() error {
 | **Linux** | `github.com/gogpu/ui` + `github.com/gogpu/gogpu` | Pure Go, zero CGO — `goffi` `dlopen`s `libX11`/`libwayland-client` at runtime, no link-time C dependency; native Wayland, not XWayland compat. The binary still needs the system loader, so it is the separate `gui` build only |
 | **macOS** | `github.com/gogpu/ui` + `github.com/gogpu/gogpu` | Pure Go, no cgo — Metal access via the Objective-C runtime through `goffi` |
 | **Windows** | `github.com/gogpu/ui` + `github.com/gogpu/gogpu` | Pure Go, no cgo — DX12 via `goffi` |
-| **BSD** | none | `gogpu/gogpu`'s windowing layer does not implement BSD yet (stubbed via build tags). Compile GUI support out on `freebsd`/`netbsd`/`openbsd` (`caps.GUISupported == false`); falls back to TUI, or CLI if no TTY (see APPLICATION.md's Smart Detect Rules) |
+| **BSD** | none | `gogpu/gogpu`'s windowing layer does not implement BSD yet (stubbed via build tags). Compile GUI support out on `freebsd`/`netbsd`/`openbsd` (`caps.GUISupported == false`); automatic mode falls back to TUI, or CLI if no TTY (see APPLICATION.md's Smart Detect Rules); a forced `gui` mode fails with `gui_unavailable` |
 
-**GUI build separation (REQUIRED).** `gogpu` loads the platform's graphics libraries through `goffi`, so a binary that contains it depends on the system dynamic loader even with `CGO_ENABLED=0` (built in the Alpine toolchain on Linux, that is the musl loader): it is NOT a static, cross-distribution binary and it would not even start in a Debian test container. The GUI is therefore compiled out of every default build. The default client `{project_name}-cli-{os}-{arch}` (and the server and the TUI) is built WITHOUT the `gui` build tag: fully static, runs on every distribution, and `caps.GUISupported` is `false`, so a request for GUI mode resolves to the TUI. The GUI is a separate, OPTIONAL artifact `{project_name}-cli-gui-{os}-{arch}`, built with `-tags gui` for Linux, macOS and Windows only; it is documented as dynamically linked (on Linux it needs the loader of the toolchain that built it) and desktop-only, and the update flow of the static client never replaces it.
+**GUI build separation (REQUIRED).** `gogpu` loads the platform's graphics libraries through `goffi`, so a binary that contains it depends on the system dynamic loader even with `CGO_ENABLED=0` (built in the Alpine toolchain on Linux, that is the musl loader): it is NOT a static, cross-distribution binary and it would not even start in a Debian test container. The GUI is therefore compiled out of every default build. The default client `{project_name}-cli-{os}-{arch}` (and the server and the TUI) is built WITHOUT the `gui` build tag: fully static, runs on every distribution, and `caps.GUISupported` is `false`, so automatic mode resolves to the TUI; an explicitly forced `display.mode: gui` still fails with `gui_unavailable` and never degrades. The GUI is a separate, OPTIONAL artifact `{project_name}-cli-gui-{os}-{arch}`, built with `-tags gui` for Linux, macOS and Windows only; it is documented as dynamically linked (on Linux it needs the loader of the toolchain that built it) and desktop-only, and the update flow of the static client never replaces it.
 
 **One toolkit, one implementation, every platform GUI is supported on.** `gogpu/ui` (+ `gogpu/gogpu` for windowing) is cross-platform in a single codebase for Linux/macOS/Windows — there is no per-OS launcher file and no `runtime.GOOS` dispatch. `gioui.org` (Gio) and `fyne.io/fyne/v2` are **NOT compliant** — both require cgo on Linux (Gio's own install docs list `libwayland-dev`/`libx11-dev`/`libxkbcommon-x11-dev`/etc.; Fyne is built on `go-gl`/`glfw`) and are therefore banned project-wide, not just discouraged.
 
@@ -61916,7 +61960,7 @@ Admin clicks "Invite New User"
 
 | Route | Regular User Access |
 |-------|---------------------|
-| `/server/{admin_path}/*` | NO - 403 Forbidden (unless user has admin role) |
+| `/server/{admin_path}/*` | NO - a Regular User is redirected to their own `/users` dashboard (PART 17), whatever their role: Server Admin is only a row in `admins` |
 | `/users/*` | Full access to own profile, settings, tokens |
 | `/server/auth/login` | Login page |
 | `/server/auth/logout` | Logout |
@@ -61925,7 +61969,7 @@ Admin clicks "Invite New User"
 **Regular User Accounts:**
 - Stored in database (users table)
 - Managed via `/users/{id}`, `/users/settings`
-- Can have roles (admin, user, custom)
+- Can have roles (`user` and project-defined custom roles) that scope Regular User features only; no role grants Server Admin access (that is the separate `admins` table, PART 17)
 - Multiple accounts supported
 
 ## User Account Security
@@ -68166,7 +68210,7 @@ maintainer_email: jane@example.com
 
 **Testing (Docker OR Incus):**
 - [ ] **Unit tests** - `make test` in the Docker toolchain image `casjaysdev/go:latest` (locally and in CI/CD), never in `alpine:latest`
-- [ ] **Quick binary checks** - Docker `alpine:latest` (`tests/docker.sh`), for the compiled binary only
+- [ ] **Basic tier** - Docker `alpine:latest` (`tests/docker.sh`): the compiled binary (not the shipped image), the basic suite including Tor and I2P health; the init-system and service lifecycle belong to `tests/incus.sh`
 - [ ] **Full OS tests** - Incus `debian:latest` for systemd (PREFERRED)
 - [ ] **NEVER run binaries locally** - use Docker or Incus container
 
@@ -68755,7 +68799,7 @@ make docker
 ### Authentication & Authorization
 
 - [ ] No hardcoded credentials in code
-- [ ] Passwords hashed with Argon2id (NEVER bcrypt)
+- [ ] Passwords hashed with Argon2id (NEVER bcrypt for a new hash; a legacy bcrypt hash is only verified, then rehashed)
 - [ ] Session tokens are cryptographically random
 - [ ] Session expiration enforced
 - [ ] CSRF protection on all forms
@@ -69657,7 +69701,7 @@ Before starting integration:
 - Work incrementally
 - Test continuously
 - Document everything
-- Get approval at each phase
+- Get human approval before a phase only when it introduces breaking behavior, destructive migration steps, production-impacting risk or unresolved scope decisions (the Phase 4 rule); every other phase proceeds without waiting
 - Preserve existing functionality unless explicitly changing it
 - NEVER rush integration to "get it done faster"
 

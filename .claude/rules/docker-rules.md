@@ -26,7 +26,7 @@
 - Always expose internal port 80
 - Always use `tini` as init: `ENTRYPOINT [ "tini", "-p", "SIGTERM", "--", "/usr/local/bin/entrypoint.sh" ]`
 - Always set `STOPSIGNAL SIGRTMIN+3`
-- Always configure `HEALTHCHECK` with start-period 90s, interval 10s, timeout 5s, retries 3, running `{binary} --status`
+- Dockerfile `HEALTHCHECK`: start-period 10m, interval 5m, timeout 15s, retries 3, running `{binary} --status`; compose healthchecks use the compose-specific timings in AI.md PART 27
 - Always mount exactly two volumes: `./volumes/config:/config:z` and `./volumes/data:/data:z` (add `:z` only in production/test, omit in temp-dir dev runs)
 - Always run compose from an isolated temp dir: `${TMPDIR:-/tmp}/webappsgo/caslink-XXXXXX/`
 - Always use the `x-logging` anchor (`json-file`, max-size 5m, max-file 1) on every service

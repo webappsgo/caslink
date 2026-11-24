@@ -72,6 +72,7 @@ custom_domains:   true
 
 **Data sources:**
 - SQLite (default, single-node) or PostgreSQL/MySQL/SQL Server for cluster deployments — see PART 10
+- SAML service-provider support uses `github.com/supatype/saml` v0.7.0, a maintained fork of `crewjam/saml` carrying the namespace-validation fixes for Go advisory GO-2026-6909; upstream `crewjam/saml` remains affected — see AI.md PART 28 and PART 37
 - GeoIP database (sapics/ip-location-db, no API key required) stored at `{data_dir}/security/geoip/` and updated on schedule — see PART 20
 - IP/domain blocklists downloaded from configured sources and cached at `{data_dir}/security/blocklists/` — see PART 19
 - CVE/security feeds cached at `{data_dir}/security/cve/` — see PART 19
