@@ -52,6 +52,8 @@ This software includes the following third-party libraries:
 | golang.org/x/term | v0.43.0 | BSD-3-Clause | 2009 The Go Authors |
 | gopkg.in/yaml.v3 | v3.0.1 | Apache-2.0 AND MIT | 2011-2016 Canonical Ltd.; 2006-2011 Kirill Simonov |
 | modernc.org/sqlite | v1.41.0 | BSD-3-Clause | 2017 The Sqlite Authors |
+| sapics/ip-location-db (`dbip-city`) | latest release | CC BY 4.0 | DB-IP |
+| sapics/ip-location-db (`iptoasn-asn`, `iptoasn-country`) | latest release | PDDL | iptoasn.com |
 
 Full license texts available at: https://spdx.org/licenses/
 

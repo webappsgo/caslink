@@ -57,4 +57,5 @@ The server prints the auto-selected port on startup and opens the setup wizard a
 - [Security](security.md)
 - [Integrations](integrations.md)
 - [Development](development.md)
+- [Translating](translating.md)
 - [CLI Reference](cli.md)
