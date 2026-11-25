@@ -1,12 +1,18 @@
 # Integrations
 
-This page describes integration surfaces currently exposed by Caslink. The server does not provide native mobile-app association files or outbound webhooks.
+This page describes integration surfaces currently exposed by Caslink. The server does not provide native mobile-app association files.
 
 ## External identity providers
 
 The admin interface supports configuring named OIDC, LDAP, and SAML providers at `/server/{admin_path}/security/auth/{type}`. Provider configuration is stored in the server configuration and sensitive values are encrypted. The provider API is under `{api_base_path}/server/{admin_path}/security/auth/{type}/providers` (default `{api_base_path}`: `/api/v1`); it requires an admin-scoped bearer token (`adm_`).
 
 The browser and client sign-in flows depend on enabled providers. Configure and test a provider in the admin interface before enabling it for users. Use TLS for provider endpoints and keep client secrets, bind credentials, SAML signing keys, and metadata private. The server does not ship Google or GitHub-specific presets.
+
+## Outbound webhooks
+
+Webhook URLs are configured per contact role under `server.contact.{role}.webhooks`. Delivery is queued in `server.db`, uses HTTPS POST, and retries failed requests after 1 minute, 5 minutes, 15 minutes, 1 hour, 6 hours, and 24 hours before dropping them. Each webhook has a random 32-byte HMAC-SHA256 signing secret stored in `secrets.yml`; the secret is never returned by APIs. Requests include `X-Webhook-Signature`, `X-Webhook-Timestamp`, `X-Webhook-ID` (UUID v7), and `X-Webhook-Event` headers.
+
+Built-in adapters support generic JSON, Discord, Slack, Mattermost, Telegram, Pushover, and Gotify. Current event producers queue summary-only admin notifications for scheduled task failures and security-report receipts. Security webhooks contain report metadata and a tracking ID, never the report body or contact details. Delivery failures are rate-limited in logs.
 
 ## API discovery and documentation
 

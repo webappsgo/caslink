@@ -139,7 +139,7 @@ server:
 ```yaml
 server:
   branding:
-    title: caslink
+    title: Caslink
     tagline: ""
     description: ""
     logo_url: ""

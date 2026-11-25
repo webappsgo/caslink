@@ -39,6 +39,9 @@ The admin root `/server/{admin_path}` is the dashboard. Server-management sectio
 | `/network/blocklists` | Blocklist configuration and status |
 | `/domains`, `/domains/{domain}` | Custom-domain moderation |
 | `/users`, `/users/{id}` | User list and account details |
+| `/{admin_username}/profile` | The signed-in admin's own profile and username settings |
+| `/{admin_username}/preferences` | The signed-in admin's own display preferences |
+| `/{admin_username}/notifications` | The signed-in admin's notification preferences |
 | `/users/invites` | User invitations |
 | `/orgs/invites`, `/orgs/create` | Organization invitations and creation controls |
 | `/moderation/users` | User moderation queue |
@@ -49,7 +52,7 @@ Actions such as suspending users, changing settings, or restoring backups use PO
 
 ## Admin API
 
-The admin API is rooted at `{api_base_path}/server/{admin_path}/`. First-run `/setup/*` endpoints use the one-time setup token and setup session; after setup, administrative endpoints require an `adm_` bearer token. They cover user moderation, server settings and branding, scheduler tasks, maintenance, custom-domain moderation, and OIDC/LDAP/SAML provider management. A `usr_` or `org_` token cannot access these routes. The OpenAPI page lists exact request and response schemas.
+The admin API is rooted at `{api_base_path}/server/{admin_path}/`. First-run `/setup/*` endpoints use the one-time setup token and setup session; after setup, administrative endpoints require an `adm_` bearer token. They cover user moderation, server settings and branding, scheduler tasks, maintenance, custom-domain moderation, OIDC/LDAP/SAML provider management, and the signed-in admin's profile, security state, preferences, and notification preferences. A `usr_` or `org_` token cannot access these routes. The OpenAPI page lists exact request and response schemas.
 
 ## Operational notes
 
