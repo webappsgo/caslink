@@ -13,7 +13,7 @@ docker run -d \
   webappsgo/caslink:latest
 ```
 
-Open `http://localhost:64580/setup` to run the first-run setup wizard.
+Open `http://localhost:64580/server/administration/setup` to run first-run setup when using the default admin path (`administration`). If `server.admin_path` is customized, replace `administration` with that path.
 
 ### Docker Compose
 
@@ -60,7 +60,7 @@ On first run the binary:
 1. Creates the config directory and writes a default `server.yml`.
 2. Selects an available port starting from 64580.
 3. Creates the two SQLite databases (`server.db` and `users.db`).
-4. Prints the listen address and redirects the browser to `/setup`.
+4. Prints the listen address and redirects the browser to `/server/{admin_path}/setup` when first-run setup is required.
 
 ### Default Paths (Linux, running as root)
 
@@ -128,9 +128,10 @@ make local           # production test build → binaries/ (current platform)
 
 ## First-Run Setup Wizard
 
-On the very first start (before any admin account exists), every request redirects to `/setup`. The wizard collects:
+On the very first start (before any admin account exists), requests to `/` and the admin login route redirect to `/server/{admin_path}/setup`. Startup prints the one-time setup token once; enter it in the setup form. The wizard collects:
 
-1. **Admin username and password** — the primary admin account. The password is hashed with Argon2id.
-2. The server writes the admin record to `users.db` and redirects to the admin login page at `/server/admin/`.
+1. **Setup token** — authorizes creation of the first server-admin account.
+2. **Admin username, email, and password** — the primary admin account. The password is hashed with Argon2id.
+3. The server writes the admin record to `users.db`, consumes the one-time setup token, and displays the admin login link at `/server/{admin_path}/`.
 
-After setup completes, the `/setup` route returns 404 until the database is wiped.
+After setup completes, the setup form is unavailable until the server has no admin accounts again.

@@ -4,7 +4,7 @@ The server-admin panel manages the Caslink instance. Server admins are separate 
 
 ## Sign in
 
-The login page is `/server/{admin_path}/`; submit credentials to `/server/{admin_path}/login`. The `admin_path` setting is configurable. Admin pages require an admin session; state-changing forms require CSRF protection. The admin path is not disclosed by API autodiscovery.
+The login page is `/server/auth/login`; submit credentials there. Successful server-admin authentication redirects to `/server/{admin_path}`. The `admin_path` setting is configurable. Admin pages require an admin session; state-changing forms require CSRF protection. The admin path is not disclosed by API autodiscovery.
 
 ## First-run setup
 
@@ -12,11 +12,11 @@ On a new installation, follow the one-time setup instructions shown by the serve
 
 ## Pages
 
-All paths below are relative to `/server/{admin_path}`.
+The admin root `/server/{admin_path}` is the dashboard. Server-management sections are direct children of that root, as required by PART 17; there is no `/config` grouping segment. The admin's own profile and preferences use `/server/{admin_path}/{admin_username}/*`.
 
 | Path | Purpose |
 |---|---|
-| `/dashboard` | Server status and overview |
+| `/` | Server status and overview |
 | `/settings` | Core server configuration |
 | `/branding` | Site identity and visual branding |
 | `/ssl` | TLS configuration and certificate status |
@@ -49,7 +49,7 @@ Actions such as suspending users, changing settings, or restoring backups use PO
 
 ## Admin API
 
-The admin API is rooted at `{api_base_path}/server/{admin_path}/` and requires an `adm_` bearer token. It covers user moderation, server settings and branding, scheduler tasks, maintenance, custom-domain moderation, and OIDC/LDAP/SAML provider management. A `usr_` or `org_` token cannot access these routes. The OpenAPI page lists exact request and response schemas.
+The admin API is rooted at `{api_base_path}/server/{admin_path}/`. First-run `/setup/*` endpoints use the one-time setup token and setup session; after setup, administrative endpoints require an `adm_` bearer token. They cover user moderation, server settings and branding, scheduler tasks, maintenance, custom-domain moderation, and OIDC/LDAP/SAML provider management. A `usr_` or `org_` token cannot access these routes. The OpenAPI page lists exact request and response schemas.
 
 ## Operational notes
 
@@ -57,3 +57,7 @@ The admin API is rooted at `{api_base_path}/server/{admin_path}/` and requires a
 - Restrict metrics and admin access at the network boundary.
 - Keep provider credentials and generated recovery material private.
 - Review the audit log for security-relevant administrative actions.
+
+## I2P network settings
+
+The **Network → I2P** page reports provider state, provider type, SAM address, destination, and uptime. Authorized admins can enable or disable the eepsite, configure the provider and tunnel parameters, request a restart, or regenerate the destination after explicit confirmation. Regeneration replaces the persisted destination keys and therefore changes the eepsite address. The settings API is available at `/api/v1/server/{admin_path}/network/i2p` with GET and PATCH; validation, restart, and confirmed regeneration use the corresponding `/validate`, `/restart`, and `/regenerate` actions.

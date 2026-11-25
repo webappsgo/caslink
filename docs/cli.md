@@ -15,10 +15,12 @@ Download the `caslink-cli` release for your operating system and architecture fr
 | `--token-file FILE` | Read a bearer token from a file |
 | `--output table\|json\|csv` | Select output format |
 | `--user NAME` | Select user or organization context (`@NAME` for user, `+NAME` for org) |
+| `--prompt` | Prompt for a fresh API token during login, without reusing cached credentials |
 | `--debug` | Print diagnostic request information |
 | `--color auto\|yes\|no` | Select terminal colors; `NO_COLOR` disables automatic color |
 | `--lang CODE` | Select client language |
-| `--shell bash\|zsh\|fish` | Print shell completions |
+| `--shell completions [SHELL]` | Print completions for bash, zsh, fish, sh, dash, ksh, PowerShell (`powershell` or `pwsh`); auto-detects from `$SHELL` when omitted |
+| `--shell init [SHELL]` | Print a shell-specific command that loads the generated completions |
 | `--update check\|yes\|branch CHANNEL` | Check or apply a client update, or select stable/beta/daily channel |
 | `-h`, `--help` | Print help |
 | `-v`, `--version` | Print version information |
@@ -29,7 +31,7 @@ The default server and display preferences are read from `cli.yml`. Tokens are s
 
 | Command | Purpose |
 |---|---|
-| `login` | Save a supplied or prompted API token and refresh discovery data |
+| `login` | Validate a supplied or prompted API token, save it, and refresh discovery data |
 | `logout` | Clear the saved token |
 | `list` | List links visible to the token |
 | `create <url> [--code CODE]` | Create a short link, optionally with a custom code |
@@ -41,6 +43,20 @@ The default server and display preferences are read from `cli.yml`. Tokens are s
 
 Commands that manage a user's links require an appropriate bearer token. The server applies its normal ownership, organization-role, and link-policy checks.
 
+## Exit codes
+
+| Code | Meaning |
+|---:|---|
+| 0 | Success |
+| 1 | General error |
+| 2 | Invalid command usage or unknown subcommand |
+| 4 | A cached token was revoked or expired; login again |
+| 65 | Server rejected input as invalid |
+| 66 | Resource not found |
+| 69 | Server connection failed |
+| 77 | Authentication or permission denied |
+| 78 | Invalid or missing client configuration |
+
 ## Configuration and credentials
 
 The client stores `cli.yml` and the optional standalone `token` file under the user config directory:
@@ -51,7 +67,7 @@ The client stores `cli.yml` and the optional standalone `token` file under the u
 Example `cli.yml`:
 
 ```yaml
-server: https://short.example.com
+server: https://caslink.casapps.us
 api_version: v1
 token: usr_…
 lang: en
@@ -63,14 +79,15 @@ update:
   channel: stable
 ```
 
-The client refuses to use a config file readable by group or other users. Keep both credential files private; the CLI creates its config directory and file with restrictive permissions.
+The client refuses to use a config or standalone token file accessible to group or other users (or a Windows ACL that grants access to `Everyone`, `Users`, or `Authenticated Users`). Keep both credential files private; the CLI creates its config directory and file with restrictive permissions.
 
 ## Examples
 
 ```sh
-caslink-cli --server https://short.example.com login
+caslink-cli --server https://caslink.casapps.us login
 caslink-cli --output json list
-caslink-cli create https://example.com --code example
+caslink-cli create https://caslink.casapps.us/learn-more --code launch
 caslink-cli stats example
-caslink-cli --shell bash > caslink-cli-completion.bash
+caslink-cli --shell completions bash > caslink-cli-completion.bash
+eval "$(caslink-cli --shell init bash)"
 ```

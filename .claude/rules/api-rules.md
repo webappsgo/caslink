@@ -91,7 +91,7 @@
 | Orgs | `/orgs/*` | `/api/{v}/orgs/*` | Yes (`{slug}`) |
 | Server Admin | `/server/{admin_path}/*` | `/api/{v}/server/{admin_path}/*` | No |
 | Admin Self | `/server/{admin_path}/{admin_username}/*` | same | Yes |
-| Admin Config | `/server/{admin_path}/config/*` | same | No |
+| Admin Sections | `/server/{admin_path}/{section}/*` | `/api/{v}/server/{admin_path}/{section}/*` | No |
 | Project (Caslink) | `/*` | `/api/{v}/*` | Varies (see IDEA.md) |
 
 **Content negotiation priority (API `/api/{v}/*`):** `.txt` ext → `Accept: application/json` → `Accept: text/plain` → non-interactive client → default JSON.
@@ -123,7 +123,7 @@
 
 **Challenge types:** HTTP-01 (port 80, default), TLS-ALPN-01 (port 443), DNS-01 (wildcard, no port req).
 
-**DNS-01 setup:** admin WebUI `/server/{admin_path}/config/ssl` → select provider (all lego providers) → dynamic credential form → validate via API call → store AES-256-GCM encrypted.
+**DNS-01 setup:** admin WebUI `/server/{admin_path}/ssl` → select provider (all lego providers) → dynamic credential form → validate via API call → store AES-256-GCM encrypted.
 
 **Cert directory structure (mirrors certbot):**
 ```

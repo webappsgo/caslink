@@ -103,8 +103,12 @@ All paths are beneath `{api_base_path}/orgs` and require a bearer token with app
 
 ## Admin API
 
-All paths are beneath `{api_base_path}/server/{admin_path}` and require an `adm_` token. `{admin_path}` is configured locally and is deliberately not disclosed by autodiscovery. The API includes user moderation and recovery-key regeneration; server settings, branding, info, and maintenance; scheduler tasks and history; custom-domain moderation; and OIDC, LDAP, and SAML provider management. The OpenAPI document lists the exact method, schema, and permissions for each endpoint.
+Administrative paths are beneath `{api_base_path}/server/{admin_path}`. First-run `/setup/*` endpoints use the one-time setup token and setup session; after setup, administrative endpoints require an `adm_` token. `{admin_path}` is configured locally and is deliberately not disclosed by autodiscovery. The API includes user moderation and recovery-key regeneration; server settings, branding, info, and maintenance; scheduler tasks and history; custom-domain moderation; and OIDC, LDAP, and SAML provider management. The OpenAPI document lists the exact method, schema, and permissions for each endpoint.
 
 ## Contact, preferences, and security reporting
 
 Public server information APIs are beneath `{api_base_path}/server/`: `about`, `help`, `privacy`, `terms`, `preferences`, `preferences/sync`, `preferences/sync/import`, `security`, `security/policy`, and `security/thanks`. `POST /server/contact` is the browser form; its API counterpart is `{api_base_path}/server/contact`. Security-report submission uses the rotating `security_id` shown by the security contact flow. See [Security](security.md) for the disclosure process and report encryption.
+
+## I2P administration
+
+Authenticated server-admin clients can read and update I2P settings at `GET` and `PATCH /api/v1/server/{admin_path}/network/i2p`. `POST /api/v1/server/{admin_path}/network/i2p/validate` validates a candidate configuration without saving it. `POST /api/v1/server/{admin_path}/network/i2p/restart` restarts the configured provider. `POST /api/v1/server/{admin_path}/network/i2p/regenerate` requires `{"confirm":true}` and replaces the persisted destination key. The public `/api/healthz` response reports I2P feature status; `/api/autodiscover` includes the address only when I2P is enabled, running, and `server.i2p.expose` is true.

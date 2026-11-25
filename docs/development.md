@@ -8,26 +8,25 @@
 ## Building
 
 ```bash
-make build          # Build for current platform
-make release        # Build for all platforms
-make dev            # Quick dev build
-make docker         # Build Docker image
-make test           # Run tests
+make dev                    # Quick isolated build in the project temp directory
+make test                   # Unit tests, vet, and the 60% coverage gate
+./tests/run_tests.sh        # Docker-based binary and integration suite
+./tests/incus.sh            # Explicit full service-lifecycle suite
+make local                  # Production binaries for the current platform
+make build                  # Server and CLI for all eight supported platforms
+make docker                 # Multi-platform Docker build; does not push
 ```
 
 ## Project Structure
 
 ```
 src/
-├── main.go              # Entry point
-├── config/              # Configuration
-├── server/              # HTTP server
-│   ├── handler/         # HTTP handlers
-│   ├── service/         # Business logic
-│   ├── model/           # Data models
-│   └── store/           # Database access
-├── swagger/             # OpenAPI/Swagger
-└── graphql/             # GraphQL API
+├── main.go               # Server entry point
+├── client/               # caslink-cli, configuration, setup, and TUI
+├── common/               # Shared crypto, display, i18n, and utilities
+├── config/               # Server configuration and path handling
+├── server/               # HTTP server, middleware, handlers, services, and stores
+└── ...                   # Scheduler, backup, updater, and supporting packages
 ```
 
 ## SPEC Compliance
@@ -36,8 +35,10 @@ This project follows a strict specification in `AI.md`. All changes must comply 
 
 ## Testing
 
-All builds and tests use Docker containers. Never run binaries directly on the host.
+Go builds and tests run in Docker containers. Never run project binaries directly on the host.
 
 ```bash
-make test  # Run tests in Docker
+bash "$HOME/.codex/hooks/test-lint-run.sh" test -- make test
+bash "$HOME/.codex/hooks/test-lint-run.sh" test -- ./tests/run_tests.sh
+bash "$HOME/.codex/hooks/test-lint-run.sh" test -- ./tests/incus.sh
 ```

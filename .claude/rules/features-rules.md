@@ -98,7 +98,7 @@
 | Notification storage | `admin_notifications` / `user_notifications` tables, 30-day retention, 100 max, real-time via WebSocket |
 | Decision logic | active user → WebUI always; SMTP off → WebUI only; critical/security/needs-record-while-away → also email; routine success → no notification |
 
-Admin panel: `/server/{admin_path}/config/email/templates` · Preferences: `/server/{admin_path}/{admin_username}/notifications` and `/users/settings/notifications`.
+Admin email configuration: `/server/{admin_path}/email` · Preferences: `/server/{admin_path}/{admin_username}/notifications` and `/users/settings/notifications`.
 
 ### Scheduler
 | Task | Default Schedule | Skippable |
@@ -120,8 +120,8 @@ Admin panel: `/server/{admin_path}/config/email/templates` · Preferences: `/ser
 - Config: `server.scheduler.timezone` (default `America/New_York`), `catch_up_window` (default `1h`)
 - Cluster: Global Tasks run on one node (ssl_renewal, geoip_update, blocklist_update, cve_update, backup_daily, update_check); Local Tasks run on every node (session_cleanup, token_cleanup, healthcheck_self, cluster_heartbeat)
 - Retry: `max_retries: 3`, `retry_delay: 5m`, exponential backoff
-- Admin panel: `/server/{admin_path}/config/scheduler` — task list, run now, enable/disable, history (100 entries)
-- API: `GET/PATCH /api/{api_version}/server/{admin_path}/config/scheduler[/{id}][/run|/enable|/disable|/history]`
+- Admin panel: `/server/{admin_path}/scheduler` — task list, run now, enable/disable, history (100 entries)
+- API: `GET/PATCH /api/{api_version}/server/{admin_path}/scheduler[/{id}][/run|/enable|/disable|/history]`
 - Shutdown: stop new executions, wait up to 30s for running tasks, force-release locks + mark interrupted for retry on timeout
 
 ### GeoIP
@@ -134,7 +134,7 @@ Admin panel: `/server/{admin_path}/config/email/templates` · Preferences: `/ser
 
 - Source: sapics/ip-location-db (GitHub Releases, no API key)
 - City DBs ship IPv4/IPv6 as separate MMDB files
-- Admin panel: `/server/{admin_path}/config/network/geoip`
+- Admin panel: `/server/{admin_path}/network/geoip`
 
 ### Metrics
 | Setting | Default |
@@ -146,7 +146,7 @@ Admin panel: `/server/{admin_path}/config/email/templates` · Preferences: `/ser
 
 Required metric groups: App Info, HTTP, Database (if using DB), Auth. Optional: Cache, Scheduler, Business, System, Go Runtime, Cluster, Tor, Rate Limiting.
 Library: `github.com/prometheus/client_golang`. Handler wraps `promhttp.Handler()` with optional `Authorization: Bearer <token>` check.
-Admin panel: `/server/{admin_path}/config/metrics`.
+Admin panel: `/server/{admin_path}/metrics`.
 
 ### Backup & Restore
 | Item | Value |

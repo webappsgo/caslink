@@ -27,10 +27,10 @@ Short flags: only `-h` (help) and `-v` (version). All other flags use long form.
 | `--pid FILE` | auto-detected | PID file path |
 | `--address ADDR` | `[::]` | Listen address |
 | `--port PORT` | auto (64xxx) | Listen port; `0` = auto-select from 64xxx range |
-| `--baseurl URL` | hostname | Public base URL for generated short links (e.g. `https://short.example.com`) |
+| `--baseurl URL` | hostname | Public base URL for generated short links (e.g. `https://caslink.casapps.us`) |
 | `--color MODE` | `auto` | Colour output: `auto`, `yes`, `no` (also reads `NO_COLOR`) |
-| `--lang CODE` | `en` | Default language code (`en`, `es`, `fr`, `de`, `zh`, `ar`, `ja`) |
-| `--shell CMD` | — | Shell integration: `completions bash\|zsh\|fish` or `init bash\|zsh\|fish` |
+| `--lang CODE` | `en` | Default language code (`en`, `es`, `fr`, `de`, `it`, `zh`, `ar`, `ja`) |
+| `--shell CMD` | — | Shell integration: `completions` or `init` for bash, zsh, fish, sh, dash, ksh, or PowerShell |
 | `--status` | — | Query the running server's `/healthz` and print status |
 | `--service CMD` | — | Service management: `start`, `stop`, `restart`, `reload`, `--install`, `--uninstall`, `--disable`, `--help` |
 | `--daemon` | — | Detach from the terminal (daemonize) |
@@ -50,8 +50,8 @@ For each setting below, the loader checks `CASLINK_{NAME}` first and then `{NAME
 | `CASLINK_PORT` | `8080` | Listen port (`0` = auto-select from 64xxx range) |
 | `CASLINK_LISTEN` | `0.0.0.0` | Listen address; `CASLINK_ADDRESS` is applied afterward if both are set |
 | `CASLINK_ADDRESS` | `[::]` | Listen address |
-| `CASLINK_DOMAIN` | `short.example.com` | Public FQDN / base URL |
-| `CASLINK_FQDN` | `short.example.com` | Public hostname used in generated links |
+| `CASLINK_DOMAIN` | Runtime hostname | Public FQDN / base URL |
+| `CASLINK_FQDN` | Runtime hostname | Public hostname used in generated links |
 | `CASLINK_APP_NAME` | `Caslink` | Branding title |
 | `CASLINK_APP_DESCRIPTION` | `URL shortener` | Branding description |
 
@@ -59,8 +59,10 @@ For each setting below, the loader checks `CASLINK_{NAME}` first and then `{NAME
 
 | Variable | Example | Description |
 |----------|---------|-------------|
-| `CASLINK_ADMIN_EMAIL` | `admin@example.com` | Admin contact email |
-| `CASLINK_ADMIN_PATH` | `admin` | Admin panel URL segment (`/server/{path}/`) |
+| `CASLINK_ADMIN_EMAIL` | `admin@{runtime-hostname}` | Admin contact email |
+| `CASLINK_ADMIN_PATH` | `administration` | Admin panel URL segment (`/server/{path}/`) |
+
+The YAML keys are `server.contact.admin.email` for the contact address and `server.admin_path` for the admin UI segment. The latter defaults to `administration`; reserved route names and invalid values fall back to that default.
 
 ### Database
 
@@ -79,7 +81,7 @@ For each setting below, the loader checks `CASLINK_{NAME}` first and then `{NAME
 |----------|---------|-------------|
 | `CASLINK_SSL_ENABLED` | `true` | Enable TLS |
 | `CASLINK_LE_ENABLED` | `true` | Enable Let's Encrypt |
-| `CASLINK_LE_EMAIL` | `admin@example.com` | ACME account email |
+| `CASLINK_LE_EMAIL` | Empty | ACME account email |
 | `CASLINK_LE_CHALLENGE` | `http-01` | ACME challenge mode |
 | `CASLINK_LE_STAGING` | `false` | Use LE staging CA (for testing) |
 
@@ -88,8 +90,8 @@ For each setting below, the loader checks `CASLINK_{NAME}` first and then `{NAME
 | Variable | Example | Description |
 |----------|---------|-------------|
 | `CASLINK_EMAIL_ENABLED` | `true` | Enable outbound email |
-| `CASLINK_EMAIL_FROM` | `no-reply@example.com` | From address |
-| `SMTP_HOST` | `smtp.example.com` | SMTP server host (also `CASLINK_SMTP_HOST`) |
+| `CASLINK_EMAIL_FROM` | `no-reply@{runtime-hostname}` | From address |
+| `SMTP_HOST` | Empty | SMTP server host (also `CASLINK_SMTP_HOST`) |
 | `SMTP_PORT` | `587` | SMTP server port |
 | `SMTP_USERNAME` | `user` | SMTP auth username |
 | `SMTP_PASSWORD` | `pass` | SMTP auth password |
@@ -126,7 +128,8 @@ server:
   port: 0              # 0 = auto-select from 64xxx range; persisted after first run
   address: "[::]"      # listen address; use "0.0.0.0" for IPv4-only
   mode: production     # production | development
-  fqdn: ""             # public hostname used in generated links (e.g. short.example.com)
+  fqdn: ""             # public hostname used in generated links; defaults to the detected runtime hostname
+  admin_path: administration # admin UI URL segment
   daemonize: false
   pidfile: true
 ```
@@ -157,9 +160,10 @@ server:
 
 ```yaml
 server:
-  admin:
-    email: admin@localhost
-    path: admin          # URL segment: /server/{path}/ — change to obscure the panel
+  admin_path: administration
+  contact:
+    admin:
+      email: admin@localhost
 ```
 
 ### SSL / TLS
@@ -250,7 +254,7 @@ server:
     expire_urls_enabled: true
     log_rotation_cron: "0 0 * * *"
     log_rotation_enabled: true
-    backup_cron: "0 1 * * *"
+    backup_cron: "0 2 * * *"
     backup_enabled: true
     ssl_renewal_cron: "0 3 * * *"
     ssl_renewal_enabled: true
@@ -258,12 +262,20 @@ server:
     geoip_update_enabled: true
     blocklist_update_cron: "0 4 * * *"
     blocklist_update_enabled: true
-    cve_update_cron: "0 5 * * 0"
+    cve_update_cron: "0 5 * * *"
     cve_update_enabled: true
+    update_check_cron: "0 6 * * *"
+    update_check_enabled: true
     healthcheck_cron: "@every 5m"
     healthcheck_enabled: true
     tor_health_cron: "@every 10m"
     tor_health_enabled: true
+    cluster_heartbeat_cron: "@every 30s"
+    cluster_heartbeat_enabled: true
+    domain_verification_cron: "@every 30m"
+    domain_verification_enabled: true
+    custom_domain_ssl_renewal_cron: "0 4 * * *"
+    custom_domain_ssl_renewal_enabled: true
 ```
 
 ### Email / Notifications
@@ -480,3 +492,25 @@ server:
 | `development` | on | Full debug: pprof, `/debug/*` endpoints, verbose logs |
 
 Debug endpoints (`/debug/pprof/*`, `/debug/vars`, `/debug/config`, `/debug/routes`, `/debug/cache`, `/debug/db`, `/debug/scheduler`) are only available when `--debug` is set or `MODE=development`. They return 404 in production without the debug flag.
+
+## I2P eepsite
+
+The server can publish the HTTP application through an I2P eepsite. `server.i2p.enabled` defaults on when the application detects a container and off otherwise. An explicit YAML value overrides that computed default. At runtime, `I2P_ENABLED` overrides YAML, and the `--i2p` command-line flag has highest precedence; `--i2p=false` explicitly disables the feature.
+
+```yaml
+server:
+  i2p:
+    enabled: false
+    expose: false
+    binary: ""
+    sam_address: 127.0.0.1:7656
+    virtual_port: 80
+    inbound_length: 3
+    outbound_length: 3
+    inbound_quantity: 5
+    outbound_quantity: 5
+    signature_type: 7
+    bootstrap_timeout: 300
+```
+
+The server starts the dedicated loopback backend only after the regular HTTP listener is serving. It prefers an available `i2pd` binary and otherwise connects to the configured external SAM bridge. Destination keys are persisted under the configured data directory. `expose` controls whether the eepsite address appears in public autodiscovery; the authenticated health endpoint and admin page report operational status.

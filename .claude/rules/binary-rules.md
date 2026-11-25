@@ -154,7 +154,7 @@ NO_COLOR disables colors + emojis only — never bold/underline/box-drawing/stru
 - Flag-to-config save: only overwrite config value if current is empty or invalid; otherwise flag applies session-only
 - Mode auto-detection: `-h`/`-v` → CLI, exit; interactive terminal + no command → TUI; interactive + command/args → CLI; piped/non-interactive → plain output
 - GUI toolkits: Linux GTK4/Qt6, macOS Cocoa (cgo), Windows Win32/WinUI, BSD GTK4/Qt6 — no Electron/web views
-- Setup wizard (GUI/TUI) is CLI-only; server has no CLI/TUI wizard (web-based `/server/{admin_path}/config/setup`); agent has none (connection-string only)
+- Setup wizard (GUI/TUI) is CLI-only; server has no CLI/TUI wizard (web-based `/server/{admin_path}/setup`); agent has none (connection-string only)
 - Exit codes: 0 success, 1 general error, 2 config error, 3 connection error, 4 auth error, 5 not found, 64 usage error
 - Cluster failover: cache full cluster list from autodiscover; on connection-level failure (not auth/4xx) try each cluster URL in order; promote to primary after 5 min sustained failure
 

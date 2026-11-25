@@ -33,12 +33,14 @@ docker run --detach \
 
 Open `http://localhost:64580` and follow the first-run setup instructions. For other installation methods, see the [installation guide](docs/installation.md).
 
+For terminal access, use `caslink-cli --server https://caslink.casapps.us login`; reauthenticate without reusing a saved token with `caslink-cli --server https://caslink.casapps.us --prompt login`.
+
 ## Documentation
 
 - [Installation](docs/installation.md)
 - [Configuration](docs/configuration.md)
 - [API reference](docs/api.md)
-- [CLI reference](docs/cli.md)
+- [CLI reference, including shell completions](docs/cli.md)
 - [Administrator guide](docs/admin.md)
 - [Security](docs/security.md)
 - [Integrations](docs/integrations.md)
@@ -50,6 +52,8 @@ The documentation is built with MkDocs Material and published on [Read the Docs]
 ## Build and development
 
 Builds run in Docker; a local Go toolchain is not required. See [Development](docs/development.md) for the supported build and validation commands. The project supports Linux, macOS, Windows, and FreeBSD on amd64 and arm64.
+
+Build Docker images with `scripts/build-docker.sh`. By default it builds the production image for `linux/amd64` and `linux/arm64`; multi-platform images stay in the Buildx cache. Use `--single-arch` to load the current host architecture into the local Docker image store, or `--target development` for the development image. The helper does not push images; see `scripts/build-docker.sh --help` for the available options and environment variables.
 
 ## License
 

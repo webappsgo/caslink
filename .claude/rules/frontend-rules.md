@@ -24,8 +24,8 @@
 - NEVER render `server.contact.admin.email` on the public contact/report page — it is never public
 - **Admin panel (PART 17):**
   - NEVER link to `/server/{admin_path}` from ANY public route — no mentions anywhere on `/**`
-  - NEVER add direct children under `/server/{admin_path}/` other than `{admin_username}` and `config`
-  - NEVER put server management routes at admin root — e.g. `/server/{admin_path}/settings` is WRONG, use `/server/{admin_path}/config/settings`
+  - NEVER add direct children under `/server/{admin_path}/` other than `{admin_username}` and names in `validAdminRootPaths`
+  - NEVER invent an undeclared admin route segment; management sections are direct children from `validAdminRootPaths`
   - NEVER bypass admin auth for "quick testing" — `--debug` adds verbosity only, never bypasses auth
   - NEVER let admin session and user session share state — fully separate sessions/cookies
 
@@ -46,7 +46,7 @@
 - ALWAYS sanitize `custom_html` (footer, announcements) before rendering — scripts/dangerous elements stripped, never executed
 - ALWAYS show the cookie consent banner (fixed bottom, GDPR/privacy) — it is always enabled since sessions/preferences use cookies
 - **Admin panel (PART 17):**
-  - ALWAYS put every server-management route under `/server/{admin_path}/config/*`
+  - ALWAYS put every server-management route under a declared `/server/{admin_path}/{section}/*` path
   - ALWAYS keep `/server/{admin_path}/{admin_username}/*` scoped to the admin's own account/profile/preferences/notifications only
   - ALWAYS test admin auth properly in automated tests: unauth requests blocked → setup token creates admin → login works → session works → invalid creds rejected
   - ALWAYS support TOTP and Passkeys for every server admin
@@ -127,10 +127,10 @@ Route hierarchy:
 ```
 /server/{admin_path}/                         → dashboard only
 /server/{admin_path}/{admin_username}/*       → admin's own profile/preferences/notifications
-/server/{admin_path}/config/*                 → ALL server management
+/server/{admin_path}/{section}/*              → ALL server management, using `validAdminRootPaths`
 ```
 
-Key `config/*` subroutes: `setup`, `settings`, `ssl`, `email`, `scheduler`, `logs`, `logs/audit`, `backup`, `updates`, `info`, `metrics`, `network/tor`, `network/geoip`, `security/auth[/oidc|ldap|saml]`, `security/tokens`, `security/firewall`, `users/`, `orgs/`, `cluster/`, `agents/`.
+Declared section paths include `setup`, `settings`, `ssl`, `email`, `scheduler`, `logs`, `logs/audit`, `backup`, `updates`, `info`, `metrics`, `network/tor`, `network/geoip`, `security/auth[/oidc|ldap|saml]`, `security/tokens`, `security/firewall`, `users/`, `orgs/`, `cluster/`, and `agents/`.
 
 Settings page sections: General, Process, Branding, SEO, Security, Account Lockout, IP Blocking, SSL/TLS, Authentication, Backup, Email/SMTP, Notifications, Scheduler, URL Detection, Tor (if installed), GeoIP, Blocklists.
 

@@ -4,7 +4,7 @@ This page describes integration surfaces currently exposed by Caslink. The serve
 
 ## External identity providers
 
-The admin interface supports configuring named OIDC, LDAP, and SAML providers at `/server/{admin_path}/security/auth/{type}`. Provider configuration is stored in the server configuration and sensitive values are encrypted. The provider API is under `/api/v1/server/{admin_path}/security/auth/{type}/providers`; it requires an admin-scoped bearer token (`adm_`).
+The admin interface supports configuring named OIDC, LDAP, and SAML providers at `/server/{admin_path}/security/auth/{type}`. Provider configuration is stored in the server configuration and sensitive values are encrypted. The provider API is under `{api_base_path}/server/{admin_path}/security/auth/{type}/providers` (default `{api_base_path}`: `/api/v1`); it requires an admin-scoped bearer token (`adm_`).
 
 The browser and client sign-in flows depend on enabled providers. Configure and test a provider in the admin interface before enabling it for users. Use TLS for provider endpoints and keep client secrets, bind credentials, SAML signing keys, and metadata private. The server does not ship Google or GitHub-specific presets.
 
@@ -37,3 +37,9 @@ Caslink serves `/.well-known/security.txt`, `/.well-known/change-password`, and 
 ## Billing and federation
 
 Billing and federation are described as optional product capabilities in the project definition. They are not exposed by the current server routes and are not enabled integrations in this build.
+
+## I2P
+
+Caslink supports an application-managed I2P eepsite. When `i2pd` is available, the server starts it with app-owned configuration, data, and log directories and connects to its SAM interface. Otherwise, the server can use an already-running SAM bridge at `server.i2p.sam_address`. SAM session control and stream forwarding use separate connections. The eepsite destination key is persisted so its address remains stable across restarts. The dedicated loopback HTTP backend is started before the SAM stream is forwarded.
+
+I2P is enabled by the container-computed default, `server.i2p.enabled`, `I2P_ENABLED`, or `--i2p`, in increasing override precedence. Set `expose: true` to include a running I2P address in public autodiscovery. Admins can inspect status, change parameters, restart the provider, or explicitly regenerate the destination from the I2P network settings page.
