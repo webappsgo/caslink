@@ -23,3 +23,4 @@ These are project implementation items required for AI.md alignment. AI.md itsel
 - [ ] Complete security-report PGP keypair generation, encrypted private-key storage, rotation, fingerprint/public-key publication, and keyserver retry persistence; the public key endpoint currently remains unavailable.
 - [ ] Complete the PWA requirements: root-scope service-worker registration and safe update/offline lifecycle, valid install icons and metadata, and install/update prompts that match AI.md.
 - [ ] Consolidate administrator and regular-user password login at `/server/auth/login`, remove the separate admin login route, and include admin MFA in the shared flow as required by AI.md.
+- [ ] Implement the AI.md API login contract: issue scoped 24-hour bearer tokens, and use hashed, single-use five-minute partial-session values for MFA continuations instead of returning session IDs.

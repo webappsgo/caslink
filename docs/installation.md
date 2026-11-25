@@ -128,10 +128,14 @@ make local           # production test build → binaries/ (current platform)
 
 ## First-Run Setup Wizard
 
-On the very first start (before any admin account exists), requests to `/` and the admin login route redirect to `/server/{admin_path}/setup`. Startup prints the one-time setup token once; enter it in the setup form. The wizard collects:
+On the very first start (before any admin account exists), requests to `/` and `/server/{admin_path}/` redirect to `/server/{admin_path}/setup`. Startup prints the one-time setup token once; enter it in the setup wizard. The wizard collects:
 
 1. **Setup token** — authorizes creation of the first server-admin account.
 2. **Admin username, email, and password** — the primary admin account. The password is hashed with Argon2id.
-3. The server writes the admin record to `users.db`, consumes the one-time setup token, and displays the admin login link at `/server/{admin_path}/`.
+3. The server writes the admin record to `users.db`, consumes the one-time setup token, and displays a link to the shared login page at `/server/auth/login`.
 
 After setup completes, the setup form is unavailable until the server has no admin accounts again.
+
+## Installable web app
+
+Caslink serves its install manifest at `/manifest.json` and its root-scope service worker at `/sw.js`. Browsers require HTTPS for service-worker installation, except on loopback development hosts such as `localhost`. The service worker caches versioned static assets and cookie-free public information pages for offline reading; it does not cache authenticated pages or queue form submissions. When a new worker is ready, use the update prompt to activate it. On iOS, use Safari's Share menu and choose **Add to Home Screen**.
