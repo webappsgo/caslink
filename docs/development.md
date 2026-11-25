@@ -38,7 +38,10 @@ This project follows a strict specification in `AI.md`. All changes must comply 
 Go builds and tests run in Docker containers. Never run project binaries directly on the host.
 
 ```bash
-bash "$HOME/.codex/hooks/test-lint-run.sh" test -- make test
-bash "$HOME/.codex/hooks/test-lint-run.sh" test -- ./tests/run_tests.sh
-bash "$HOME/.codex/hooks/test-lint-run.sh" test -- ./tests/incus.sh
+make test                 # Unit tests, vet, and the coverage gate
+./tests/run_tests.sh      # Docker-based binary and integration suite
+./tests/incus.sh          # Optional full service-lifecycle suite
 ```
+
+The test scripts create runtime data under the project-scoped system temporary
+directory and remove their own temporary containers and files when they finish.

@@ -1,11 +1,17 @@
 # Caslink
 
+[![CI](https://github.com/webappsgo/caslink/actions/workflows/ci.yml/badge.svg)](https://github.com/webappsgo/caslink/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/webappsgo/caslink)](https://github.com/webappsgo/caslink/releases)
 [![License](https://img.shields.io/github/license/webappsgo/caslink)](LICENSE.md)
-[![Go](https://img.shields.io/github/go-mod/go-version/webappsgo/caslink)](go.mod)
-[![Build](https://github.com/webappsgo/caslink/actions/workflows/ci.yml/badge.svg)](https://github.com/webappsgo/caslink/actions/workflows/ci.yml)
 [![Documentation](https://readthedocs.org/projects/caslink/badge/?version=latest)](https://caslink.casapps.us/)
 
-Caslink is a self-hosted URL shortener written in Go. It provides link creation and redirects, click analytics, QR codes, bulk import/export, user accounts, organizations, custom domains, and an administrator interface. The server renders its web pages in Go templates and embeds its frontend assets in the binary.
+## About
+
+Caslink is a self-hosted URL shortener written in Go. It provides short-link creation and redirects, click analytics, QR codes, bulk operations, user and organization management, custom domains, and a server administration interface. The server renders pages with Go templates and embeds its frontend assets in the binary.
+
+## Official Site
+
+[https://caslink.casapps.us](https://caslink.casapps.us)
 
 ## Features
 
@@ -14,15 +20,15 @@ Caslink is a self-hosted URL shortener written in Go. It provides link creation 
 - QR code generation and CSV/JSON import and export
 - User accounts, API tokens, TOTP, passkeys, and organization membership
 - Custom domains with DNS verification and certificate management
-- Configurable server administration, scheduler, backup, and security controls
+- Server administration for configuration, scheduling, backups, updates, and security
 - REST and GraphQL APIs, OpenAPI documentation, and API autodiscovery
 - Eight embedded locales: English, Spanish, Chinese, French, Arabic, German, Italian, and Japanese
 
-## Quick start
+## Production
 
-Use the published container with persistent configuration and data directories:
+### Docker
 
-```sh
+```bash
 docker run --detach \
   --name caslink \
   --publish 64580:80 \
@@ -31,29 +37,70 @@ docker run --detach \
   webappsgo/caslink:latest
 ```
 
-Open `http://localhost:64580` and follow the first-run setup instructions. For other installation methods, see the [installation guide](docs/installation.md).
+Open `http://localhost:64580`. On first start, use the one-time token printed in the server console to complete setup. See the [installation guide](docs/installation.md) for Compose, paths, service installation, and other deployment details.
 
-For terminal access, use `caslink-cli --server https://caslink.casapps.us login`; reauthenticate without reusing a saved token with `caslink-cli --server https://caslink.casapps.us --prompt login`.
+### Binary
 
-## Documentation
+Download a release for Linux, macOS, Windows, or FreeBSD on amd64 or arm64 from [GitHub Releases](https://github.com/webappsgo/caslink/releases). For example:
 
-- [Installation](docs/installation.md)
-- [Configuration](docs/configuration.md)
-- [API reference](docs/api.md)
-- [CLI reference, including shell completions](docs/cli.md)
+```bash
+curl -q -LSsf -o caslink-linux-amd64 https://github.com/webappsgo/caslink/releases/latest/download/caslink-linux-amd64
+chmod +x caslink-linux-amd64
+./caslink-linux-amd64
+```
+
+The binary creates its configuration and data directories on first run and prints the setup URL and one-time token. See [Installation](docs/installation.md) for OS paths and system service commands.
+
+## Client
+
+The companion `caslink-cli` binary supports server login and API operations. Download the matching CLI release and install it alongside the server binary, then connect with:
+
+```bash
+caslink-cli --server https://caslink.casapps.us login
+```
+
+Use `caslink-cli --help` and `caslink-cli <command> --help` to list commands and options. See the [CLI reference](docs/cli.md) for configuration, authentication, and shell completion details.
+
+## Configuration
+
+The server writes `server.yml` under its config directory on first run. Configuration can also be managed from the administrator interface. Key settings include the listen port, run mode, branding, database, TLS, email, security, and scheduled tasks. See the [configuration reference](docs/configuration.md) for paths, environment variables, and examples.
+
+## API
+
+The versioned API base path is `/api/v1`; the exact configured base path is available through API autodiscovery. The public health endpoint is `/server/healthz`.
+
+```bash
+curl -q -LSsf https://caslink.casapps.us/server/healthz
+curl -q -LSsf -H 'Authorization: Bearer TOKEN' https://caslink.casapps.us/api/v1/urls
+```
+
+The API also provides GraphQL and an OpenAPI document. See the [API reference](docs/api.md) for route and authentication details.
+
+## Other
+
 - [Administrator guide](docs/admin.md)
-- [Security](docs/security.md)
+- [Security and disclosure policy](docs/security.md)
 - [Integrations](docs/integrations.md)
-- [Development](docs/development.md)
-- [Translation](docs/translating.md)
+- [Troubleshooting and installation](docs/installation.md)
+- [Translations](docs/translating.md)
+- Documentation is built with MkDocs Material and published on [Read the Docs](https://caslink.casapps.us/).
 
-The documentation is built with MkDocs Material and published on [Read the Docs](https://caslink.casapps.us/).
+## Development
 
-## Build and development
+Development instructions are for contributors. Builds and tests run in Docker; a local Go toolchain is not required.
 
-Builds run in Docker; a local Go toolchain is not required. See [Development](docs/development.md) for the supported build and validation commands. The project supports Linux, macOS, Windows, and FreeBSD on amd64 and arm64.
+```bash
+git clone https://github.com/webappsgo/caslink.git
+cd caslink
+make dev
+make test
+```
 
-Build Docker images with `scripts/build-docker.sh`. By default it builds the production image for `linux/amd64` and `linux/arm64`; multi-platform images stay in the Buildx cache. Use `--single-arch` to load the current host architecture into the local Docker image store, or `--target development` for the development image. The helper does not push images; see `scripts/build-docker.sh --help` for the available options and environment variables.
+Use `make build` to build the server and companion client for all eight supported OS/architecture combinations. See [Development](docs/development.md) for test phases, linting, release builds, and CI details.
+
+## Disclaimer
+
+This software is provided "as is" without warranty of any kind. Use it at your own risk. The authors are not responsible for damages, data loss, or issues arising from its use. This software does not provide legal, financial, medical, or other professional advice. Third-party services are governed by their own terms. Review and test the software for your environment before production use; no software can be guaranteed free of vulnerabilities. By using this software, you acknowledge that you have read and understood this disclaimer.
 
 ## License
 
