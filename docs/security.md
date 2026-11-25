@@ -38,6 +38,12 @@ Health, API discovery, public documentation, public information pages, short-lin
 
 The `/.well-known/` namespace includes `security.txt`, `change-password`, and active ACME HTTP-01 challenge responses. Other paths are not served unless an enabled feature defines them.
 
+## Privacy and terms pages
+
+`/server/privacy` and `/server/terms` use built-in project text. The privacy page also reports deployment settings from `server.privacy`: whether data is sold or stored on the server, cookie descriptions, retention, sharing conditions, and third-party services. The sold state selects the matching privacy and consent text and exposes the opt-out controls only when enabled. The page reports when the current request is not protected by TLS and uses the configured DPO email when present; otherwise it links to the security contact page.
+
+The JSON endpoints `{api_base_path}/server/privacy` and `{api_base_path}/server/terms` return the corresponding page content in the standard `{ok, data}` envelope. Privacy includes summary, cookie categories, data handling, tracking, retention, third parties, conditional CCPA data, and built-in policy text. Terms returns Markdown content and its format.
+
 ## Security reporting
 
 Use the private vulnerability reporting channel linked from the repository's [Security policy](https://github.com/webappsgo/caslink/blob/main/.github/SECURITY.md). Do not publish vulnerability details in public issues. The server's security-report form uses an expiring submission identifier, spam protection, and encrypted report storage. Do not include real secrets or personal data in a report unless they are necessary to reproduce the issue.

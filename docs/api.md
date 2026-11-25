@@ -107,7 +107,7 @@ Administrative paths are beneath `{api_base_path}/server/{admin_path}`. First-ru
 
 ## Contact, preferences, and security reporting
 
-Public server information APIs are beneath `{api_base_path}/server/`: `about`, `help`, `privacy`, `terms`, `preferences`, `preferences/sync`, `preferences/sync/import`, `security`, `security/policy`, and `security/thanks`. `POST /server/contact` is the browser form; its API counterpart is `{api_base_path}/server/contact`. Security-report submission uses the rotating `security_id` shown by the security contact flow. See [Security](security.md) for the disclosure process and report encryption.
+Public server information APIs are beneath `{api_base_path}/server/`: `about`, `help`, `privacy`, `terms`, `preferences`, `preferences/sync`, `preferences/sync/import`, `security`, `security/policy`, and `security/thanks`. Privacy returns the dynamic policy in the `summary`, `cookies`, `data`, `tracking`, `retention`, `third_party`, and `content` fields; `ccpa` is included only when data sales are enabled. Terms returns `{title, content, format}` with built-in Markdown defaults. `POST /server/contact` is the browser form; its API counterpart is `{api_base_path}/server/contact`. Security-report submission uses the rotating `security_id` shown by the security contact flow. See [Security](security.md) for the disclosure process and report encryption.
 
 ## I2P administration
 
