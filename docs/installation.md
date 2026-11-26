@@ -128,13 +128,16 @@ make local           # production test build → binaries/ (current platform)
 
 ## First-Run Setup Wizard
 
-On the very first start (before any admin account exists), requests to `/` and `/server/{admin_path}/` redirect to `/server/{admin_path}/setup`. Startup prints the one-time setup token once; enter it in the setup wizard. The wizard collects:
+On the very first start (before any admin account exists), requests to `/` and `/server/{admin_path}/` redirect to `/server/{admin_path}/setup`. Startup prints the one-time setup token once. Enter it in the wizard to begin the ordered setup session. The six steps are:
 
-1. **Setup token** — authorizes creation of the first server-admin account.
-2. **Admin username, email, and password** — the primary admin account. The password is hashed with Argon2id.
-3. The server writes the admin record to `users.db`, consumes the one-time setup token, and displays a link to the shared login page at `/server/auth/login`.
+1. **Primary administrator** — choose the username, email, and password. The default username is `steward`; passwords are stored as Argon2id hashes.
+2. **API token** — create and copy the administrator's API token. It is displayed once and cannot be recovered later.
+3. **Server configuration** — set the application name, primary domain/FQDN, operating mode, and scheduler timezone.
+4. **Security** — optionally set a backup-encryption password and enable TOTP for the primary administrator. TOTP enrollment requires a valid six-digit code and acknowledgment that the one-time recovery keys were saved.
+5. **Optional services** — review HTTPS and certificate settings, and choose whether to enable regular-user accounts. Let's Encrypt requires a valid contact email and supported challenge; manual certificates are checked before they are saved. Enabling HTTPS requires a server restart to take effect.
+6. **Complete** — save the configuration, consume the setup token, create the administrator's browser session, and open the admin panel.
 
-After setup completes, the setup form is unavailable until the server has no admin accounts again.
+Every step is a server-rendered form protected by CSRF and works without JavaScript. Browser JavaScript enhances the same ordered setup API flow. Text browsers receive a no-JavaScript page automatically; other browsers can use the **No JavaScript setup** link. Setup remains unavailable after completion unless the server has no administrator accounts and a new setup token is generated through the documented maintenance flow.
 
 ## Installable web app
 
