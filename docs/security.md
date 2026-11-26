@@ -46,7 +46,25 @@ The JSON endpoints `{api_base_path}/server/privacy` and `{api_base_path}/server/
 
 ## Security reporting
 
-Use the private vulnerability reporting channel linked from the repository's [Security policy](https://github.com/webappsgo/caslink/blob/main/.github/SECURITY.md). Do not publish vulnerability details in public issues. The server's security-report form uses an expiring submission identifier, spam protection, and encrypted report storage. Do not include real secrets or personal data in a report unless they are necessary to reproduce the issue.
+Use the human-readable [security overview](https://caslink.casapps.us/server/security) to see the active reporting channels and instructions. Researchers can read the server's `security.txt` at `https://caslink.casapps.us/.well-known/security.txt` and use the security-report form linked from the overview. The form's `security_id` is short-lived; open the overview to get the current form link rather than reusing an old one. Read the [disclosure policy](https://caslink.casapps.us/server/security/policy) before testing. Do not publish vulnerability details in public issues.
+
+Security reports are encrypted before they are persisted. When the project OpenPGP key exists, report bodies use that key; otherwise the server uses AES-256-GCM. Researcher contact details are encrypted separately. A researcher may provide a public key to receive encrypted status updates, but a key is not required. Acknowledgments contain only the tracking ID and status URL, not report content.
+
+## OpenPGP key management
+
+Administrators manage the project security-report keypair in `/server/{admin_path}/security/keypair`. The private key is encrypted with a key derived from the installation secret and stored with owner-only permissions. The public key is available at `https://caslink.casapps.us/.well-known/pgp-key.asc` when publishing is enabled and a keypair exists; the `/server/security` overview reports its availability and fingerprint. Generation and rotation publish the public key to configured keyservers, with durable retries for temporary failures. Exporting the private key, rotating, or deleting it requires the administrator's password and a reason and is recorded in the audit log. Backups include the keypair and keyserver publication state so encrypted reports remain decryptable after restore.
+
+## Public security endpoints
+
+- `https://caslink.casapps.us/.well-known/security.txt` — active security contacts, policy and optional encryption key.
+- `https://caslink.casapps.us/.well-known/pgp-key.asc` — public key when publishing is enabled and a keypair exists; otherwise this returns `404`.
+- `https://caslink.casapps.us/.well-known/change-password` — browser password-change discovery route.
+- `https://caslink.casapps.us/.well-known/acme-challenge/{token}` — active HTTP-01 certificate validation only.
+- `https://caslink.casapps.us/server/security` — current reporting channels and PGP status.
+- `https://caslink.casapps.us/server/security/policy` — coordinated disclosure policy.
+- `https://caslink.casapps.us/server/healthz` and `https://caslink.casapps.us/api/v1/server/healthz` — health endpoints.
+
+Unknown `/.well-known/*` entries return `404`. WebFinger, OpenID Provider Metadata, Android App Links, Apple association and MTA-STS are not enabled by this project.
 
 ## Audit and monitoring
 
