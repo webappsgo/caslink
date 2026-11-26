@@ -38,7 +38,7 @@ custom_domains:   true
 - **Notifications**: operator-configured email and signed webhook delivery for server, security, and scheduled-task events
 - **I2P**: optional server-hosted eepsite using an app-managed i2pd provider or an external SAM bridge
 - **Installable web app**: progressive-enhancement PWA with offline access limited to static assets and public information pages
-- **Billing** (optional, operator opt-in): subscription plans with monthly/yearly pricing; Stripe, Paddle, PayPal, LemonSqueezy, or Manual provider; invoicing, dunning, usage tracking; disabled by default
+- **Billing** (optional, operator opt-in): subscription plans with monthly/yearly pricing; Stripe, Paddle, PayPal, or Manual provider; invoicing, dunning, usage tracking; disabled by default
 - **Federation** (optional): peer instances exchange signed URL announcements; paginated pull sync with since/until range; discovery via `/.well-known/caslink`; disabled by default
 
 **Data models:**

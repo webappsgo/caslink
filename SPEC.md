@@ -26,7 +26,7 @@ Billing is an optional operator monetization module from IDEA.md. It never gates
 
 ### Providers and tax
 
-- The provider registry contains `stripe`, `paddle`, `paypal`, `lemonsqueezy`, and the built-in `manual` option because these are the providers named by IDEA.md. External processors are disabled on first run. Manual invoice tracking remains available with zero processors configured.
+- The provider registry contains `stripe`, `paddle`, `paypal`, and the built-in `manual` option. External processors are disabled on first run. Manual invoice tracking remains available with zero processors configured.
 - Provider settings are configured only in the authenticated admin UI. Each provider implements credential validation, capability reporting, payment-method tokenization, authorization/capture/refund, subscription lifecycle operations when supported, transaction lookup/listing, webhook signature validation, and webhook event mapping. Unsupported capabilities return a typed unsupported-capability error; they never silently succeed.
 - Provider states are `UNCONFIGURED`, `TESTING`, `ACTIVE`, `DEGRADED`, `MAINTENANCE`, `FAILED`, `DEPRECATED`, and `DISABLED`. Only explicitly enabled, validated providers receive requests or health checks. Failover follows configured priority and uses a unique idempotency key per logical payment.
 - Provider webhooks require provider-specific signature validation, bounded request bodies, timestamp/replay checks, and unique event IDs. Duplicate events are acknowledged without repeating state transitions. Failed processing is retried by the internal scheduler and eventually appears in the admin review queue.
@@ -44,6 +44,6 @@ All routes are rooted below `/api/{api_version}` and use the standard JSON envel
 ### Notifications and administration
 
 - Emit localized notifications for payment success/failure, invoice issue, trial ending, upcoming renewal, grace start, suspension, and cancellation through the existing notification service. Marketing messages remain opt-in.
-- Provider UI lists all five providers grouped by category and disabled status, includes a setup guide, a help tooltip for every field, sandbox/test mode, connection diagnostics, priority, and health. Credentials are write-only after save.
+- Provider UI lists all four configured options (Stripe, Paddle, PayPal, and manual invoice) grouped by category and disabled status, includes a setup guide, a help tooltip for every field, sandbox/test mode, connection diagnostics, priority, and health. Credentials are write-only after save.
 - The admin dashboard reports MRR/ARR, churn, ARPU, LTV, subscription states, payment outcomes, provider health, and daily reconciliation. Disabled providers are never probed.
 - The UI includes customer subscription and payment-method management, invoice PDF/CSV downloads, usage and overage views, cancellation without dark patterns, and a portable data export request.

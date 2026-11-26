@@ -23,7 +23,7 @@
 - Always test admin routes for both rejection (unauthenticated/invalid) and success (setup token → login → session)
 - Always run `tests/run_tests.sh` for Phase 2's Docker-only basic tier; run `tests/incus.sh` explicitly for the preferred full-app service-lifecycle tier (it must not be selected automatically by `run_tests.sh`)
 - Always host `docs/` on ReadTheDocs via MkDocs Material with dark/light/auto toggle, per PART 16 theme rules
-- Always keep every language's JSON keys in sync with `en.json` (`make i18n-validate`) and rebuild all binaries after adding a language
+- Always keep every language's JSON keys in sync with `en.json`; `TestKeyConsistency` and `TestLocalesFS` enforce this as part of `make test` (there is no `make i18n-validate` target)
 - Always set `dir="rtl"` for Arabic and use CSS logical properties (`margin-inline-start`, not `margin-left`)
 - Always meet WCAG 2.1 AA: 4.5:1 text contrast, visible focus indicators, 44x44px touch targets, skip links as first focusable elements
 
@@ -76,7 +76,7 @@ Only acceptable pattern: `${TMPDIR:-/tmp}/webappsgo/caslink-XXXXXX/` (with `volu
 | it | Italian | ltr | one, many, other |
 | ja | Japanese | ltr | other |
 
-Language resolution order: `?lang=` (sets cookie) → `lang` cookie → `Accept-Language` header → `en`. Files at `src/common/i18n/locales/{lang}.json`, embedded via `go:embed`, validated by `make i18n-validate`.
+Language resolution order: `?lang=` (sets cookie) → `lang` cookie → `Accept-Language` header → `en`. Files at `src/common/i18n/locales/{lang}.json`, embedded via `go:embed`, validated by `TestKeyConsistency` and `TestLocalesFS` as part of `make test`.
 
 ### a11y core requirements
 
