@@ -12,7 +12,7 @@ The browser and client sign-in flows depend on enabled providers. Configure and 
 
 Webhook URLs are configured per contact role under `server.contact.{role}.webhooks`. Delivery is queued in `server.db`, uses HTTPS POST, and retries failed requests after 1 minute, 5 minutes, 15 minutes, 1 hour, 6 hours, and 24 hours before dropping them. Each webhook has a random 32-byte HMAC-SHA256 signing secret stored in `secrets.yml`; the secret is never returned by APIs. Requests include `X-Webhook-Signature`, `X-Webhook-Timestamp`, `X-Webhook-ID` (UUID v7), and `X-Webhook-Event` headers.
 
-Built-in adapters support generic JSON, Discord, Slack, Mattermost, Telegram, Pushover, and Gotify. Current event producers queue summary-only admin notifications for scheduled task failures and security-report receipts. Security webhooks contain report metadata and a tracking ID, never the report body or contact details. Delivery failures are rate-limited in logs.
+Built-in adapters support generic JSON, Discord, Slack, Mattermost, Telegram, Pushover, and Gotify. Current event producers queue summary-only admin notifications for scheduled task failures, repeated high-severity IP offenders, and security-report receipts. Security webhooks contain report metadata and a tracking ID, never the report body or contact details. Delivery failures are rate-limited in logs.
 
 ## API discovery and documentation
 
