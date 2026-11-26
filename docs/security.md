@@ -30,7 +30,7 @@ Administrators can configure identity providers through the admin security setti
 
 Serve public traffic over HTTPS. Caslink can manage certificates for configured hostnames, and renewals run through the built-in scheduler. Sensitive values and security reports are encrypted at rest where specified by server configuration; credentials and raw tokens must not be included in logs.
 
-Tor hidden-service support starts automatically when enabled by the runtime configuration and a Tor executable is available. Overlay startup is asynchronous and does not prevent the HTTP listener from starting.
+Tor hidden-service support starts automatically when a Tor executable is available; there is no enable/disable setting. Overlay startup is best-effort and does not prevent the HTTP listener from starting.
 
 ## Public endpoints
 

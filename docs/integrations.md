@@ -34,7 +34,7 @@ Prometheus metrics are available only when enabled in server configuration. The 
 
 ## Tor
 
-When Tor support is enabled and a Tor executable is available, the server can create a hidden service and report its address through server status and autodiscovery. Tor requires outbound network access. See [Configuration](configuration.md) for the supported settings.
+Tor support starts automatically when the `tor` executable is available; there is no enable/disable setting. The server owns a dedicated Tor process and reports its hidden-service address through authorized status and autodiscovery fields. Missing Tor or Tor startup failure does not prevent the HTTP server from starting. See [Configuration](configuration.md) for Tor settings.
 
 ## Standards endpoints
 

@@ -31,13 +31,13 @@ Caslink is a self-hosted URL shortener written in Go. It provides short-link cre
 ```bash
 docker run --detach \
   --name caslink \
-  --publish 64580:80 \
+  --publish 172.17.0.1:64580:80 \
   --volume caslink-config:/config/caslink \
   --volume caslink-data:/data/caslink \
   webappsgo/caslink:latest
 ```
 
-Open `http://localhost:64580`. On first start, use the one-time token printed in the server console to complete setup. See the [installation guide](docs/installation.md) for Compose, paths, service installation, and other deployment details.
+Open `http://172.17.0.1:64580`. On first start, use the one-time token printed in the server console to complete setup. See the [installation guide](docs/installation.md) for Compose, paths, service installation, and other deployment details.
 
 ### Binary
 
