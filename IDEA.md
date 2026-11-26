@@ -7,6 +7,7 @@ Caslink is a secure, mobile-first, fully self-hosted URL shortener written in Go
 project_name:     caslink
 project_org:      webappsgo
 internal_name:    caslink
+internal_org:     webappsgo
 app_name:         Caslink
 official_site:    https://caslink.casapps.us
 maintainer_name:  casjay
