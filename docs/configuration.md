@@ -137,7 +137,7 @@ server:
   port: 0              # 0 = auto-select from 64xxx range; persisted after first run
   address: "[::]"      # listen address; use "0.0.0.0" for IPv4-only
   mode: production     # production | development
-  fqdn: ""             # public hostname used in generated links; defaults to the detected runtime hostname
+  fqdn: ""             # detected hostname for operator reference only; set DOMAIN to choose the public hostname
   baseurl: /           # URL path prefix; trusted reverse-proxy prefix headers take precedence
   api_version: v1      # version segment for API routes
   admin_path: administration # admin UI URL segment
@@ -174,7 +174,7 @@ server:
   admin_path: administration
   contact:
     admin:
-      email: admin@localhost
+      email: admin@example.com
 ```
 
 ### SSL / TLS
@@ -297,7 +297,7 @@ server:
     email:
       enabled: false
       provider: smtp       # smtp | sendgrid | ses
-      from: no-reply@localhost
+      from: ""             # defaults to no-reply@{fqdn}; email is disabled when the public FQDN is unresolved
       from_name: Caslink
       reply_to: ""
       smtp:

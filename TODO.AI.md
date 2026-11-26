@@ -5,7 +5,7 @@ These are project implementation items required for AI.md alignment. AI.md itsel
 - [x] Apply scheduled `update.defer_days` to GitHub release `published_at` dates; manual update checks bypass the delay.
 - [x] Schedule renewal for DNS-01 custom-domain certificates before expiry, including configured renewal window, retries, status updates, and admin visibility.
 - [x] Implement the configured OIDC browser sign-in flow with state, nonce, PKCE, provider discovery, identity mapping, and first-login handling.
-- [ ] Complete PGP key generation, encrypted private-key storage, rotation/retirement, public-key publication, and persisted keyserver retries.
+- [x] Complete PGP key generation, encrypted private-key storage, rotation/retirement, public-key publication, and persisted keyserver retries.
 - [x] Implement outbound webhook delivery with signing, retry/backoff, and delivery status; preserve disabled-by-default behavior.
 - [x] Render admin configuration pages through the shared layout with localized navigation and content.
 - [x] Add required PDF export support to organization audit exports and keep JSON, CSV, and PDF snapshot metadata/hash behavior consistent.
@@ -20,7 +20,9 @@ These are project implementation items required for AI.md alignment. AI.md itsel
 - [ ] Complete the contact report flow required by PART 17: abuse/DMCA/privacy type selection, field allowlists and limits, anti-spam token/review steps, fallback recipient resolution, and matching API behavior.
 - [ ] Implement the project help content (`server.pages.help.content`) from IDEA.md and expose it through the Help page and API rather than the generic translation-only help content.
 - [ ] Add admin controls for privacy deployment settings and sanitized page-content extensions (About, Privacy, Terms, Help, Contact, and shared branding content) as required by PART 17; reconcile the built-in privacy editor ambiguity in TODO.SERVER before making those text fields editable.
-- [ ] Complete security-report PGP keypair generation, encrypted private-key storage, rotation, fingerprint/public-key publication, and keyserver retry persistence; the public key endpoint currently remains unavailable.
-- [ ] Complete the PWA requirements: root-scope service-worker registration and safe update/offline lifecycle, valid install icons and metadata, and install/update prompts that match AI.md.
+- [x] Complete security-report PGP keypair generation, encrypted private-key storage, rotation, fingerprint/public-key publication, and keyserver retry persistence.
+- [x] Complete the PWA requirements: base-path-aware service-worker registration and safe update/offline lifecycle, localized install/offline prompts, valid install icons and metadata.
 - [ ] Consolidate administrator and regular-user password login at `/server/auth/login`, remove the separate admin login route, and include admin MFA in the shared flow as required by AI.md.
 - [ ] Implement the AI.md API login contract: issue scoped 24-hour bearer tokens, and use hashed, single-use five-minute partial-session values for MFA continuations instead of returning session IDs.
+- [ ] Implement AI.md URL/FQDN resolution: validate domains against mode and public suffix, enforce the DOMAIN allowlist, detect trusted-proxy hosts safely, learn subdomain/wildcard patterns with the configured sample window, update CORS and URL output at request time, and keep unresolved FQDN empty.
+- [ ] Implement AI.md configuration area files and reload: merge validated `yaml.d/*.yml` with `server.yml` and `secrets.yml`, persist each setting to its owning file, watch and reload changes safely, and integrate shared settings synchronization with cluster mode.
