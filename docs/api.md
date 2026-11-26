@@ -9,7 +9,7 @@ Caslink provides a JSON REST API, a GraphQL endpoint, and server-rendered pages.
 - GraphQL console: `/server/docs/graphql`.
 - GraphQL POST endpoints: `/api/graphql` and `{api_base_path}/server/graphql`.
 
-Successful JSON responses use `{ "ok": true, "data": ... }`. Errors use `{ "ok": false, "error": "CODE", "message": "..." }`. Frontend routes negotiate HTML or plain text; API routes negotiate JSON or plain text. Requests that mutate browser state require the CSRF token. API requests use bearer tokens.
+Successful JSON responses use `{ "ok": true, "data": ... }`. Errors use `{ "ok": false, "error": "CODE", "message": "..." }`. Frontend routes negotiate HTML or plain text; API routes negotiate JSON or plain text. Requests that mutate browser state require the CSRF token. API requests use bearer tokens. Health fields such as `status`, `features`, and `checks` are inside `data` on API routes.
 
 ## Authentication
 
