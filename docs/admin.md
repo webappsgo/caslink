@@ -33,7 +33,10 @@ The admin root `/server/{admin_path}` is the dashboard. Server-management sectio
 | `/security/tokens` | Admin API token management |
 | `/security/ratelimit` | Rate-limit settings |
 | `/security/firewall` | Firewall rules |
+| `/security/blocked-ips` | Active IP blocks, manual blocks, expiration cleanup, and repeat-offender escalation |
 | `/security/allowlist` | Allowlist settings |
+| `/security/locked-accounts` | Locked user accounts and admin unlock actions |
+| `/security/keypair` | Security-report OpenPGP key generation, rotation, publication, and retirement |
 | `/security/reports`, `/security/reports/{tracking_id}` | Security report triage and status |
 | `/network/tor` | Tor availability and hidden-service status |
 | `/network/i2p` | I2P eepsite status and configuration |
@@ -42,6 +45,7 @@ The admin root `/server/{admin_path}` is the dashboard. Server-management sectio
 | `/domains`, `/domains/{domain}` | Custom-domain moderation |
 | `/users`, `/users/{id}` | User list and account details |
 | `/{admin_username}/profile` | The signed-in admin's own profile and username settings |
+| `/{admin_username}/profile/security` | The signed-in admin's TOTP and passkey enrollment and recovery keys |
 | `/{admin_username}/preferences` | The signed-in admin's own display preferences |
 | `/{admin_username}/notifications` | The signed-in admin's notification preferences |
 | `/users/invites` | User invitations |
@@ -50,11 +54,13 @@ The admin root `/server/{admin_path}` is the dashboard. Server-management sectio
 | `/cluster/nodes`, `/cluster/add` | Cluster node status and registration |
 | `/help` | Admin help |
 
-Actions such as suspending users, changing settings, or restoring backups use POST forms protected by CSRF.
+Actions such as suspending users, changing settings, enrolling or disabling MFA, or restoring backups use POST forms protected by CSRF. Security settings include configurable account lockout thresholds and IP block escalation durations. Allowlisted addresses bypass IP block enforcement; they still must authenticate normally.
 
 ## Admin API
 
-The admin API is rooted at `/api/v1/server/{admin_path}/` (or the configured API base path). First-run `/setup/*` endpoints use the one-time setup token and setup session; after setup, administrative endpoints require an `adm_` bearer token. Implemented endpoints cover user moderation and recovery-key regeneration, server settings and branding, server information, scheduler tasks, maintenance, Tor and I2P status/configuration, custom-domain moderation, OIDC/LDAP/SAML provider management, and the signed-in admin's profile, security status, preferences, and notification preferences. A `usr_` or `org_` token cannot access these routes. The OpenAPI page lists exact request and response schemas.
+The admin API is rooted at `/api/v1/server/{admin_path}/` (or the configured API base path). First-run `/setup/*` endpoints use the one-time setup token and setup session; after setup, administrative endpoints require an `adm_` bearer token. Implemented endpoints cover user moderation and recovery-key regeneration, server settings and branding, server information, scheduler tasks, maintenance, Tor and I2P status/configuration, custom-domain moderation, OIDC/LDAP/SAML provider management, locked-account and blocked-IP management, lockout and IP-block policy, OpenPGP security-report keys and reports, and the signed-in admin's profile, TOTP/passkeys, preferences, and notification preferences. A `usr_` or `org_` token cannot access these routes. The OpenAPI page lists exact request and response schemas.
+
+Admin self-service pages live below `/server/{admin_path}/{admin_username}/`. The profile page changes the signed-in admin's username; security controls require current-factor verification for sensitive actions. TOTP activation is staged until recovery keys have been saved and confirmed. Security notifications cannot be disabled in the admin notification preferences.
 
 ## Operational notes
 

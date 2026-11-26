@@ -109,6 +109,26 @@ Administrative paths are beneath `{api_base_path}/server/{admin_path}`. First-ru
 
 Public server information APIs are beneath `{api_base_path}/server/`: `about`, `help`, `privacy`, `terms`, `preferences`, `preferences/sync`, `preferences/sync/import`, `security`, `security/policy`, and `security/thanks`. Privacy returns the dynamic policy in the `summary`, `cookies`, `data`, `tracking`, `retention`, `third_party`, and `content` fields; `ccpa` is included only when data sales are enabled. Terms returns `{title, content, format}` with built-in Markdown defaults. `POST /server/contact` is the browser form; its API counterpart is `{api_base_path}/server/contact`. Security-report submission uses the rotating `security_id` shown by the security contact flow. See [Security](security.md) for the disclosure process and report encryption.
 
+## Admin security and self-service
+
+These routes are beneath `{api_base_path}/server/{admin_path}` and require an admin-scoped `adm_` bearer token. For browser sessions, the matching server-rendered routes use POST forms and CSRF protection.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET/PATCH | `/security/settings` or `/security/auth` | Read or update account lockout and automatic IP-block policy |
+| GET | `/security/locked-accounts` | List currently locked user accounts |
+| DELETE | `/security/locked-accounts/{id}` | Unlock a user account |
+| GET/POST | `/security/blocked-ips` | List IP blocks or add a manual block |
+| GET/DELETE | `/security/blocked-ips/{ip}` | Read or remove an IP block |
+| DELETE | `/security/blocked-ips/expired` | Remove expired blocks |
+| GET | `/{admin_username}/profile/security` | Read the signed-in admin's TOTP, passkey, and recovery-key state |
+| POST | `/{admin_username}/profile/security/totp/setup`, `/totp/enable`, `/totp/disable` | Stage, confirm, or disable TOTP |
+| POST/DELETE | `/{admin_username}/profile/security/passkey/setup`, `/passkey/register`, `/passkey/{passkey_id}` | Enroll or remove a passkey |
+| GET/PATCH | `/{admin_username}/preferences` | Read or update the signed-in admin's display preferences |
+| GET/PATCH | `/{admin_username}/notifications` | Read or update admin notification preferences; security alerts remain enabled |
+
+The admin route's exact base is intentionally not exposed by autodiscovery. See [Admin Panel](admin.md) for the corresponding browser pages and [Security](security.md) for the authentication and reporting model.
+
 ## I2P administration
 
 Authenticated server-admin clients can read and update I2P settings at `GET` and `PATCH /api/v1/server/{admin_path}/network/i2p`. `POST /api/v1/server/{admin_path}/network/i2p/validate` validates a candidate configuration without saving it. `POST /api/v1/server/{admin_path}/network/i2p/restart` restarts the configured provider. `POST /api/v1/server/{admin_path}/network/i2p/regenerate` requires `{"confirm":true}` and replaces the persisted destination key. The public `/api/healthz` response reports I2P feature status; `/api/autodiscover` includes the address only when I2P is enabled, running, and `server.i2p.expose` is true.
