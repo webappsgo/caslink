@@ -130,7 +130,7 @@ make local           # production test build → binaries/ (current platform)
 
 On the very first start (before any admin account exists), requests to `/` and `/server/{admin_path}/` redirect to `/server/{admin_path}/setup`. Startup prints the one-time setup token once. Enter it in the wizard to begin the ordered setup session. The six steps are:
 
-1. **Primary administrator** — choose the username, email, and password. The default username is `steward`; passwords are stored as Argon2id hashes.
+1. **Primary administrator** — choose the username and email. The default username is `steward`; the wizard generates a secure password that you can copy, or you can replace it with a custom password and confirm it. Passwords are stored as Argon2id hashes.
 2. **API token** — create and copy the administrator's API token. It is displayed once and cannot be recovered later.
 3. **Server configuration** — set the application name, primary domain/FQDN, operating mode, and scheduler timezone.
 4. **Security** — optionally set a backup-encryption password and enable TOTP for the primary administrator. TOTP enrollment requires a valid six-digit code and acknowledgment that the one-time recovery keys were saved.
