@@ -4,7 +4,7 @@ The server-admin panel manages the Caslink instance. Server admins are separate 
 
 ## Sign in
 
-The login page is `/server/auth/login`; submit credentials there. Successful server-admin authentication redirects to `/server/{admin_path}`. The `admin_path` setting is configurable. Admin pages require an admin session; state-changing forms require CSRF protection. The admin path is not disclosed by API autodiscovery.
+The login page is `/server/auth/login`; submit credentials there. Successful server-admin authentication redirects to `/server/{admin_path}`. The `server.admin_path` setting defaults to `administration` and is configurable. Admin pages require an admin session; state-changing forms require CSRF protection. The admin path is not disclosed by API autodiscovery.
 
 ## First-run setup
 
@@ -34,7 +34,9 @@ The admin root `/server/{admin_path}` is the dashboard. Server-management sectio
 | `/security/ratelimit` | Rate-limit settings |
 | `/security/firewall` | Firewall rules |
 | `/security/allowlist` | Allowlist settings |
+| `/security/reports`, `/security/reports/{tracking_id}` | Security report triage and status |
 | `/network/tor` | Tor status and configuration |
+| `/network/i2p` | I2P eepsite status and configuration |
 | `/network/geoip` | GeoIP configuration and status |
 | `/network/blocklists` | Blocklist configuration and status |
 | `/domains`, `/domains/{domain}` | Custom-domain moderation |
@@ -52,7 +54,7 @@ Actions such as suspending users, changing settings, or restoring backups use PO
 
 ## Admin API
 
-The admin API is rooted at `{api_base_path}/server/{admin_path}/`. First-run `/setup/*` endpoints use the one-time setup token and setup session; after setup, administrative endpoints require an `adm_` bearer token. They cover user moderation, server settings and branding, scheduler tasks, maintenance, custom-domain moderation, OIDC/LDAP/SAML provider management, and the signed-in admin's profile, security state, preferences, and notification preferences. A `usr_` or `org_` token cannot access these routes. The OpenAPI page lists exact request and response schemas.
+The admin API is rooted at `/api/v1/server/{admin_path}/` (or the configured API base path). First-run `/setup/*` endpoints use the one-time setup token and setup session; after setup, administrative endpoints require an `adm_` bearer token. Implemented endpoints cover user moderation and recovery-key regeneration, server settings and branding, server information, scheduler tasks, maintenance, Tor and I2P status/configuration, custom-domain moderation, OIDC/LDAP/SAML provider management, and the signed-in admin's profile, security status, preferences, and notification preferences. A `usr_` or `org_` token cannot access these routes. The OpenAPI page lists exact request and response schemas.
 
 ## Operational notes
 
