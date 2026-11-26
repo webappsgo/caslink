@@ -8,7 +8,7 @@ The login page is `/server/auth/login`; submit credentials there. Successful ser
 
 ## First-run setup
 
-On a new installation, follow the one-time setup instructions shown by the server. Setup creates the primary admin account. Protect the setup token and credentials, and complete setup before exposing the service to the public internet. The setup API provides status, verify, account, token, config, security, services, and complete actions under `/api/v1/server/{admin_path}/setup/`. See [Installation](installation.md) for the setup sequence.
+On a new installation, follow the one-time setup instructions shown by the server. Setup creates the primary admin account. Protect the setup token and credentials, and complete setup before exposing the service to the public internet. The setup API provides status, verify, account, token, config, security, services, and complete actions under `/api/v1/server/{admin_path}/setup/`. The status response includes `is_complete` and `current_step`; the latter reports the active session's next step. See [Installation](installation.md) for the setup sequence.
 
 ## Pages
 
