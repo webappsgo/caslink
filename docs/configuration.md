@@ -27,7 +27,7 @@ Short flags: only `-h` (help) and `-v` (version). All other flags use long form.
 | `--pid FILE` | auto-detected | PID file path |
 | `--address ADDR` | `[::]` | Listen address |
 | `--port PORT` | auto (64xxx) | Listen port; `0` = auto-select from 64xxx range |
-| `--baseurl URL` | hostname | Public base URL for generated short links (e.g. `https://caslink.casapps.us`) |
+| `--baseurl PATH` | `/` | URL path prefix for deployments mounted below a domain root (for example `/myproject`) |
 | `--color MODE` | `auto` | Colour output: `auto`, `yes`, `no` (also reads `NO_COLOR`) |
 | `--lang CODE` | `en` | Default language code (`en`, `es`, `fr`, `de`, `it`, `zh`, `ar`, `ja`) |
 | `--shell CMD` | — | Shell integration: `completions` or `init` for bash, zsh, fish, sh, dash, ksh, or PowerShell |
@@ -63,6 +63,15 @@ For each setting below, the loader checks `CASLINK_{NAME}` first and then `{NAME
 | `CASLINK_ADMIN_PATH` | `administration` | Admin panel URL segment (`/server/{path}/`) |
 
 The YAML keys are `server.contact.admin.email` for the contact address and `server.admin_path` for the admin UI segment. The latter defaults to `administration`; reserved route names and invalid values fall back to that default.
+
+### URL path prefix
+
+Set `server.baseurl` or pass `--baseurl /myproject` when the application is
+mounted below a domain root. Both `/myproject` and `/myproject/` are accepted.
+For reverse-proxy deployments, a trusted proxy's `X-Forwarded-Prefix`,
+`X-Forwarded-Path`, or `X-Script-Name` takes precedence. Forwarded prefix
+headers from untrusted peers are ignored. Configure the proxy address under
+`server.trusted_proxies.additional` before relying on forwarded headers.
 
 ### Database
 
@@ -129,6 +138,8 @@ server:
   address: "[::]"      # listen address; use "0.0.0.0" for IPv4-only
   mode: production     # production | development
   fqdn: ""             # public hostname used in generated links; defaults to the detected runtime hostname
+  baseurl: /           # URL path prefix; trusted reverse-proxy prefix headers take precedence
+  api_version: v1      # version segment for API routes
   admin_path: administration # admin UI URL segment
   daemonize: false
   pidfile: true
