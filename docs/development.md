@@ -40,7 +40,7 @@ Go builds and tests run in Docker containers. Never run project binaries directl
 ```bash
 make test                 # Unit tests, vet, and the coverage gate
 ./tests/run_tests.sh      # Docker-based binary and integration suite
-./tests/incus.sh          # Optional full service-lifecycle suite
+./tests/incus.sh          # Explicit full service-lifecycle suite
 ```
 
 The test scripts create runtime data under the project-scoped system temporary

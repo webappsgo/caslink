@@ -112,7 +112,7 @@ caslink --service reload
 sudo caslink --service --uninstall
 ```
 
-The unit file is written to `/etc/systemd/system/caslink.service` and runs under a dedicated `caslink` system user.
+The unit file is written to `/etc/systemd/system/caslink.service`. It starts with the privileges needed to create and protect the system paths, bind listeners, and initialize the service, then the server drops to the dedicated `caslink` system user. The service account's home is `/var/lib/webappsgo/caslink`; it cannot log in interactively. The unit limits writable paths to Caslink's configuration, data, cache, logs, runtime state, backups, and installed binary.
 
 ## Building from Source
 
