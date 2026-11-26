@@ -468,7 +468,16 @@ web:
   ui:
     theme: dark                  # dark | light | auto
   cors: ""                       # comma-separated origins; blank = same-origin only
+  llms:
+    include_endpoints: true       # list public and authenticated API operations
+    include_schemas: false        # include request schemas with listed operations
+    custom_sections: []           # up to 10 {title, content} Markdown sections
 ```
+
+`/.well-known/llms.txt` and `/llms.txt` are always enabled. Custom section titles
+must be 1–80 characters and content is limited to 4096 characters. HTML is
+escaped and links are limited to HTTPS and relative paths. An operator-provided
+`{data_dir}/web/.well-known/llms.txt` replaces the generated document.
 
 ### Compression
 
