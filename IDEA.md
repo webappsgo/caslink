@@ -32,7 +32,11 @@ custom_domains:   true
 - **Multi-user accounts**: public registration (operator-configurable); Argon2id password hashing; TOTP 2FA (RFC 6238, QR setup, 10 single-use recovery codes); Passkeys/WebAuthn; "remember this device" (30-day cookie); OAuth2/OIDC social login (Google, GitHub, etc.)
 - **Organizations**: up to 5 orgs per user (configurable); roles: owner, admin, member; org-scoped API tokens; ownership transfer; audit log for all permission and link changes
 - **Custom domains**: up to 5 per user, 20 per org (configurable); DNS TXT verification with exponential-backoff retry; automatic SSL via Let's Encrypt (HTTP-01, DNS-01); apex and subdomain support
-- **Admin panel**: server-wide configuration, user and org moderation, domain management, scheduler status, manual backup trigger, system health — see PART 17
+- **Admin panel**: server-wide configuration, user and org moderation, domain management, scheduler status, manual backup trigger, system health, admin self-service MFA, lockout and IP-block controls — see PART 17
+- **Security disclosure**: encrypted vulnerability-report intake, managed OpenPGP key publication, researcher status tracking, and an audited admin review workflow
+- **Notifications**: operator-configured email and signed webhook delivery for server, security, and scheduled-task events
+- **I2P**: optional server-hosted eepsite using an app-managed i2pd provider or an external SAM bridge
+- **Installable web app**: progressive-enhancement PWA with offline access limited to static assets and public information pages
 - **Billing** (optional, operator opt-in): subscription plans with monthly/yearly pricing; Stripe, Paddle, PayPal, LemonSqueezy, or Manual provider; invoicing, dunning, usage tracking; disabled by default
 - **Federation** (optional): peer instances exchange signed URL announcements; paginated pull sync with since/until range; discovery via `/.well-known/caslink`; disabled by default
 
@@ -42,6 +46,8 @@ custom_domains:   true
 - User: username (unique), email (unique, optional), password_hash (Argon2id), TOTP secret, passkey credentials, recovery keys, trusted devices, sessions
 - Organization: name, slug, owner_id, members (with roles), org-scoped API tokens
 - CustomDomain: domain, owner_type (user/org), owner_id, verification_token, ssl_cert (encrypted), verified_at
+- SecurityReport: tracking_id, encrypted report and contact payloads, severity, state, and disclosure metadata
+- ClusterNode: node_id, hostname, version, health state, and heartbeat timestamp
 
 **Business rules:**
 - Short codes are random alphanumeric; minimum length configurable (default 6); custom codes 3–50 chars
@@ -69,6 +75,8 @@ custom_domains:   true
 - Add and verify custom domains; manage SSL certificates
 - Admin: user and org moderation, server config, scheduler, backup, system health
 - Server info pages: about, help, privacy, terms, contact
+- Submit and track encrypted security reports; publish the project security key and disclosure policy
+- Configure admin security, notification delivery, cluster join tokens, and I2P eepsite status
 
 **Data sources:**
 - SQLite (default, single-node) or PostgreSQL/MySQL/SQL Server for cluster deployments — see PART 10

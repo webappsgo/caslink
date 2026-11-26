@@ -20,7 +20,9 @@ Caslink is a self-hosted URL shortener written in Go. It provides short-link cre
 - QR code generation and CSV/JSON import and export
 - User accounts, API tokens, TOTP, passkeys, and organization membership
 - Custom domains with DNS verification and certificate management
-- Server administration for configuration, scheduling, backups, updates, and security
+- Server administration for configuration, scheduling, backups, updates, account lockouts, and IP-block management
+- Encrypted security-report intake with a managed OpenPGP keypair and audit trail
+- Optional I2P eepsite support and an installable web app with offline access to public information pages
 - REST and GraphQL APIs, OpenAPI documentation, and API autodiscovery
 - Eight embedded locales: English, Spanish, Chinese, French, Arabic, German, Italian, and Japanese
 
