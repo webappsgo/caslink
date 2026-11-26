@@ -2,46 +2,46 @@
 
 ## Docker (Recommended)
 
-The Docker image listens on port 80 internally. Production examples bind the host port only to Docker's bridge gateway; change `CASLINK_HTTP_PORT` if 64580 is already in use:
+The Docker image listens on port 80 internally. Run it from an isolated temporary directory so its runtime data stays outside the repository. The production port is bound to Docker's bridge gateway; set `CASLINK_HTTP_PORT` if 64580 is already in use:
 
 ```bash
+mkdir -p "${TMPDIR:-/tmp}/webappsgo"
+TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/webappsgo/caslink-XXXXXX")
+mkdir -p "$TEMP_DIR/volumes/config" "$TEMP_DIR/volumes/data"
+
 docker run -d \
   --name caslink \
-  -p 172.17.0.1:64580:80 \
-  -v ./volumes/config:/config \
-  -v ./volumes/data:/data \
-  webappsgo/caslink:latest
+  -p "172.17.0.1:${CASLINK_HTTP_PORT:-64580}:80" \
+  -v "$TEMP_DIR/volumes/config:/config:z" \
+  -v "$TEMP_DIR/volumes/data:/data:z" \
+  ghcr.io/webappsgo/caslink:latest
 ```
 
 Open `http://172.17.0.1:64580/server/administration/setup` to run first-run setup when using the default admin path (`administration`). If `server.admin_path` is customized, replace `administration` with that path.
 
 ### Docker Compose
 
-```yaml
-services:
-  caslink:
-    image: webappsgo/caslink:latest
-    restart: unless-stopped
-    ports:
-      - "172.17.0.1:${CASLINK_HTTP_PORT:-64580}:80"
-    volumes:
-      - ./volumes/config:/config
-      - ./volumes/data:/data
-    environment:
-      PORT: "80"
-      MODE: "production"
+Run the shipped production Compose file from an isolated temporary directory. It includes the Valkey cache service and keeps its persistent data alongside the app's data:
+
+```bash
+mkdir -p "${TMPDIR:-/tmp}/webappsgo"
+TEMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/webappsgo/caslink-XXXXXX")
+mkdir -p "$TEMP_DIR/volumes/config" "$TEMP_DIR/volumes/data"
+cp docker/docker-compose.yml "$TEMP_DIR/"
+cd "$TEMP_DIR" && docker compose up -d
 ```
 
-Inside the container the app always listens on `0.0.0.0:80`. Use the `PORT` environment variable only if you need to change the internal port.
+Inside the container the app listens on port 80. The production Compose file does not set a development mode; the server defaults to production.
 
 ### Data Paths Inside the Container
 
 | Purpose | Container path |
 |---------|----------------|
 | Config (`server.yml`) | `/config/caslink/` |
-| Databases (`server.db`, `users.db`) | `/data/caslink/db/` |
-| Backups | `/data/caslink/backups/` |
+| SQLite databases (`server.db`, `users.db`) | `/data/db/sqlite/` |
+| Backups | `/data/backups/caslink/` |
 | GeoIP databases | `/data/caslink/security/geoip/` |
+| Logs | `/data/log/caslink/` |
 
 ## Binary
 

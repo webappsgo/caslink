@@ -4,11 +4,11 @@ The server-admin panel manages the Caslink instance. Server admins are separate 
 
 ## Sign in
 
-The login page is `/server/auth/login`; submit credentials there. Successful server-admin authentication redirects to `/server/{admin_path}`. The `server.admin_path` setting defaults to `administration` and is configurable. Admin pages require an admin session; state-changing forms require CSRF protection. The admin path is not disclosed by API autodiscovery.
+The login page is `/server/auth/login`; submit credentials there. Successful server-admin authentication redirects to `/server/{admin_path}`. The `server.admin_path` setting defaults to `administration` and is configurable. Authenticated admin pages require an admin session; first-run setup uses its one-time setup token and limited setup session. State-changing browser forms require CSRF protection. The admin path is not disclosed by API autodiscovery.
 
 ## First-run setup
 
-On a new installation, follow the one-time setup instructions shown by the server. Setup creates the primary admin account. Protect the setup token and credentials, and complete setup before exposing the service to the public internet. See [Installation](installation.md) for the setup sequence.
+On a new installation, follow the one-time setup instructions shown by the server. Setup creates the primary admin account. Protect the setup token and credentials, and complete setup before exposing the service to the public internet. The setup API provides status, verify, account, token, config, security, services, and complete actions under `/api/v1/server/{admin_path}/setup/`. See [Installation](installation.md) for the setup sequence.
 
 ## Pages
 
@@ -35,7 +35,7 @@ The admin root `/server/{admin_path}` is the dashboard. Server-management sectio
 | `/security/firewall` | Firewall rules |
 | `/security/allowlist` | Allowlist settings |
 | `/security/reports`, `/security/reports/{tracking_id}` | Security report triage and status |
-| `/network/tor` | Tor status and configuration |
+| `/network/tor` | Tor availability and hidden-service status |
 | `/network/i2p` | I2P eepsite status and configuration |
 | `/network/geoip` | GeoIP configuration and status |
 | `/network/blocklists` | Blocklist configuration and status |

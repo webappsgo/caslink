@@ -3,7 +3,7 @@
 [![CI](https://github.com/webappsgo/caslink/actions/workflows/ci.yml/badge.svg)](https://github.com/webappsgo/caslink/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/webappsgo/caslink)](https://github.com/webappsgo/caslink/releases)
 [![License](https://img.shields.io/github/license/webappsgo/caslink)](LICENSE.md)
-[![Documentation](https://readthedocs.org/projects/caslink/badge/?version=latest)](https://caslink.casapps.us/)
+[![Documentation](https://readthedocs.org/projects/webappsgo-caslink/badge/?version=latest)](https://webappsgo-caslink.readthedocs.io/)
 
 ## About
 
@@ -32,9 +32,9 @@ Caslink is a self-hosted URL shortener written in Go. It provides short-link cre
 docker run --detach \
   --name caslink \
   --publish 172.17.0.1:64580:80 \
-  --volume caslink-config:/config/caslink \
-  --volume caslink-data:/data/caslink \
-  webappsgo/caslink:latest
+  --volume caslink-config:/config \
+  --volume caslink-data:/data \
+  ghcr.io/webappsgo/caslink:latest
 ```
 
 Open `http://172.17.0.1:64580`. On first start, use the one-time token printed in the server console to complete setup. See the [installation guide](docs/installation.md) for Compose, paths, service installation, and other deployment details.
@@ -83,7 +83,7 @@ The API also provides GraphQL and an OpenAPI document. See the [API reference](d
 - [Integrations](docs/integrations.md)
 - [Troubleshooting and installation](docs/installation.md)
 - [Translations](docs/translating.md)
-- Documentation is built with MkDocs Material and published on [Read the Docs](https://caslink.casapps.us/).
+- Documentation is built with MkDocs Material and published on [Read the Docs](https://webappsgo-caslink.readthedocs.io/).
 
 ## Development
 
