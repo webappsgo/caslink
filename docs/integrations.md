@@ -40,9 +40,15 @@ Tor support starts automatically when the `tor` executable is available; there i
 
 Caslink serves `/.well-known/security.txt`, `/.well-known/change-password`, and active ACME HTTP-01 challenge paths. Other `/.well-known/` paths are not served unless an explicitly enabled feature provides them. Unknown paths return `404`.
 
-## Billing and federation
+## Federation
 
-Billing and federation are described as optional product capabilities in the project definition. They are not exposed by the current server routes and are not enabled integrations in this build.
+Federation is disabled by default. Enable `server.features.federation.enabled` in the admin panel or configuration before publishing links or accepting federation traffic. The server creates an Ed25519 identity at `{data_dir}/federation/ed25519.key`; keep the data directory private and backed up. `GET /.well-known/caslink` publishes the protocol version, node/key IDs, public key, and feed URL only while enabled.
+
+Add peers from the server admin Federation page by entering their HTTPS origin and the identity fields obtained from `/.well-known/caslink`. Verify the key out of band before saving it. Origins must resolve only to public IP addresses. Peer requests use Ed25519 signatures, five-minute timestamp bounds, and replay-protected nonces. The built-in scheduler pulls signed announcement pages every five minutes; failures are isolated per peer and reflected in peer status.
+
+Users explicitly publish and unpublish eligible public, non-password-protected links from the link-management page or federation API. Imported public announcements are browsable at `/server/federation` and are stored separately from local links, so they cannot change or replace them. Disabling federation stops feed and sync operations while preserving imported records. Admins can purge imported announcements from the Federation page or `DELETE {api_base_path}/server/{admin_path}/federation/imported`; the purge leaves local links, publications, and peer records intact.
+
+See [API Reference](api.md) for discovery, feed, user publication, and admin peer routes. Billing is an optional product capability; see [Billing](billing.md) for setup and the current API surface.
 
 ## I2P
 

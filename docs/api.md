@@ -77,6 +77,7 @@ All paths below are beneath `{api_base_path}/users` and require a user bearer to
 | GET | `/security` | Read security status |
 | GET | `/urls/export` | Export owned links |
 | POST | `/urls/import` | Import links |
+| POST | `/urls/{code}/federation` | Publish/unpublish an eligible owned public link with `{ "published": true|false }` |
 | GET/POST | `/domains`, `/domains/{domain}/verify` | Add and verify custom domains |
 | GET | `/domains/{domain}`, `/dns`, `/ssl` | Read domain, DNS, and SSL state |
 | POST | `/domains/{domain}/ssl`, `/ssl/renew` | Configure or renew domain SSL |
@@ -112,6 +113,12 @@ Public server information APIs are beneath `{api_base_path}/server/`: `about`, `
 ## Admin security and self-service
 
 These routes are beneath `{api_base_path}/server/{admin_path}` and require an admin-scoped `adm_` bearer token. For browser sessions, the matching server-rendered routes use POST forms and CSRF protection.
+
+## Federation
+
+Federation is optional and disabled by default. When enabled, `GET /.well-known/caslink` advertises the protocol version, stable node/key ID, Ed25519 public key, and announcement feed URL. The feed is `GET {api_base_path}/federation/announcements?since={RFC3339}&until={RFC3339}&limit={1..100}&cursor={opaque}`. Every peer request must include `X-Caslink-Node-ID`, `X-Caslink-Key-ID`, `X-Caslink-Timestamp`, `X-Caslink-Nonce`, and `X-Caslink-Signature`; the request is signed over the method, request URI, timestamp, nonce, and SHA-256 body digest. Feed responses use the standard `ok/data/pagination` envelope. `data` contains `key_id`, `signature`, and `announcements`; `pagination` contains `limit`, `cursor`, and `has_more`. Imported public announcements can be browsed at `/server/federation`.
+
+User link publication is available at `POST {api_base_path}/users/urls/{code}/federation` with a user bearer token and `{ "published": true }` or `{ "published": false }`. Only an owned, public, unexpired, non-password-protected link can be published. Admin peer management is at `{api_base_path}/server/{admin_path}/federation` (enable setting), `/federation/peers` (list/add/enable/disable/remove), and `POST /federation/peers/key` (explicit pinned-key rotation); it requires an admin bearer token. `DELETE /federation/imported` explicitly purges imported announcements while preserving peer and local publication records. Peer addition pins the supplied identity key. Review and verify the peer key out of band before adding or rotating it. The matching server-rendered page is `/server/{admin_path}/federation`.
 
 | Method | Path | Purpose |
 |---|---|---|

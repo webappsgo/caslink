@@ -118,6 +118,8 @@ headers from untrusted peers are ignored. Configure the proxy address under
 | `CASLINK_ANALYTICS_ENABLED` | `true` | Enable click analytics |
 | `CASLINK_ANONYMIZE_IPS` | `true` | Anonymize IPs in analytics |
 
+Federation has no environment-variable override. Its default is disabled. When enabled, peers and publications are stored in the users database and the signing identity is stored at `{data_dir}/federation/ed25519.key` with owner-only permissions.
+
 ### Client / Maintenance
 
 `NO_COLOR` is read by the CLI. The API token and backup password are supplied through the client/command mechanisms, not these server configuration environment variables.
@@ -407,6 +409,8 @@ server:
       allow_apex: true
       allow_subdomain: true
       allow_wildcard: false
+    federation:
+      enabled: false
     totp_issuer: Caslink
     webauthn_display: Caslink
 ```
