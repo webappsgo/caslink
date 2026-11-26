@@ -26,7 +26,7 @@ Short flags: only `-h` (help) and `-v` (version). All other flags use long form.
 | `--log DIR` | auto-detected | Log directory |
 | `--pid FILE` | auto-detected | PID file path |
 | `--address ADDR` | `[::]` | Listen address |
-| `--port PORT` | auto (64xxx) | Listen port; `0` = auto-select from 64xxx range |
+| `--port PORT` | auto (64xxx) | Listen on one port or `HTTP,HTTPS` (for example `--port 8090,8443`) |
 | `--baseurl PATH` | `/` | URL path prefix for deployments mounted below a domain root (for example `/myproject`) |
 | `--color MODE` | `auto` | Colour output: `auto`, `yes`, `no` (also reads `NO_COLOR`) |
 | `--lang CODE` | `en` | Default language code (`en`, `es`, `fr`, `de`, `it`, `zh`, `ar`, `ja`) |
@@ -47,7 +47,7 @@ For each setting below, the loader checks `CASLINK_{NAME}` first and then `{NAME
 | Variable | Example | Description |
 |----------|---------|-------------|
 | `CASLINK_MODE` | `production` | Application mode: `production` or `development` |
-| `CASLINK_PORT` | `8080` | Listen port (`0` = auto-select from 64xxx range) |
+| `CASLINK_PORT` | `8080` or `80,443` | Listen on one port or HTTP,HTTPS ports |
 | `CASLINK_LISTEN` | `0.0.0.0` | Listen address; `CASLINK_ADDRESS` is applied afterward if both are set |
 | `CASLINK_ADDRESS` | `[::]` | Listen address |
 | `CASLINK_DOMAIN` | Runtime hostname | Public FQDN / base URL |
@@ -136,7 +136,7 @@ The file is created automatically at `{config_dir}/server.yml` on first run. Edi
 
 ```yaml
 server:
-  port: 0              # 0 = auto-select from 64xxx range; persisted after first run
+  port: 64580          # Omit to select and persist an available port in 64000-64999
   address: "[::]"      # listen address; use "0.0.0.0" for IPv4-only
   mode: production     # production | development
   fqdn: ""             # detected hostname for operator reference only; set DOMAIN to choose the public hostname

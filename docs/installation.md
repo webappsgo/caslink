@@ -2,7 +2,7 @@
 
 ## Docker (Recommended)
 
-The Docker image listens on port 80 internally. Run it from an isolated temporary directory so its runtime data stays outside the repository. The production port is bound to Docker's bridge gateway; set `CASLINK_HTTP_PORT` if 64580 is already in use:
+The Docker image listens on port 80 internally. Run it from an isolated temporary directory so its runtime data stays outside the repository. The production HTTP port is bound to Docker's bridge gateway; set `CASLINK_HTTP_PORT` if 64580 is already in use. To enable dual HTTP/HTTPS listeners, set `CASLINK_CONTAINER_PORTS=80,443`, configure TLS in `/config/server.yml`, then use `https://<host>:64443` (or set `CASLINK_HTTPS_PORT`):
 
 ```bash
 mkdir -p "${TMPDIR:-/tmp}/webappsgo"
@@ -11,7 +11,9 @@ mkdir -p "$TEMP_DIR/volumes/config" "$TEMP_DIR/volumes/data"
 
 docker run -d \
   --name caslink \
+  -e PORT="${CASLINK_CONTAINER_PORTS:-80}" \
   -p "172.17.0.1:${CASLINK_HTTP_PORT:-64580}:80" \
+  -p "172.17.0.1:${CASLINK_HTTPS_PORT:-64443}:443" \
   -v "$TEMP_DIR/volumes/config:/config:z" \
   -v "$TEMP_DIR/volumes/data:/data:z" \
   ghcr.io/webappsgo/caslink:latest
@@ -89,9 +91,14 @@ Outside application containers, the server selects an available port from 64000â
 # Set permanently in server.yml
 caslink --port 8080
 
+# HTTP and HTTPS listeners
+caslink --port 8080,8443
+
 # Or set in config
 # server:
 #   port: 8080
+# Or for HTTP plus HTTPS:
+#   port: "8080,8443"
 ```
 
 ## systemd Service
