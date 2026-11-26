@@ -122,6 +122,8 @@ These routes are beneath `{api_base_path}/server/{admin_path}` and require an ad
 | GET/DELETE | `/security/blocked-ips/{ip}` | Read or remove an IP block |
 | DELETE | `/security/blocked-ips/expired` | Remove expired blocks |
 | GET | `/{admin_username}/profile/security` | Read the signed-in admin's TOTP, passkey, and recovery-key state |
+| POST | `/{admin_username}/profile/password` | Change the signed-in admin's password; requires the current password and enabled MFA |
+| GET/POST | `/{admin_username}/profile/token` | List masked tokens or rotate them; the new token is returned once |
 | POST | `/{admin_username}/profile/security/totp/setup`, `/totp/enable`, `/totp/disable` | Stage, confirm, or disable TOTP |
 | POST/DELETE | `/{admin_username}/profile/security/passkey/setup`, `/passkey/register`, `/passkey/{passkey_id}` | Enroll or remove a passkey |
 | GET/PATCH | `/{admin_username}/preferences` | Read or update the signed-in admin's display preferences |
