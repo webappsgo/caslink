@@ -6,7 +6,8 @@
 
 ## CRITICAL - NEVER DO
 
-- Never add a 7th Makefile target — exactly six: `dev`, `local`, `build`, `test`, `release`, `docker`
+- Never add targets beyond the seven core targets: `dev`, `local`, `build`, `test`, `release`, `beta`, `docker`
+- Never add a helper target except `clean` or the internal `release-check` prerequisite
 - Never hardcode `PROJECT_NAME`/`PROJECT_ORG` — always derive from `git remote get-url origin` (fallback to directory basenames)
 - Never build on the host — all builds go through Docker (`casjaysdev/go:latest`)
 - Never symlink or copy a binary out of `binaries/` (to PATH, `/usr/local/bin`, another dir, etc.) — run it in place
@@ -19,7 +20,7 @@
 
 ## CRITICAL - ALWAYS DO
 
-- Always use exactly these six targets, matching the purpose table below
+- Always provide all seven core targets, matching the purpose table below
 - Always derive `VERSION` with this priority: `VERSION` env var → `release.txt` → `devel` fallback (or create `release.txt` with `0.1.0` on first release)
 - Always embed `Version`, `CommitID`, `BuildDate`, `OfficialSite` via `-ldflags` (`-s -w -X main.X=...`)
 - Always use `CGO_ENABLED=0` and `GOFLAGS=-buildvcs=false` for Docker Go builds
@@ -40,8 +41,11 @@
 | `local` | Production test build | `binaries/` | Yes |
 | `build` | Full release, 8 platforms | `binaries/` | Yes |
 | `test` | Unit tests + coverage | Coverage report (≥60%) | n/a |
-| `release` | GitHub release w/ source archive | `releases/` | via build |
+| `release` | Stable GitHub release w/ source archive | `releases/` | via build |
+| `beta` | Tag current clean `main` commit with UTC timestamp-beta and push tag | tag only | n/a |
 | `docker` | Build multi-arch image, no push | buildx cache | via build-args |
+
+`release-check` is an internal `release` prerequisite. It validates that `VERSION` is a stable `X.Y.Z` and builds nothing. `clean` only removes `binaries/` and `releases/`.
 
 ### Version tag `v` prefix
 
@@ -65,7 +69,7 @@
 
 ### Local workflow order
 
-`make dev` (iterate) → `make test` (unit, pre-commit gate) → `./tests/run_tests.sh` (integration) → `make local` (prod test build) → `./tests/incus.sh` (preferred systemd test) → `make build` (cross-platform) → `make release` or CI/CD tag push.
+`make dev` (iterate) → `make test` (unit, pre-commit gate) → `./tests/run_tests.sh` (integration) → `make local` (prod test build) → `./tests/incus.sh` (preferred systemd test) → `make build` (cross-platform) → `make release` or `make beta`/CI tag push.
 
 ### Binary naming pattern
 

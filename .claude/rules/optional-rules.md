@@ -4,11 +4,11 @@
 
 ## Activation status for this project
 
-**PART 34 (Multi-User), PART 35 (Organizations), and PART 36 (Custom Domains) have been formally flipped to REQUIRED for caslink, per the OPTIONAL to REQUIRED flip mechanism documented in AI.md (around line 54780).**
+**PART 34 (Multi-User), PART 35 (Organizations), and PART 36 (Custom Domains) are active for caslink because SPEC.md declares them REQUIRED.**
 
-- This project's `AI.md` PART 34/35/36 headings now read `(REQUIRED - NON-NEGOTIABLE)`, not `(OPTIONAL - NON-NEGOTIABLE WHEN IMPLEMENTED)` — the one sanctioned per-project edit to the otherwise read-only AI.md.
+- AI.md keeps these PART headings marked OPTIONAL. Its activation rules require declarations in SPEC.md and explicitly prohibit editing AI.md.
 - `IDEA.md ## Project variables` sets `multi_user: true`, `organizations: true`, `custom_domains: true` to match.
-- `IDEA.md`'s "Business logic to Features" section already describes **Multi-user accounts**, **Organizations** (up to 5/user, roles owner/admin/member), and **Custom domains** (up to 5/user, 20/org, DNS TXT verification, Let's Encrypt) as shipped Caslink features, and the git history confirms all three are implemented.
+- `IDEA.md` describes **Multi-user accounts**, **Organizations** (up to 5/user, roles owner/admin/member), and **Custom domains** (up to 5/user, 20/org, DNS TXT verification, Let's Encrypt) as Caslink features.
 - **Conclusion: treat PARTs 34-36 as fully mandatory for caslink; every requirement, table, and rule in those PARTs applies in full.** Flipping is one-way; do not un-flip without a data migration (see AI.md flip-mechanism rules).
 
 ## CRITICAL - NEVER DO
