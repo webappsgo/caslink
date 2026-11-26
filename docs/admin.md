@@ -51,7 +51,7 @@ The admin root `/server/{admin_path}` is the dashboard. Server-management sectio
 | `/users/invites` | User invitations |
 | `/orgs/invites`, `/orgs/create` | Organization invitations and creation controls |
 | `/moderation/users` | User moderation queue |
-| `/cluster/nodes`, `/cluster/add` | Cluster node status and registration |
+| `/nodes`, `/nodes/add` | Cluster node status and registration |
 | `/help` | Admin help |
 
 Actions such as suspending users, changing settings, enrolling or disabling MFA, or restoring backups use POST forms protected by CSRF. Security settings include configurable account lockout thresholds and IP block escalation durations. Allowlisted addresses bypass IP block enforcement; they still must authenticate normally.
