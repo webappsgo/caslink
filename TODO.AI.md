@@ -4,11 +4,11 @@ These are project implementation items required for AI.md alignment. AI.md itsel
 
 - [x] Apply scheduled `update.defer_days` to GitHub release `published_at` dates; manual update checks bypass the delay.
 - [x] Schedule renewal for DNS-01 custom-domain certificates before expiry, including configured renewal window, retries, status updates, and admin visibility.
-- [ ] Implement the configured OIDC browser sign-in flow with state, nonce, PKCE, provider discovery, identity mapping, and first-login handling.
+- [x] Implement the configured OIDC browser sign-in flow with state, nonce, PKCE, provider discovery, identity mapping, and first-login handling.
 - [ ] Complete PGP key generation, encrypted private-key storage, rotation/retirement, public-key publication, and persisted keyserver retries.
-- [ ] Implement outbound webhook delivery with signing, retry/backoff, and delivery status; preserve disabled-by-default behavior.
+- [x] Implement outbound webhook delivery with signing, retry/backoff, and delivery status; preserve disabled-by-default behavior.
 - [x] Render admin configuration pages through the shared layout with localized navigation and content.
-- [ ] Add required PDF export support to organization audit exports and keep JSON, CSV, and PDF snapshot metadata/hash behavior consistent.
+- [x] Add required PDF export support to organization audit exports and keep JSON, CSV, and PDF snapshot metadata/hash behavior consistent.
 - [x] Add Server Admin self-profile username updates through the authenticated profile page and API.
 - [ ] Complete cluster peer persistence, registration/join, heartbeat, liveness, admin status, and distributed scheduler behavior.
 - [x] Implement PART 32.2 I2P eepsite providers, persisted destination identity, container-aware default, dedicated backend listener, health task, and admin/status integration.

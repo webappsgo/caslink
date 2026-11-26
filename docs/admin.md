@@ -4,7 +4,7 @@ The server-admin panel manages the Caslink instance. Server admins are separate 
 
 ## Sign in
 
-The login page is `/server/auth/login`; submit credentials there. Successful server-admin authentication redirects to `/server/{admin_path}`. The `server.admin_path` setting defaults to `administration` and is configurable. Authenticated admin pages require an admin session; first-run setup uses its one-time setup token and limited setup session. State-changing browser forms require CSRF protection. The admin path is not disclosed by API autodiscovery.
+The login page is `/server/auth/login`; submit credentials there. Successful server-admin authentication redirects to `/server/{admin_path}`. The `server.admin_path` setting defaults to `administration` and is configurable. When the application uses a URL path prefix, public and admin page links, forms, and assets include that prefix; trusted reverse-proxy prefix headers take precedence over the configured `server.baseurl`. Authenticated admin pages require an admin session; first-run setup uses its one-time setup token and limited setup session. State-changing browser forms require CSRF protection. The admin path is not disclosed by API autodiscovery.
 
 ## First-run setup
 

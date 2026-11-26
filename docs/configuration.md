@@ -489,9 +489,14 @@ server:
   trusted_proxies:
     additional: []       # extra public proxy IPs / CIDRs to trust for
                          # X-Forwarded-* headers (private + link-local ranges
-                         # are always trusted). IP/CIDR entries only; hostnames
-                         # are not DNS-resolved.
+                         # are always trusted); hostnames refresh every 5 min
+    client_ip_header: auto # auto or one supported client-IP header name
 ```
+
+Client IP chains are walked from the nearest proxy toward the client. For
+production, pin `client_ip_header` to the header your front proxy overwrites
+or appends; the default `auto` checks `X-Forwarded-For`, `Forwarded`,
+`CF-Connecting-IP`, `True-Client-IP`, `X-Real-IP`, then `X-Client-IP`.
 
 ## Modes
 
