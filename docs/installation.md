@@ -101,9 +101,9 @@ caslink --port 8080,8443
 #   port: "8080,8443"
 ```
 
-## systemd Service
+## System Service
 
-Install caslink as a system service using the built-in service manager:
+The built-in service installer detects the active service manager and writes its service definition. On Linux, it supports systemd, OpenRC, SysVinit (with `update-rc.d` or `chkconfig`), and runit. Run the installer as root or through `sudo`:
 
 ```bash
 # Install (requires root or sudo)
@@ -119,7 +119,9 @@ caslink --service reload
 sudo caslink --service --uninstall
 ```
 
-The unit file is written to `/etc/systemd/system/caslink.service`. It starts with the privileges needed to create and protect the system paths, bind listeners, and initialize the service, then the server drops to the dedicated `caslink` system user. The service account's home is `/var/lib/webappsgo/caslink`; it cannot log in interactively. The unit limits writable paths to Caslink's configuration, data, cache, logs, runtime state, backups, and installed binary.
+On systemd, the unit is written to `/etc/systemd/system/caslink.service`. It starts with the privileges needed to prepare system paths, bind listeners, and initialize the service, then the server drops to the dedicated `caslink` system user. The service account's home is `/var/lib/webappsgo/caslink`; it cannot log in interactively. The unit limits writable paths to Caslink's configuration, data, cache, logs, runtime state, backups, and installed binary.
+
+OpenRC writes `/etc/init.d/caslink`; SysVinit writes the same path and registers it with the detected runlevel tool. Runit writes `/etc/sv/caslink/` and enables it through `/var/service/caslink`. Control an installed service with `caslink --service start`, `caslink --service stop`, `caslink --service restart`, or `caslink --service reload`.
 
 ## Building from Source
 
