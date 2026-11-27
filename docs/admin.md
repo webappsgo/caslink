@@ -22,7 +22,8 @@ The admin root `/server/{admin_path}` is the dashboard. Server-management sectio
 | `/pages` | Public page-content editors for the header, About, Privacy, Terms, and footer |
 | `/pages/{header,about,privacy,terms,footer}` | Edit sanitized operator content; About, Privacy, and Terms extend or override their built-in pages, and reset removes the branding entry |
 | `/pages/contact` | Configure the public report form, its recipient, CAPTCHA provider, and success message; send a test email |
-| `/privacy` | Configure data-sharing disclosures, consent banner text and position, cookie descriptions, retention, third-party services, and sold/not-sold previews |
+| `/privacy` | Configure data-sharing disclosures, consent banner text and position, cookie descriptions, retention, and third-party services; open authenticated full-page previews with either the sold or unsold policy state |
+| `/privacy/preview?state={sold,unsold}` | Render the public privacy page using the selected policy state without changing saved configuration |
 | `/pages/help` | Help and documentation content |
 | `/ssl` | TLS configuration and certificate status |
 | `/scheduler` | Scheduled task status and actions |
