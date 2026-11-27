@@ -16,8 +16,10 @@ The provider registry contains Stripe, Paddle, PayPal, and manual invoicing.
 Stripe and PayPal adapters currently provide hosted one-time checkout and
 refunds. Paddle provides hosted checkout and signed webhook verification.
 Manual mode supports invoice tracking without an external processor. Hosted
-checkout initiation is not yet connected to customer subscription creation.
-Provider-specific credentials and setup requirements appear in the admin panel.
+checkout is created for newly billed subscriptions when a compatible enabled
+provider is available; the customer API returns its redirect URL and the
+browser form redirects directly to it. Provider-specific credentials and setup
+requirements appear in the admin panel.
 
 Paddle hosted checkout needs an approved checkout domain and a Paddle
 `price_id` for each plan intended for Paddle. Save each value in the plan's
@@ -35,9 +37,10 @@ account ID is checked against that user's account.
 Billing profiles store a validated billing address and tax ID. Tax ID changes
 clear the verified flag. Verification uses jurisdiction-specific methods from
 the billing reference: VIES for EU VAT, HMRC for UK VAT, format validation for
-US EIN, ABR for Australian ABN, and GSTIN verification for India. Customer
-input never sets the verified flag. An unavailable external lookup must leave
-the account unverified and flag affected invoices for review.
+US EIN, and ABR for Australian ABN. India GSTIN verification awaits selection
+of an India registry provider. Customer input never sets the verified flag. An
+unavailable external lookup must leave the account unverified and flag affected
+invoices for review.
 
 The API includes billing account profile, subscriptions, invoices, usage
 summaries, payment-method routes, and owner-authorized account export. Account
@@ -54,11 +57,17 @@ validation, and event-ID deduplication before acknowledgement. Accepted event
 payloads are encrypted at rest.
 
 The internal scheduler checks enabled provider health every five minutes,
-reconciles invoices daily at 02:00 in the configured scheduler timezone,
-evaluates renewal and reminder windows daily, and aggregates usage hourly and
-by billing period. Disabled providers are not probed. The billing reference
-does not specify webhook retry backoff or an attempt cap; the retry processor
-exists but is not scheduled until that timing contract is defined.
+retries durably accepted webhook events every 15 minutes (up to ten processing
+attempts), reconciles invoices daily at 02:00 in the configured scheduler
+timezone, evaluates renewal and reminder windows daily, and aggregates usage
+hourly and by billing period. Disabled providers are not probed.
+
+Recurring payment retries follow the billing reference schedule: the primary
+provider on day 0, the next available provider on day 1, the next available on
+day 3, any enabled recurring provider on day 5, and manual invoice handling on
+day 7. After the fifth attempt, the subscription remains in its grace period
+and expires when that period ends. An ambiguous provider outcome is held for
+reconciliation and is not charged again automatically.
 
 ## Current API surface
 
