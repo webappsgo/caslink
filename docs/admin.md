@@ -19,6 +19,11 @@ The admin root `/server/{admin_path}` is the dashboard. Server-management sectio
 | `/` | Server status and overview |
 | `/settings` | Core server configuration |
 | `/branding` | Site identity and visual branding |
+| `/pages` | Public page-content editors for the header, About, Privacy, Terms, and footer |
+| `/pages/{header,about,privacy,terms,footer}` | Edit sanitized operator content; About, Privacy, and Terms extend or override their built-in pages, and reset removes the branding entry |
+| `/pages/contact` | Configure the public report form, its recipient, CAPTCHA provider, and success message; send a test email |
+| `/privacy` | Configure data-sharing disclosures, consent banner text and position, cookie descriptions, retention, third-party services, and sold/not-sold previews |
+| `/pages/help` | Help and documentation content |
 | `/ssl` | TLS configuration and certificate status |
 | `/scheduler` | Scheduled task status and actions |
 | `/email` | Email delivery configuration and test action |
@@ -58,7 +63,7 @@ Actions such as suspending users, changing settings, enrolling or disabling MFA,
 
 ## Admin API
 
-The admin API is rooted at `/api/v1/server/{admin_path}/` (or the configured API base path). First-run `/setup/*` endpoints use the one-time setup token and setup session; after setup, administrative endpoints require an `adm_` bearer token. Implemented endpoints cover user moderation and recovery-key regeneration, server settings and branding, server information, scheduler tasks, maintenance, Tor and I2P status/configuration, custom-domain moderation, OIDC/LDAP/SAML provider management, locked-account and blocked-IP management, lockout and IP-block policy, OpenPGP security-report keys and reports, and the signed-in admin's profile, TOTP/passkeys, preferences, and notification preferences. A `usr_` or `org_` token cannot access these routes. The OpenAPI page lists exact request and response schemas.
+The admin API is rooted at `/api/v1/server/{admin_path}/` (or the configured API base path). First-run `/setup/*` endpoints use the one-time setup token and setup session; after setup, administrative endpoints require an `adm_` bearer token. Implemented endpoints cover user moderation and recovery-key regeneration, server settings and branding, page-content settings (`GET /pages`, `GET`/`PATCH /pages/contact`, plus `GET`/`PATCH /pages/{header,about,privacy,terms,footer}`), help content, server information, scheduler tasks, maintenance, Tor and I2P status/configuration, custom-domain moderation, OIDC/LDAP/SAML provider management, locked-account and blocked-IP management, lockout and IP-block policy, OpenPGP security-report keys and reports, and the signed-in admin's profile, TOTP/passkeys, preferences, and notification preferences. A `usr_` or `org_` token cannot access these routes. The OpenAPI page lists exact request and response schemas.
 
 Admin self-service pages live below `/server/{admin_path}/{admin_username}/`. The profile page changes the signed-in admin's username and password, and shows the masked API-token list. Password changes require the current password and, when enabled, a current TOTP code or recovery key; other admin sessions are revoked and a security email is attempted. Posting to `/profile/token` rotates the admin's API token, revokes previous tokens, and displays the new plaintext once. Security controls require current-factor verification for sensitive actions. TOTP activation is staged until recovery keys have been saved and confirmed. Security notifications cannot be disabled in the admin notification preferences.
 

@@ -2,13 +2,13 @@
 
 ## Config Hierarchy
 
-Settings are resolved in this order (later sources win):
+Persistent settings are split by ownership:
 
-1. **Compiled defaults** — safe values built into the binary
-2. **`server.yml`** — the main config file (auto-created on first run)
-3. **Environment variables** — `CASLINK_*` prefix (e.g. `CASLINK_PORT=8080`)
-4. **CLI flags** — e.g. `--port 8080`
-5. **Admin panel** — runtime overrides stored in `server.db`
+- **`server.yml`** — node-local listener, database, cache, and TLS settings.
+- **`yaml.d/*.yml`** — shared settings grouped by area, such as branding, contact, pages, privacy, security, and notifications.
+- **`secrets.yml`** — credentials and generated secrets.
+
+Compiled defaults are loaded first, then the main file, ordered area files, and secrets. Supported environment variables and CLI flags may override their corresponding settings. Admin changes persist to the owning area file; they are not runtime overrides stored in `server.db`.
 
 ## CLI Flags
 
@@ -130,7 +130,11 @@ Federation has no environment-variable override. Its default is disabled. When e
 
 ## `server.yml` Reference
 
-The file is created automatically at `{config_dir}/server.yml` on first run. Edit it then restart the server for changes to take effect. The `server`, `web`, and `caslink` sections map to the application's configuration; the admin panel exposes only the settings supported by its pages and API.
+The file is created automatically at `{config_dir}/server.yml` on first run. Edit it then restart the server for changes to take effect. It holds node-local settings; shared application settings belong in `{config_dir}/yaml.d/`, and credentials belong in `{config_dir}/secrets.yml`.
+
+### Area files
+
+The application loads YAML files from `{config_dir}/yaml.d/`. Common ownership includes `branding.yml` (`server.branding`, `server.seo`, and `web.ui`), `pages.yml` (`server.pages`), `contact.yml` (`server.contact`), `privacy.yml` (`server.privacy`, `server.compliance`, and tracking), and `notifications.yml` (`server.notifications`). The admin panel writes settings to their owning area file.
 
 ### Server
 
@@ -159,7 +163,17 @@ server:
     favicon_url: ""
     default_theme: dark   # dark | light | auto
     primary_color: ""     # CSS hex colour, e.g. "#58a6ff"
+    content:
+      about:
+        format: md
+        body:
+          default: "Operator-authored About page extension."
+      footer:
+        format: html
+        body: '<p>Operator-authored footer branding.</p>'
 ```
+
+The Pages editors store About, Privacy, Terms, header, and footer content in `yaml.d/branding.yml`. Page content is sanitized before rendering. About and Privacy extend built-in content; Terms replaces it; header and footer accept HTML fragments only. The editor's reset action removes the entry so the built-in content applies again.
 
 ### SEO
 

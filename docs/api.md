@@ -104,7 +104,7 @@ All paths are beneath `{api_base_path}/orgs` and require a bearer token with app
 
 ## Admin API
 
-Administrative paths are beneath `{api_base_path}/server/{admin_path}`. First-run `/setup/*` endpoints use the one-time setup token and setup session; after setup, administrative endpoints require an `adm_` token. `{admin_path}` is configured locally and is deliberately not disclosed by autodiscovery. The API includes user moderation and recovery-key regeneration; server settings, branding, info, and maintenance; scheduler tasks and history; custom-domain moderation; and OIDC, LDAP, and SAML provider management. The OpenAPI document lists the exact method, schema, and permissions for each endpoint.
+Administrative paths are beneath `{api_base_path}/server/{admin_path}`. First-run `/setup/*` endpoints use the one-time setup token and setup session; after setup, administrative endpoints require an `adm_` token. `{admin_path}` is configured locally and is deliberately not disclosed by autodiscovery. The API includes user moderation and recovery-key regeneration; server settings, branding, public page content (`GET /pages`, `GET`/`PATCH /pages/contact`, and `GET`/`PATCH /pages/{header,about,privacy,terms,footer}`), help content, info, and maintenance; scheduler tasks and history; custom-domain moderation; and OIDC, LDAP, and SAML provider management. The OpenAPI document lists the exact method, schema, and permissions for each endpoint.
 
 ## Contact, preferences, and security reporting
 
