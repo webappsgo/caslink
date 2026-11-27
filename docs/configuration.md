@@ -40,7 +40,12 @@ Short flags: only `-h` (help) and `-v` (version). All other flags use long form.
 
 ## Environment Variables
 
-For each setting below, the loader checks `CASLINK_{NAME}` first and then `{NAME}`. Environment values override `server.yml`. CLI flags override configuration where a matching flag exists. This is the full set read by the current server config loader; similarly named variables are not necessarily supported.
+The `CASLINK_` aliases shown in the regular server settings below are checked
+before their unprefixed names. Directory and first-run database variables use
+their exact names as documented in their sections. Environment values take
+precedence only for settings that the loader explicitly supports; similarly
+named variables are not necessarily read. CLI flags override configuration
+where a matching flag exists.
 
 ### Server
 
@@ -77,12 +82,14 @@ headers from untrusted peers are ignored. Configure the proxy address under
 
 | Variable | Example | Description |
 |----------|---------|-------------|
-| `CASLINK_DATABASE_DRIVER` | `sqlite` | Database driver |
-| `CASLINK_DATABASE_URL` | `postgres://...` | Database DSN |
-| `CASLINK_DATABASE_HOST` | `db.internal` | Database host |
-| `CASLINK_DATABASE_NAME` | `caslink` | Database name |
-| `CASLINK_DATABASE_USERNAME` | `caslink` | Database username |
-| `CASLINK_DATABASE_PASSWORD` | `secret` | Database password |
+| `DATABASE_DIR` | `/var/lib/webappsgo/caslink/db` | SQLite directory, read on every startup; defaults to `{data_dir}/db`. The container image sets `/data/db/sqlite`. |
+| `DATABASE_DRIVER` | `postgres` | First-run driver selection, saved to configuration; aliases include `sqlite`, `libsql`, `postgres`, `mysql`, and `mssql`. |
+| `DATABASE_URL` | `postgres://...` | First-run connection URL, saved to `server.yml` or `secrets.yml` when it contains credentials. |
+
+`DATABASE_DRIVER` and `DATABASE_URL` seed the connection on first run. Once
+saved, edit the owning configuration or use the admin database settings. Use
+`DATABASE_DIR` to change the SQLite file directory at every startup; it does
+not select the database driver.
 
 ### TLS / Let's Encrypt
 
@@ -215,9 +222,9 @@ server:
 ```yaml
 server:
   database:
-    driver: file         # file | sqlite | postgres | mysql | mariadb | mssql
-    path: "{datadir}/db" # SQLite: directory that holds server.db and users.db
+    driver: sqlite       # sqlite | libsql | postgres | mysql | mssql
     # For network databases:
+    url: ""
     host: ""
     port: 0
     name: caslink
@@ -226,7 +233,10 @@ server:
     sslmode: ""
 ```
 
-SQLite is the default (`driver: file`). Two database files are always created:
+SQLite is the default. Its files are `server.db` and `users.db` under
+`DATABASE_DIR`, or under `{data_dir}/db` when the variable is unset. The
+container image sets `DATABASE_DIR=/data/db/sqlite` explicitly. Two database
+files are created:
 
 - `server.db` — server config, admin sessions, audit log, scheduler state
 - `users.db` — users, API tokens, sessions, custom domains, organizations

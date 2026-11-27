@@ -45,6 +45,10 @@ Inside the container the app listens on port 80. The production Compose file doe
 | GeoIP databases | `/data/caslink/security/geoip/` |
 | Logs | `/data/log/caslink/` |
 
+The container image sets `DATABASE_DIR=/data/db/sqlite`. Outside an
+application container, SQLite files default to `{data_dir}/db`; set
+`DATABASE_DIR` to choose another SQLite directory.
+
 ## Binary
 
 Download the release binary for your platform from [GitHub Releases](https://github.com/webappsgo/caslink/releases/latest).
