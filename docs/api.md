@@ -13,7 +13,7 @@ Successful JSON responses use `{ "ok": true, "data": ... }`. Errors use `{ "ok":
 
 ## Authentication
 
-Send tokens in `Authorization: Bearer <token>`. Tokens are shown once when created and stored as SHA-256 hashes. `adm_` tokens are for server administration, `usr_` tokens for user operations, and `org_` tokens for organization-scoped access. A user token cannot access server-admin routes. Create and revoke user tokens through `/users/tokens` or `{api_base_path}/users/tokens`.
+Send tokens in `Authorization: Bearer <token>`. Tokens are shown once when created and stored as SHA-256 hashes. `adm_` tokens are for server administration, `usr_` tokens for user operations, and `org_` tokens for organization-scoped access. A user token cannot access server-admin routes. Signed-in users can create and revoke tokens in the no-JavaScript page at `/server/preferences/tokens` or `/users/tokens`; bearer clients use `{api_base_path}/users/tokens`.
 
 ## Public endpoints
 
