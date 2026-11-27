@@ -49,6 +49,15 @@ always take effect at period end and require explicit confirmation. Pending
 plan changes appear on the subscription record and billing page. Plans never
 gate Caslink features.
 
+Send `PATCH {api_base_path}/billing/subscriptions/{subscription_id}` with an
+`Idempotency-Key` header and a JSON body such as
+`{"plan_id":"<plan-id>","effective":"immediate"}`. Set
+`"effective":"period_end"` to queue an upgrade. A downgrade also requires
+`"confirm_downgrade":true`; an immediate downgrade is rejected. Immediate
+upgrade responses include the hosted checkout details when an enabled provider
+supports checkout. In manual invoice mode, the invoice remains payable from the
+customer invoice list.
+
 The API includes billing account profile, subscriptions, invoices, usage
 summaries, payment-method routes, and owner-authorized account export. Account
 exports support JSON or record-oriented CSV and include invoice snapshots,
