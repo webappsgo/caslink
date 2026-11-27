@@ -14,7 +14,7 @@ make test                   # Unit tests, vet, and the 60% coverage gate
 ./tests/incus.sh            # Explicit full service-lifecycle suite
 make local                  # Production binaries for the current platform
 make build                  # Server and CLI for all eight supported platforms
-make docker                 # Multi-platform Docker build; does not push
+make docker                 # Host-platform image build, runtime check, and local tags; does not push
 ```
 
 ## Project Structure
@@ -45,3 +45,10 @@ make test                 # Unit tests, vet, and the coverage gate
 
 The test scripts create runtime data under the project-scoped system temporary
 directory and remove their own temporary containers and files when they finish.
+
+`make docker` loads the host-platform image into the local Docker image store,
+checks the required runtime commands, then starts the image and waits up to 180
+seconds for Tor to become healthy. If the container has no outbound network,
+the check reports a skip while Tor is `starting` or `unavailable`. Set
+`REQUIRE_OVERLAY=1` to require successful Tor bootstrap. The Docker workflows
+run the same check against the published standard, development, and AIO images.
