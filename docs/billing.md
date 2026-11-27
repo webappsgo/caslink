@@ -37,10 +37,17 @@ account ID is checked against that user's account.
 Billing profiles store a validated billing address and tax ID. Tax ID changes
 clear the verified flag. Verification uses jurisdiction-specific methods from
 the billing reference: VIES for EU VAT, HMRC for UK VAT, format validation for
-US EIN, and ABR for Australian ABN. India GSTIN verification awaits selection
-of an India registry provider. Customer input never sets the verified flag. An
-unavailable external lookup must leave the account unverified and flag affected
-invoices for review.
+US EIN, and ABR for Australian ABN. No India GSTIN verification provider is
+configured, so India GSTIN values remain unverified. Customer input never sets
+the verified flag. An unavailable external lookup must leave the account
+unverified and flag affected invoices for review.
+
+Plan changes are supported through subscription PATCH and the billing page.
+An upgrade can apply immediately with a day-based prorated invoice due now, or
+be queued for period end while the current plan remains in effect. Downgrades
+always take effect at period end and require explicit confirmation. Pending
+plan changes appear on the subscription record and billing page. Plans never
+gate Caslink features.
 
 The API includes billing account profile, subscriptions, invoices, usage
 summaries, payment-method routes, and owner-authorized account export. Account
@@ -76,7 +83,7 @@ reconciliation and is not charged again automatically.
 | GET, POST | `{api_base_path}/billing/accounts` | Read or create the authenticated user's billing account |
 | GET, PATCH | `{api_base_path}/billing/accounts/{account_id}` | Read or update the authenticated user's billing account |
 | GET, POST | `{api_base_path}/billing/accounts/{account_id}/subscriptions` | List or create subscriptions |
-| GET, PATCH, DELETE | `{api_base_path}/billing/subscriptions/{subscription_id}` | Read or cancel an owned subscription; PATCH is currently unsupported |
+| GET, PATCH, DELETE | `{api_base_path}/billing/subscriptions/{subscription_id}` | Read an owned subscription, change its plan, or cancel it |
 | GET | `{api_base_path}/billing/accounts/{account_id}/usage` | Read account usage aggregates |
 | GET | `{api_base_path}/billing/accounts/{account_id}/invoices` | List invoices |
 | GET | `{api_base_path}/billing/invoices/{invoice_id}` | Read an account-owned invoice |
