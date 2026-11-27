@@ -52,12 +52,16 @@ The admin root `/server/{admin_path}` is the dashboard. Server-management sectio
 | `/users`, `/users/{id}` | User list and account details |
 | `/{admin_username}/profile` | The signed-in admin's own profile and username settings |
 | `/{admin_username}/profile/security` | The signed-in admin's TOTP and passkey enrollment and recovery keys |
+| `/{admin_username}/profile/security/totp/recovery-keys` | Regenerate TOTP recovery keys after current-password and second-factor verification; the new keys are shown once |
+| `/{admin_username}/profile/security/passkey/confirm-recovery` | Activate a first passkey after acknowledging that the one-time recovery keys were saved |
 | `/{admin_username}/preferences` | The signed-in admin's own display preferences |
 | `/{admin_username}/notifications` | The signed-in admin's notification preferences |
 | `/users/invites` | User invitations |
 | `/orgs/invites`, `/orgs/create` | Organization invitations and creation controls |
 | `/moderation/users` | User moderation queue |
 | `/nodes`, `/nodes/add` | Cluster node status and registration |
+
+Cluster join tokens are single-use and expire after 15 minutes. A joining node receives the remote database/cache connection, shared secrets, connection TLS files, all `yaml.d/` area files (including `app.yml`), and all `assets/` files in the authenticated encrypted bootstrap response. Its local listener, SSL, and path settings remain local. The imported files are written with owner-only permissions before the node restarts into the shared cluster.
 | `/help` | Admin help |
 
 Actions such as suspending users, changing settings, enrolling or disabling MFA, or restoring backups use POST forms protected by CSRF. Security settings include configurable account lockout thresholds and IP block escalation durations. Allowlisted addresses bypass IP block enforcement; they still must authenticate normally.
@@ -66,7 +70,7 @@ Actions such as suspending users, changing settings, enrolling or disabling MFA,
 
 The admin API is rooted at `/api/v1/server/{admin_path}/` (or the configured API base path). First-run `/setup/*` endpoints use the one-time setup token and setup session; after setup, administrative endpoints require an `adm_` bearer token. Implemented endpoints cover user moderation and recovery-key regeneration, server settings and branding, page-content settings (`GET /pages`, `GET`/`PATCH /pages/contact`, plus `GET`/`PATCH /pages/{header,about,privacy,terms,footer}`), help content, server information, scheduler tasks, maintenance, Tor and I2P status/configuration, custom-domain moderation, OIDC/LDAP/SAML provider management, locked-account and blocked-IP management, lockout and IP-block policy, OpenPGP security-report keys and reports, and the signed-in admin's profile, TOTP/passkeys, preferences, and notification preferences. A `usr_` or `org_` token cannot access these routes. The OpenAPI page lists exact request and response schemas.
 
-Admin self-service pages live below `/server/{admin_path}/{admin_username}/`. The profile page changes the signed-in admin's username and password, and shows the masked API-token list. Password changes require the current password and, when enabled, a current TOTP code or recovery key; other admin sessions are revoked and a security email is attempted. Posting to `/profile/token` rotates the admin's API token, revokes previous tokens, and displays the new plaintext once. Security controls require current-factor verification for sensitive actions. TOTP activation is staged until recovery keys have been saved and confirmed. Security notifications cannot be disabled. Email notification choices are unavailable until SMTP is configured; saving WebUI choices without SMTP preserves the existing email preferences.
+Admin self-service pages live below `/server/{admin_path}/{admin_username}/`. The profile page changes the signed-in admin's username and password, and shows the masked API-token list. Password changes require the current password and, when enabled, a current TOTP code or recovery key; other admin sessions are revoked and a security email is attempted. Posting to `/profile/token` rotates the admin's API token, revokes previous tokens, and displays the new plaintext once. TOTP recovery keys can be regenerated after verifying the current password and a TOTP code or recovery key; the old keys stop working and the replacement set is shown once. Admin passkey setup requires the current password; a first passkey stays inactive until the admin confirms saving its one-time recovery keys. Security notifications cannot be disabled. Email notification choices are unavailable until SMTP is configured; saving WebUI choices without SMTP preserves the existing email preferences.
 
 ## Operational notes
 

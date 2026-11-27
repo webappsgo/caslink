@@ -13,7 +13,7 @@ This page describes Caslink's authentication boundaries, data protection, and vu
 
 ## Multi-factor authentication
 
-User accounts support TOTP and WebAuthn passkeys. Recovery keys are generated for account recovery, stored as hashes, and accepted once. A login requiring a second factor does not receive a full user session until that factor is verified.
+User accounts support TOTP and WebAuthn passkeys. Passkey registration requires the current password; when it creates the account's first recovery-key set, the new passkey stays inactive until the user confirms saving those one-time keys. Recovery keys are stored as hashes and accepted once. A login requiring a second factor does not receive a full user session until that factor is verified.
 
 ## External identity providers
 

@@ -83,7 +83,7 @@ All paths below are beneath `{api_base_path}/users` and require a user bearer to
 | POST | `/domains/{domain}/ssl`, `/ssl/renew` | Configure or renew domain SSL |
 | DELETE | `/domains/{domain}` | Remove a custom domain |
 
-WebAuthn/passkey ceremonies are session-protected at `/users/passkeys/begin-register`, `/finish-register`, `/begin-login`, and `/finish-login`.
+WebAuthn/passkey ceremonies are session-protected at `/users/passkeys/begin-register`, `/finish-register`, `/begin-login`, and `/finish-login`. Registration begins with `POST /users/passkeys/begin-register` and `{"current_password":"…"}`; the server verifies the current password before issuing WebAuthn options. First passkey enrollment returns one-time recovery keys and remains inactive until `POST /users/passkeys/confirm-recovery` receives `{"recovery_keys_saved":true}`.
 
 ## Organization API
 
@@ -129,10 +129,12 @@ User link publication is available at `POST {api_base_path}/users/urls/{code}/fe
 | GET/DELETE | `/security/blocked-ips/{ip}` | Read or remove an IP block |
 | DELETE | `/security/blocked-ips/expired` | Remove expired blocks |
 | GET | `/{admin_username}/profile/security` | Read the signed-in admin's TOTP, passkey, and recovery-key state |
+| POST | `/{admin_username}/profile/security/totp/recovery-keys` | Regenerate TOTP recovery keys after current-password and second-factor verification; returns the replacement keys once |
+| POST | `/{admin_username}/profile/security/passkey/confirm-recovery` | Activate a first passkey after acknowledging that the one-time recovery keys were saved |
 | POST | `/{admin_username}/profile/password` | Change the signed-in admin's password; requires the current password and enabled MFA |
 | GET/POST | `/{admin_username}/profile/token` | List masked tokens or rotate them; the new token is returned once |
 | POST | `/{admin_username}/profile/security/totp/setup`, `/totp/enable`, `/totp/disable` | Stage, confirm, or disable TOTP |
-| POST/DELETE | `/{admin_username}/profile/security/passkey/setup`, `/passkey/register`, `/passkey/{passkey_id}` | Enroll or remove a passkey |
+| POST/DELETE | `/{admin_username}/profile/security/passkey/setup`, `/passkey/register`, `/passkey/{passkey_id}` | Enroll or remove a passkey; first enrollment remains inactive until recovery-key confirmation |
 | GET/PATCH | `/{admin_username}/preferences` | Read or update the signed-in admin's display preferences |
 | GET/PATCH | `/{admin_username}/notifications` | Read or update admin notification preferences; security alerts remain enabled |
 
