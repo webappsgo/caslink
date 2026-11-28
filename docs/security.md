@@ -10,6 +10,7 @@ This page describes Caslink's authentication boundaries, data protection, and vu
 - Admin sessions normally last 30 days and user sessions 7 days. Cookies use `Secure` on HTTPS and `SameSite` protections.
 - API credentials use distinct scopes: `adm_` for server administration, `usr_` for user access, and `org_` for organization access. A user or organization token cannot access server-admin routes.
 - Login, registration, password reset, and other exposed authentication flows are rate-limited. Password reset tokens are single-use and stored as hashes.
+- Browser sign-ins from a previously unseen IP address or browser create a security notice and, when SMTP is available, a login-alert email. The alert follows password, MFA, and OIDC sign-ins after authentication succeeds.
 
 ## Multi-factor authentication
 

@@ -125,6 +125,6 @@ On EVERY new conversation or after "context compacted" message:
 
 ## Current Project State
 [AI updates this section as work progresses]
-- Last read AI.md: 2026-07-30
-- Current task: bootstrap — created `.claude/rules/*.md` and this loader per AI.md PART 0
-- Relevant PARTs: 0-6 (bootstrap scope)
+- Last read AI.md: 2026-11-27
+- Current task: align the implementation, server pages, docs, CI/CD, and verification with AI.md; remaining implementation tasks are tracked in TODO.AI.md
+- Relevant PARTs: read the specific AI.md PART for each active TODO.AI.md item

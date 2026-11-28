@@ -67,7 +67,7 @@ The server validates destinations, custom codes, ownership, expiration, password
 
 ## User API
 
-All paths below are beneath `{api_base_path}/users` and require a user bearer token.
+All API paths below are beneath `{api_base_path}/users` and require a user bearer token. The browser settings form at `/users/settings/notifications` uses the authenticated user session and stores WebUI/email choices by optional notification event; required security events stay enabled and are not stored.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -75,6 +75,9 @@ All paths below are beneath `{api_base_path}/users` and require a user bearer to
 | GET/POST/DELETE | `/tokens`, `/tokens/{id}` | Manage API tokens |
 | GET | `/settings` | Read user settings |
 | GET | `/security` | Read security status |
+| GET | `/notifications` | List the user's notification center entries and unread count |
+| PATCH | `/notifications/{notification_id}` | Mark one owned notification as read |
+| POST | `/notifications/read-all` | Mark all owned notifications as read |
 | GET | `/urls/export` | Export owned links |
 | POST | `/urls/import` | Import links |
 | POST | `/urls/{code}/federation` | Publish/unpublish an eligible owned public link with `{ "published": true|false }` |
@@ -136,7 +139,9 @@ User link publication is available at `POST {api_base_path}/users/urls/{code}/fe
 | POST | `/{admin_username}/profile/security/totp/setup`, `/totp/enable`, `/totp/disable` | Stage, confirm, or disable TOTP |
 | POST/DELETE | `/{admin_username}/profile/security/passkey/setup`, `/passkey/register`, `/passkey/{passkey_id}` | Enroll or remove a passkey; first enrollment remains inactive until recovery-key confirmation |
 | GET/PATCH | `/{admin_username}/preferences` | Read or update the signed-in admin's display preferences |
-| GET/PATCH | `/{admin_username}/notifications` | Read or update admin notification preferences; security alerts remain enabled |
+| GET | `/{admin_username}/notifications` | Read the signed-in admin's notifications; `?unread=true` filters to unread entries |
+| POST | `/{admin_username}/notifications/{id}/read`, `/{admin_username}/notifications/read-all` | Mark one or all admin notifications as read |
+| GET/PATCH | `/{admin_username}/notifications/preferences` | Read or update admin notification preferences; security alerts remain enabled |
 
 The admin route's exact base is intentionally not exposed by autodiscovery. See [Admin Panel](admin.md) for the corresponding browser pages and [Security](security.md) for the authentication and reporting model.
 
