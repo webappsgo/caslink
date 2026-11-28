@@ -105,12 +105,13 @@ not select the database driver.
 
 | Variable | Example | Description |
 |----------|---------|-------------|
-| `CASLINK_EMAIL_ENABLED` | `true` | Enable outbound email |
-| `CASLINK_EMAIL_FROM` | `no-reply@{runtime-hostname}` | From address |
 | `SMTP_HOST` | Empty | SMTP server host (also `CASLINK_SMTP_HOST`) |
 | `SMTP_PORT` | `587` | SMTP server port |
 | `SMTP_USERNAME` | `user` | SMTP auth username |
 | `SMTP_PASSWORD` | `pass` | SMTP auth password |
+| `SMTP_TLS` | `auto` | SMTP TLS mode: `auto`, `starttls`, `tls`, or `none` |
+| `SMTP_FROM_NAME` | `Caslink` | Sender display name |
+| `SMTP_FROM_EMAIL` | `no-reply@example.com` | Sender email address |
 
 ### Features & Limits
 
@@ -139,9 +140,11 @@ Federation has no environment-variable override. Its default is disabled. When e
 
 The file is created automatically at `{config_dir}/server.yml` on first run. Edit it then restart the server for changes to take effect. It holds node-local settings; shared application settings belong in `{config_dir}/yaml.d/`, and credentials belong in `{config_dir}/secrets.yml`.
 
+SMTP settings are owned by `yaml.d/notifications.yml` under `server.notifications.email`. The TLS mode defaults to `auto`: port 465 uses implicit TLS; other ports issue EHLO first and use STARTTLS when offered. `starttls` requires a successful upgrade, `tls` uses implicit TLS, and `none` uses plaintext. SMTP credentials are sent only after TLS is active. The SMTP password is stored in `secrets.yml`.
+
 ### Area files
 
-The application loads YAML files from `{config_dir}/yaml.d/`. Common ownership includes `branding.yml` (`server.branding`, `server.seo`, and `web.ui`), `pages.yml` (`server.pages`), `contact.yml` (`server.contact`), `privacy.yml` (`server.privacy`, `server.compliance`, and tracking), and `notifications.yml` (`server.notifications`). The admin panel writes settings to their owning area file.
+The application loads YAML files from `{config_dir}/yaml.d/`. Common ownership includes `branding.yml` (`server.branding`, `server.seo`, and `web.ui`), `pages.yml` (`server.pages`), `contact.yml` (`server.contact`), `privacy.yml` (`server.privacy`, `server.compliance`, and tracking), and `notifications.yml` (`server.notifications`). Notification retention is configured by `server.notifications.retention_days` (1–3650 days, default 30) and can be changed in the admin panel. The admin panel writes settings to their owning area file.
 
 ### Server
 
@@ -321,19 +324,36 @@ server:
 server:
   notifications:
     email:
-      enabled: false
-      provider: smtp       # smtp | sendgrid | ses
-      from: ""             # defaults to no-reply@{fqdn}; email is disabled when the public FQDN is unresolved
-      from_name: Caslink
-      reply_to: ""
+      from:
+        name: ""             # defaults to the app title
+        email: ""           # defaults to no-reply@{fqdn}
+      events:
+        startup: false
+        shutdown: false
+        backup_complete: false
+        backup_failed: true
+        ssl_expiring: true
+        ssl_renewed: false
+        ssl_renewal_failed: true
+        login_alert: true
+        security_alert: true
+        scheduler_error: true
+        password_changed: true
+        token_regenerated: true
+        update_available: false
+        update_installed: true
+        update_failed: true
+        update_staged: true
       smtp:
         host: ""
         port: 587
         username: ""
-        password: ""
-        use_tls: false
-        use_starttls: true
+        tls: auto            # auto | starttls | tls | none
 ```
+
+The SMTP password is stored in `secrets.yml` under `server.notifications.email.smtp.password`. Email availability is determined by the startup/reload SMTP connection check. Email is disabled when SMTP is unavailable or the public FQDN cannot be resolved.
+
+The admin notification settings page controls these server-wide email defaults and the notification-center retention period. Per-account email preferences override a server default only for events that expose an email preference; email delivery requires working SMTP.
 
 ### GeoIP
 

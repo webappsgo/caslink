@@ -27,7 +27,8 @@ The admin root `/server/{admin_path}` is the dashboard. Server-management sectio
 | `/pages/help` | Help and documentation content |
 | `/ssl` | TLS configuration and certificate status |
 | `/scheduler` | Scheduled task status and actions |
-| `/email` | Email delivery configuration and test action |
+| `/email` | SMTP host, port, credentials, TLS mode, sender address/name, and test email |
+| `/notifications` | Configure notification-center retention (1–3650 days) and server-wide email event defaults |
 | `/logs`, `/logs/audit` | Application and audit logs |
 | `/backup` | Backup and restore actions |
 | `/maintenance` | Maintenance configuration |
@@ -35,6 +36,8 @@ The admin root `/server/{admin_path}` is the dashboard. Server-management sectio
 | `/info` | Build and runtime information |
 | `/metrics` | Metrics status and configuration summary |
 | `/security/auth` | Authentication policy and provider configuration |
+
+Email delivery is enabled by a successful SMTP check at startup and after settings are saved. `auto` uses implicit TLS on port 465 and otherwise upgrades with STARTTLS when the relay advertises it; `starttls` requires the upgrade, `tls` always starts with TLS, and `none` sends without encryption. SMTP credentials are never sent unless TLS is active. The settings page stores shared values in `yaml.d/notifications.yml` and the password in `secrets.yml`.
 | `/security/auth/{type}` | OIDC, LDAP, or SAML provider administration |
 | `/security/tokens` | Admin API token management |
 | `/security/ratelimit` | Rate-limit settings |
@@ -56,6 +59,7 @@ The admin root `/server/{admin_path}` is the dashboard. Server-management sectio
 | `/{admin_username}/profile/security/passkey/confirm-recovery` | Activate a first passkey after acknowledging that the one-time recovery keys were saved |
 | `/{admin_username}/preferences` | The signed-in admin's own display preferences |
 | `/{admin_username}/notifications` | The signed-in admin's notification center |
+| `/{admin_username}/notifications/clear` | Clear this admin's notification-center records after the confirmation dialog |
 | `/{admin_username}/notifications/preferences` | The signed-in admin's notification preferences |
 | `/users/invites` | User invitations |
 | `/orgs/invites`, `/orgs/create` | Organization invitations and creation controls |
@@ -71,7 +75,7 @@ Actions such as suspending users, changing settings, enrolling or disabling MFA,
 
 The admin API is rooted at `/api/v1/server/{admin_path}/` (or the configured API base path). First-run `/setup/*` endpoints use the one-time setup token and setup session; after setup, administrative endpoints require an `adm_` bearer token. Implemented endpoints cover user moderation and recovery-key regeneration, server settings and branding, page-content settings (`GET /pages`, `GET`/`PATCH /pages/contact`, plus `GET`/`PATCH /pages/{header,about,privacy,terms,footer}`), help content, server information, scheduler tasks, maintenance, Tor and I2P status/configuration, custom-domain moderation, OIDC/LDAP/SAML provider management, locked-account and blocked-IP management, lockout and IP-block policy, OpenPGP security-report keys and reports, and the signed-in admin's profile, TOTP/passkeys, preferences, and notification preferences. A `usr_` or `org_` token cannot access these routes. The OpenAPI page lists exact request and response schemas.
 
-Admin self-service pages live below `/server/{admin_path}/{admin_username}/`. The profile page changes the signed-in admin's username and password, and shows the masked API-token list. Password changes require the current password and, when enabled, a current TOTP code or recovery key; other admin sessions are revoked and a security email is attempted. Posting to `/profile/token` rotates the admin's API token, revokes previous tokens, and displays the new plaintext once. TOTP recovery keys can be regenerated after verifying the current password and a TOTP code or recovery key; the old keys stop working and the replacement set is shown once. Admin passkey setup requires the current password; a first passkey stays inactive until the admin confirms saving its one-time recovery keys. The notification center lists recent notifications, supports marking one or all read without JavaScript, and shows the unread count in the admin header. Successful browser sign-ins notify other admins who have the `admin_login` WebUI preference enabled. Security notification preferences cannot be disabled. Email notification choices are unavailable until SMTP is configured; saving WebUI choices without SMTP preserves the existing email preferences.
+Admin self-service pages live below `/server/{admin_path}/{admin_username}/`. The profile page changes the signed-in admin's username and password, and shows the masked API-token list. Password changes require the current password and, when enabled, a current TOTP code or recovery key; other admin sessions are revoked and a security email is attempted. Posting to `/profile/token` rotates the admin's API token, revokes previous tokens, and displays the new plaintext once. TOTP recovery keys can be regenerated after verifying the current password and a TOTP code or recovery key; the old keys stop working and the replacement set is shown once. Admin passkey setup requires the current password; a first passkey stays inactive until the admin confirms saving its one-time recovery keys. The notification center lists recent notifications, supports marking one or all read and clearing the center without JavaScript, and shows the unread count in the admin header. Clearing removes only that admin's notification-center records; security audit events remain in the audit log. Successful browser sign-ins notify other admins who have the `admin_login` WebUI preference enabled. Security notification preferences cannot be disabled. Email notification choices are unavailable until SMTP is configured; saving WebUI choices without SMTP preserves the existing email preferences.
 
 ## Operational notes
 

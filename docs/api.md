@@ -67,7 +67,7 @@ The server validates destinations, custom codes, ownership, expiration, password
 
 ## User API
 
-All API paths below are beneath `{api_base_path}/users` and require a user bearer token. The browser settings form at `/users/settings/notifications` uses the authenticated user session and stores WebUI/email choices by optional notification event; required security events stay enabled and are not stored.
+All API paths below are beneath `{api_base_path}/users` and require a user bearer token. The browser settings form at `/users/settings/notifications` uses the authenticated user session and stores WebUI choices for optional notification events. Events without an email template have no email preference; required security events stay enabled and are not stored.
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -78,6 +78,7 @@ All API paths below are beneath `{api_base_path}/users` and require a user beare
 | GET | `/notifications` | List the user's notification center entries and unread count |
 | PATCH | `/notifications/{notification_id}` | Mark one owned notification as read |
 | POST | `/notifications/read-all` | Mark all owned notifications as read |
+| DELETE | `/notifications` | Clear the signed-in user's notification-center records; audit events remain in the audit log |
 | GET | `/urls/export` | Export owned links |
 | POST | `/urls/import` | Import links |
 | POST | `/urls/{code}/federation` | Publish/unpublish an eligible owned public link with `{ "published": true|false }` |
@@ -108,6 +109,8 @@ All paths are beneath `{api_base_path}/orgs` and require a bearer token with app
 ## Admin API
 
 Administrative paths are beneath `{api_base_path}/server/{admin_path}`. First-run `/setup/*` endpoints use the one-time setup token and setup session; after setup, administrative endpoints require an `adm_` token. `{admin_path}` is configured locally and is deliberately not disclosed by autodiscovery. The API includes user moderation and recovery-key regeneration; server settings, branding, public page content (`GET /pages`, `GET`/`PATCH /pages/contact`, and `GET`/`PATCH /pages/{header,about,privacy,terms,footer}`), help content, info, and maintenance; scheduler tasks and history; custom-domain moderation; and OIDC, LDAP, and SAML provider management. The OpenAPI document lists the exact method, schema, and permissions for each endpoint.
+
+Custom-domain administration includes `GET /domains` and `GET /domains/{domain}`, `POST /domains/{domain}/suspend`, `/unsuspend`, and `/ssl/renew`, and `DELETE /domains/{domain}`. The matching server-rendered management page is `/server/{admin_path}/domains`.
 
 ## Contact, preferences, and security reporting
 
@@ -141,6 +144,7 @@ User link publication is available at `POST {api_base_path}/users/urls/{code}/fe
 | GET/PATCH | `/{admin_username}/preferences` | Read or update the signed-in admin's display preferences |
 | GET | `/{admin_username}/notifications` | Read the signed-in admin's notifications; `?unread=true` filters to unread entries |
 | POST | `/{admin_username}/notifications/{id}/read`, `/{admin_username}/notifications/read-all` | Mark one or all admin notifications as read |
+| DELETE | `/{admin_username}/notifications` | Clear the signed-in admin's notification-center records; audit events remain in the audit log |
 | GET/PATCH | `/{admin_username}/notifications/preferences` | Read or update admin notification preferences; security alerts remain enabled |
 
 The admin route's exact base is intentionally not exposed by autodiscovery. See [Admin Panel](admin.md) for the corresponding browser pages and [Security](security.md) for the authentication and reporting model.

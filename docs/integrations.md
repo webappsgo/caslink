@@ -22,7 +22,13 @@ The API base path is configurable. See [API Reference](api.md) for authenticatio
 
 ## Custom domains and certificates
 
-Users and organization members can add custom domains from their account pages or API. Caslink provides a DNS TXT verification value and reports DNS/SSL status. Verification and certificate issuance require outbound DNS/network access. The server serves ACME HTTP-01 challenges at `/.well-known/acme-challenge/{token}` when a challenge is active. Certificate configuration is managed in the admin panel; availability depends on the configured TLS mode and reachable DNS/HTTP endpoints.
+Users manage domains at `/users/domains`; organization owners and administrators use `/orgs/{slug}/domains`. Both pages provide server-rendered add, detail, DNS, SSL, verification, and delete flows that work without JavaScript. Ownership is verified by publishing the TXT value at `_verify.{domain}`; routing records do not prove ownership.
+
+The versioned API is rooted at `{api_base_path}` (default `/api/v1`). User domain routes are under `{api_base_path}/users/domains`, and organization routes are under `{api_base_path}/orgs/{slug}/domains`. They provide list, add, detail, DNS instructions, SSL status/configuration, renewal, verification, and deletion operations. Organization mutations require an owner or administrator role. See [API Reference](api.md) for the relative route table.
+
+The server supports automatic certificate issuance through the configured ACME challenge/provider. DNS verification and issuance require the domain to resolve correctly and the server to have the required network access. The server serves ACME HTTP-01 challenges at `/.well-known/acme-challenge/{token}` while a challenge is active.
+
+Server admins manage all custom domains at `/server/{admin_path}/domains`, including suspend, unsuspend, force-delete, and force SSL renewal actions. The versioned admin API exposes SSL renewal for any domain.
 
 ## GeoIP and blocklists
 

@@ -41,6 +41,7 @@ Go builds and tests run in Docker containers. Never run project binaries directl
 make test                 # Unit tests, vet, and the coverage gate
 ./tests/run_tests.sh      # Docker-based binary and integration suite
 ./tests/incus.sh          # Explicit full service-lifecycle suite
+make build                # Build the local server binary before browser testing
 ./tests/e2e.sh            # On-demand browser checks: SSR, no-JS, and full-JS tiers
 ```
 
